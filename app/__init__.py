@@ -1,0 +1,3 @@
+"""
+DrapeMind Backend App Package.
+"""

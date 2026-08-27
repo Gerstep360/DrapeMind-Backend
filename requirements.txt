@@ -1,0 +1,28 @@
+# API
+fastapi==0.116.1
+uvicorn[standard]==0.35.0
+python-multipart==0.0.20
+
+# Configuracion y validacion
+pydantic==2.11.7
+pydantic-settings==2.10.1
+email-validator==2.2.0
+
+# PostgreSQL / ORM / migraciones
+SQLAlchemy==2.0.43
+psycopg[binary]==3.2.9
+alembic==1.16.4
+
+# Seguridad
+python-jose[cryptography]==3.5.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.3.0
+
+# Integracion Gemma y QR
+httpx==0.28.1
+qrcode[pil]==8.2
+
+# Calidad y pruebas
+pytest==8.4.1
+pytest-asyncio==1.1.0
+ruff==0.12.8
