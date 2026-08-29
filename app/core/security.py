@@ -15,6 +15,9 @@ def hash_password(password: str) -> str:
     return pwd_context.hash(password)
 
 
+get_password_hash = hash_password
+
+
 def create_access_token(subject: int | str, role: str) -> tuple[str, int]:
     expires_in = settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
     now = datetime.now(timezone.utc)
@@ -33,3 +36,12 @@ def decode_access_token(token: str) -> dict[str, Any]:
     if payload.get("type") != "access" or not payload.get("sub"):
         raise ValueError("Tipo de token invalido")
     return payload
+
+
+def decode_token(token: str) -> int | None:
+    try:
+        data = decode_access_token(token)
+        return int(data["sub"])
+    except Exception:
+        return None
+

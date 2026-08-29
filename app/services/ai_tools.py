@@ -702,5 +702,8 @@ def execute_tool(name: str, arguments: dict, context: ToolContext) -> Any:
     tool = TOOLS.get(name)
     if not tool:
         return {"error": f"Tool no permitida: {name}"}
-    validated = tool.args_model.model_validate(arguments)
-    return tool.handler(context, validated)
+    try:
+        validated = tool.args_model.model_validate(arguments or {})
+        return tool.handler(context, validated)
+    except Exception as exc:
+        return {"error": f"Error ejecutando {name}: {str(exc)}"}

@@ -17,8 +17,8 @@ logs/
 vendor/
 vendor/llama.cpp/
 llama.cpp/
-models/
-model/
+/models/
+/model/
 checkpoints/
 .cache/
 hf_cache/

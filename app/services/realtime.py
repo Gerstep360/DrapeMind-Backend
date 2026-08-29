@@ -8,7 +8,7 @@ from app.core.config import settings
 
 
 def websocket_origin_allowed(origin: str | None) -> bool:
-    if not origin:
+    if not origin or settings.ENVIRONMENT == "development":
         return True
     normalized = origin.rstrip("/")
     if normalized in settings.CORS_ORIGINS:
@@ -17,6 +17,7 @@ def websocket_origin_allowed(origin: str | None) -> bool:
         settings.CORS_ORIGIN_REGEX
         and re.fullmatch(settings.CORS_ORIGIN_REGEX, normalized)
     )
+
 
 
 @dataclass

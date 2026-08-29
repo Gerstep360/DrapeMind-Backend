@@ -16,7 +16,7 @@ alembic==1.16.4
 # Seguridad
 python-jose[cryptography]==3.5.0
 passlib[bcrypt]==1.7.4
-bcrypt==4.3.0
+bcrypt==4.0.1
 
 # Integracion Gemma y QR
 httpx==0.28.1

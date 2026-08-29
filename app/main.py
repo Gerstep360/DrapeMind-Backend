@@ -28,6 +28,7 @@ async def lifespan(application: FastAPI):
 tags_metadata = [
     {"name": "Autenticacion", "description": "Registro, login JWT y usuario actual."},
     {"name": "Catalogo y favoritos", "description": "Catalogo publico, busqueda, variantes y favoritos."},
+    {"name": "Sucursales e inventario", "description": "Disponibilidad física por sede y configuración protegida de inventario."},
     {"name": "IA - Gemma", "description": "Gemma usa exclusivamente tools controlados por FastAPI; nunca conecta a PostgreSQL."},
     {"name": "Administracion", "description": "Operaciones protegidas por rol ADMIN o VENDEDOR segun endpoint."},
 ]
@@ -52,7 +53,7 @@ app.add_middleware(
     allow_origin_regex=settings.CORS_ORIGIN_REGEX,
     allow_credentials=settings.CORS_ALLOW_CREDENTIALS,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "Accept", "X-Webhook-Signature", "X-Request-ID"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "X-Webhook-Signature", "X-Request-ID", "Idempotency-Key"],
     expose_headers=["X-Request-ID", "X-Process-Time-Ms"],
     max_age=600,
 )

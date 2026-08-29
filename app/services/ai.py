@@ -200,9 +200,13 @@ async def _completion(
     stream: bool = False,
     response_format: dict[str, Any] | None = None,
 ):
+    clean_messages = [
+        {"role": str(m.get("role", "user")), "content": str(m.get("content") or "")}
+        for m in messages
+    ]
     payload = {
         "model": settings.AI_MODEL,
-        "messages": messages,
+        "messages": clean_messages,
         "temperature": settings.AI_TEMPERATURE,
         "max_tokens": max_tokens or settings.AI_MAX_TOKENS,
         "stream": stream,
@@ -218,6 +222,14 @@ async def _completion(
                 json=payload,
                 headers=headers,
             )
+            if response.status_code == 400 and response_format:
+                logger.warning("400 con response_format en llama-server, reintentando sin response_format")
+                payload.pop("response_format", None)
+                response = await client.post(
+                    f"{settings.AI_BASE_URL.rstrip('/')}/chat/completions",
+                    json=payload,
+                    headers=headers,
+                )
             if response.status_code >= 400:
                 logger.error("LLM Error %d: %s", response.status_code, response.text)
             response.raise_for_status()
@@ -225,6 +237,7 @@ async def _completion(
         finally:
             await client.aclose()
     return client, payload, headers
+
 
 
 async def run_agent_socket(db: Session, user: User, message: str, session_id: int | None, send) -> None:
@@ -437,12 +450,15 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
                                 break
                             try:
                                 event = json.loads(raw)
-                                chunk = event["choices"][0]["delta"].get("content") or ""
+                                delta = event["choices"][0]["delta"]
+                                chunk = delta.get("content") or ""
                             except (json.JSONDecodeError, KeyError, IndexError):
                                 continue
                             if chunk:
                                 answer_parts.append(chunk)
                                 await send({"type": "token", "content": chunk})
+                except Exception as stream_err:
+                    logger.warning("Error durante streaming LLM: %s. Utilizando síntesis de respaldo.", stream_err)
                 finally:
                     await client.aclose()
 
@@ -507,14 +523,14 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
 
 def get_ai_session(db: Session, user_id: int, session_id: int | None) -> AISession:
     if session_id:
-        session = db.scalar(
-            select(AISession).where(AISession.id == session_id, AISession.usuario_id == user_id)
-        )
-        if not session:
-            raise HTTPException(404, "Sesion de IA no encontrada")
-        if session.estado != "ACTIVA":
-            raise HTTPException(409, "La sesion de IA esta cerrada")
-        return session
+        try:
+            session = db.scalar(
+                select(AISession).where(AISession.id == int(session_id), AISession.usuario_id == user_id)
+            )
+            if session and session.estado == "ACTIVA":
+                return session
+        except (ValueError, TypeError):
+            pass
     session = AISession(usuario_id=user_id, estado="ACTIVA")
     db.add(session)
     db.flush()

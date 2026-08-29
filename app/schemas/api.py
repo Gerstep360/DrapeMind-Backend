@@ -68,6 +68,58 @@ class AddressOut(AddressInput, ORMModel):
     created_at: datetime
 
 
+class CityInput(BaseModel):
+    nombre: str = Field(min_length=2, max_length=100)
+    departamento: str = Field(min_length=2, max_length=100)
+    activo: bool = True
+
+
+class CityOut(CityInput, ORMModel):
+    id: int
+
+
+class BranchInput(BaseModel):
+    ciudad_id: int
+    codigo: str = Field(pattern=r"^[A-Z0-9-]+$", min_length=2, max_length=30)
+    nombre: str = Field(min_length=2, max_length=120)
+    direccion: str = Field(min_length=5, max_length=250)
+    telefono: str | None = Field(default=None, max_length=30)
+    latitud: Decimal | None = Field(default=None, ge=-90, le=90)
+    longitud: Decimal | None = Field(default=None, ge=-180, le=180)
+    activo: bool = True
+
+
+class BranchOut(BranchInput, ORMModel):
+    id: int
+    ciudad: str | None = None
+    departamento: str | None = None
+
+
+class BranchStockInput(BaseModel):
+    variante_id: int
+    stock_total: int = Field(ge=0)
+    stock_minimo: int = Field(default=0, ge=0)
+    activo: bool = True
+
+
+class BranchStockOut(ORMModel):
+    sucursal_id: int
+    variante_id: int
+    producto_id: int
+    producto: str
+    sku: str
+    color: str
+    talla: str
+    stock_total: int
+    stock_reservado: int
+    stock_disponible: int
+    activo: bool
+
+
+class StaffAssignmentInput(BaseModel):
+    usuario_id: int
+
+
 class CategoryInput(BaseModel):
     nombre: str = Field(min_length=2, max_length=80)
     slug: str = Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$", max_length=80)
@@ -172,17 +224,47 @@ class CartOut(BaseModel):
     subtotal: Decimal
 
 
+class ReservationItemInput(BaseModel):
+    variante_id: int
+    cantidad: int = Field(default=1, ge=1, le=20)
+
+
 class ReservationCreate(BaseModel):
+    sucursal_id: int | None = None
+    items: list[ReservationItemInput] | None = Field(default=None, min_length=1, max_length=20)
     observacion: str | None = Field(default=None, max_length=300)
+
+    @model_validator(mode="after")
+    def unique_variants(self) -> "ReservationCreate":
+        if self.items:
+            ids = [item.variante_id for item in self.items]
+            if len(ids) != len(set(ids)):
+                raise ValueError("No repita variantes; use cantidad")
+        return self
 
 
 class ReservationOut(ORMModel):
     id: int
     codigo_publico: UUID
+    sucursal_id: int | None
     estado: str
     fecha_reserva: datetime
     vence_at: datetime
     observacion: str | None
+    preparado_por_id: int | None = None
+    preparado_at: datetime | None = None
+    atendido_por_id: int | None = None
+    atendido_at: datetime | None = None
+
+
+class ReservationItemOut(ORMModel):
+    variante_id: int
+    cantidad: int
+    precio_referencia: Decimal
+
+
+class ReservationDetail(ReservationOut):
+    items: list[ReservationItemOut] = Field(default_factory=list)
 
 
 class QRValidationRequest(BaseModel):
@@ -206,6 +288,7 @@ class OrderOut(ORMModel):
     id: int
     codigo_publico: UUID
     usuario_id: int | None = None
+    sucursal_id: int | None = None
     estado: str
     canal: str
     tipo_entrega: str
@@ -239,6 +322,7 @@ class PaymentOut(ORMModel):
     referencia_externa: str | None
     qr_payload: str | None
     created_at: datetime
+    paid_at: datetime | None = None
 
 
 class PaymentWebhook(BaseModel):
@@ -305,3 +389,6 @@ class ARConfig(BaseModel):
     available_sizes: list[str] = Field(default_factory=list)
     recommended_size: str | None = None
     material: str | None = None
+    available_variants: list[dict[str, Any]] = Field(default_factory=list)
+    tracking: dict[str, Any] = Field(default_factory=dict)
+    limitations: list[str] = Field(default_factory=list)

@@ -89,6 +89,13 @@ horizontalmente, ejecuta llama-server como servicio independiente y reemplaza el
 - PostgreSQL: <http://localhost:8000/health/ready>
 - Gemma/runtime: <http://localhost:8000/health/ai>
 
+Antes de iniciar una base existente, aplica la migración y actualiza los datos operativos:
+
+```powershell
+.\.venv\Scripts\alembic.exe upgrade head
+.\.venv\Scripts\python.exe scripts\seed_data.py
+```
+
 ## CORS y WebSockets
 
 `CORS_ORIGINS` es JSON estricto:
@@ -142,4 +149,5 @@ python -m pytest
 python -m ruff check app tests
 ```
 
-Consulta [ENDPOINTS.md](docs/ENDPOINTS.md) para rutas, roles y casos de uso.
+Consulta [CU01_20_BACKEND.md](docs/CU01_20_BACKEND.md) para la trazabilidad vigente de los primeros
+20 casos de uso y [ENDPOINTS.md](docs/ENDPOINTS.md) para el inventario extendido.

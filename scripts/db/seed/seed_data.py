@@ -14,14 +14,16 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Callable
 
-BACKEND_DIR = Path(__file__).resolve().parents[1]
+BACKEND_DIR = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(BACKEND_DIR))
+
 
 from sqlalchemy import delete, func, select
 from app.core.security import hash_password
 from app.db.session import SessionLocal
 from app.models.entities import (
-    Address, Category, Gender, Product, ProductVariant, Role, User, UserStatus,
+    Address, Branch, BranchStaff, BranchStock, Category, City, Gender, Product,
+    ProductVariant, Role, User, UserStatus,
 )
 
 
@@ -87,6 +89,22 @@ def seed_users(db, log_fn: Callable[[str], None] = print) -> list[User]:
             "rol": Role.VENDEDOR,
             "telefono": "71122334",
             "direccion": "Av. San Martín #450, Santa Cruz",
+        },
+        {
+            "nombre": "Elena Encargada",
+            "email": "encargado@drapemind.com",
+            "password": "Encargado12345!",
+            "rol": Role.ENCARGADO,
+            "telefono": "73344556",
+            "direccion": "Av. Banzer #1000, Santa Cruz",
+        },
+        {
+            "nombre": "Mateo Cajero",
+            "email": "cajero@drapemind.com",
+            "password": "Cajero12345!",
+            "rol": Role.CAJERO,
+            "telefono": "74455667",
+            "direccion": "Av. Banzer #1000, Santa Cruz",
         },
         {
             "nombre": "Maria Cliente VIP",
@@ -676,6 +694,7 @@ def seed_products(db, cat_map: dict[str, Category], log_fn: Callable[[str], None
         cat = cat_map.get(pdata["cat"])
         if not cat:
             continue
+        product_image = "/static/products/placeholder.svg"
 
         p = db.scalar(select(Product).where(Product.nombre == pdata["nombre"]))
         if not p:
@@ -691,7 +710,7 @@ def seed_products(db, cat_map: dict[str, Category], log_fn: Callable[[str], None
                 descripcion=pdata["desc"],
                 descripcion_ai=pdata["desc_ai"],
                 tags_ai=pdata["tags_ai"],
-                imagenes=["/static/products/sample1.jpg"],
+                imagenes=[product_image],
                 activo=True,
             )
             db.add(p)
@@ -709,6 +728,7 @@ def seed_products(db, cat_map: dict[str, Category], log_fn: Callable[[str], None
             p.descripcion = pdata["desc"]
             p.descripcion_ai = pdata["desc_ai"]
             p.tags_ai = pdata["tags_ai"]
+            p.imagenes = [product_image]
             p.activo = True
             log_fn(f"  = Producto actualizado: {p.nombre}")
 
@@ -738,6 +758,97 @@ def seed_products(db, cat_map: dict[str, Category], log_fn: Callable[[str], None
     log_fn(f"✨ Seeding completado: catálogo con {len(products_data)} productos configurados.")
 
 
+def seed_branches(db, log_fn: Callable[[str], None] = print) -> None:
+    city = db.scalar(
+        select(City).where(
+            City.nombre == "Santa Cruz de la Sierra",
+            City.departamento == "Santa Cruz",
+        )
+    )
+    if not city:
+        city = City(nombre="Santa Cruz de la Sierra", departamento="Santa Cruz", activo=True)
+        db.add(city)
+        db.flush()
+
+    branch_specs = [
+        ("SCZ-CENTRAL", "DrapeMind Central", "Av. San Martín, Equipetrol", "70000000"),
+        ("SCZ-NORTE", "DrapeMind Norte", "Av. Banzer, 4to anillo", "70000001"),
+    ]
+    branches: list[Branch] = []
+    for code, name, address, phone in branch_specs:
+        branch = db.scalar(select(Branch).where(Branch.codigo == code))
+        if not branch:
+            branch = Branch(
+                ciudad_id=city.id,
+                codigo=code,
+                nombre=name,
+                direccion=address,
+                telefono=phone,
+                activo=True,
+            )
+            db.add(branch)
+            db.flush()
+        branches.append(branch)
+
+    central, north = branches
+    for variant in db.scalars(select(ProductVariant).order_by(ProductVariant.id)):
+        total = variant.stock_total
+        central_row = db.scalar(
+            select(BranchStock).where(
+                BranchStock.sucursal_id == central.id,
+                BranchStock.variante_id == variant.id,
+            )
+        )
+        north_row = db.scalar(
+            select(BranchStock).where(
+                BranchStock.sucursal_id == north.id,
+                BranchStock.variante_id == variant.id,
+            )
+        )
+        reserved = (central_row.stock_reservado if central_row else 0) + (
+            north_row.stock_reservado if north_row else 0
+        )
+        total = max(total, reserved)
+        central_total = max(central_row.stock_reservado if central_row else 0, (total * 7 + 9) // 10)
+        central_total = min(total, central_total)
+        north_total = total - central_total
+        if not central_row:
+            central_row = BranchStock(
+                sucursal_id=central.id,
+                variante_id=variant.id,
+                stock_reservado=0,
+                stock_minimo=2,
+                activo=True,
+            )
+            db.add(central_row)
+        if not north_row:
+            north_row = BranchStock(
+                sucursal_id=north.id,
+                variante_id=variant.id,
+                stock_reservado=0,
+                stock_minimo=1,
+                activo=True,
+            )
+            db.add(north_row)
+        central_row.stock_total = central_total
+        north_row.stock_total = max(north_total, north_row.stock_reservado)
+        variant.stock_total = central_row.stock_total + north_row.stock_total
+        variant.stock_reservado = central_row.stock_reservado + north_row.stock_reservado
+
+    for user in db.scalars(
+        select(User).where(User.rol.in_([Role.VENDEDOR, Role.ENCARGADO, Role.CAJERO]))
+    ):
+        assignment = db.scalar(
+            select(BranchStaff).where(
+                BranchStaff.usuario_id == user.id,
+                BranchStaff.sucursal_id == central.id,
+            )
+        )
+        if not assignment:
+            db.add(BranchStaff(usuario_id=user.id, sucursal_id=central.id, activo=True))
+    log_fn("  + 2 sucursales, inventario por sede y personal operativo configurados")
+
+
 def run_full_seed(log_fn: Callable[[str], None] = print):
     """Ejecuta el seeding completo de toda la base de datos."""
     log_fn("🌱 Iniciando Seeding Extendido de DrapeMind...")
@@ -750,6 +861,9 @@ def run_full_seed(log_fn: Callable[[str], None] = print):
 
         log_fn("\n👔 3. Creando Catálogo Extenso de Productos y Variantes...")
         seed_products(db, cat_map, log_fn)
+
+        log_fn("\n🏬 4. Configurando Sucursales e Inventario...")
+        seed_branches(db, log_fn)
 
         db.commit()
     log_fn("\n🎉 ¡Base de datos de DrapeMind sembrada y actualizada exitosamente!")

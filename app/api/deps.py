@@ -41,6 +41,10 @@ def require_roles(*roles: Role) -> Callable:
     return dependency
 
 
+require_role = require_roles
+
+
+
 oauth2_scheme_optional = OAuth2PasswordBearer(
     tokenUrl=f"{settings.API_V1_PREFIX}/auth/token", auto_error=False
 )
@@ -64,5 +68,4 @@ def get_current_user_optional(
 CurrentUser = Depends(get_current_user)
 CurrentUserOptional = Depends(get_current_user_optional)
 AdminUser = Depends(require_roles(Role.ADMIN))
-StaffUser = Depends(require_roles(Role.ADMIN, Role.VENDEDOR))
-
+StaffUser = Depends(require_roles(Role.ADMIN, Role.VENDEDOR, Role.ENCARGADO, Role.CAJERO))

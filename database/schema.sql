@@ -9,7 +9,7 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE EXTENSION IF NOT EXISTS citext;
 
 -- ---------- ENUMS ----------
-CREATE TYPE rol_usuario AS ENUM ('CLIENTE', 'ADMIN', 'VENDEDOR');
+CREATE TYPE rol_usuario AS ENUM ('CLIENTE', 'ADMIN', 'VENDEDOR', 'ENCARGADO', 'CAJERO');
 CREATE TYPE estado_usuario AS ENUM ('ACTIVO', 'BLOQUEADO', 'INACTIVO');
 
 CREATE TYPE genero_objetivo AS ENUM ('HOMBRE', 'MUJER', 'UNISEX', 'OTRO');
@@ -28,6 +28,8 @@ CREATE TYPE tipo_movimiento_inventario AS ENUM (
 CREATE TYPE estado_reserva AS ENUM (
     'PENDIENTE',
     'CONFIRMADA',
+    'EN_PREPARACION',
+    'LISTA',
     'RETIRADA',
     'VENCIDA',
     'CANCELADA',
@@ -95,6 +97,50 @@ CREATE TABLE usuarios (
 
 CREATE TRIGGER trg_usuarios_updated_at
 BEFORE UPDATE ON usuarios
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- ============================================================
+-- 1B. CIUDADES, SUCURSALES Y PERSONAL
+-- ============================================================
+CREATE TABLE ciudades (
+    id              BIGSERIAL PRIMARY KEY,
+    nombre          VARCHAR(100) NOT NULL,
+    departamento    VARCHAR(100) NOT NULL,
+    activo          BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(nombre, departamento)
+);
+
+CREATE TABLE sucursales (
+    id              BIGSERIAL PRIMARY KEY,
+    ciudad_id       BIGINT NOT NULL REFERENCES ciudades(id) ON DELETE RESTRICT,
+    codigo          VARCHAR(30) NOT NULL UNIQUE,
+    nombre          VARCHAR(120) NOT NULL,
+    direccion       VARCHAR(250) NOT NULL,
+    telefono        VARCHAR(30),
+    latitud         NUMERIC(9,6),
+    longitud        NUMERIC(9,6),
+    activo          BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CHECK (latitud IS NULL OR latitud BETWEEN -90 AND 90),
+    CHECK (longitud IS NULL OR longitud BETWEEN -180 AND 180)
+);
+
+CREATE TABLE personal_sucursal (
+    id              BIGSERIAL PRIMARY KEY,
+    usuario_id      BIGINT NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    sucursal_id     BIGINT NOT NULL REFERENCES sucursales(id) ON DELETE CASCADE,
+    activo          BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(usuario_id, sucursal_id)
+);
+
+CREATE INDEX ix_personal_sucursal_usuario ON personal_sucursal(usuario_id, activo);
+CREATE TRIGGER trg_ciudades_updated_at BEFORE UPDATE ON ciudades
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+CREATE TRIGGER trg_sucursales_updated_at BEFORE UPDATE ON sucursales
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- ============================================================
@@ -210,12 +256,35 @@ CREATE TRIGGER trg_variantes_updated_at
 BEFORE UPDATE ON variantes_producto
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
+CREATE TABLE stock_sucursal (
+    id                  BIGSERIAL PRIMARY KEY,
+    sucursal_id         BIGINT NOT NULL REFERENCES sucursales(id) ON DELETE CASCADE,
+    variante_id         BIGINT NOT NULL REFERENCES variantes_producto(id) ON DELETE RESTRICT,
+    stock_total         INTEGER NOT NULL DEFAULT 0,
+    stock_reservado     INTEGER NOT NULL DEFAULT 0,
+    stock_minimo        INTEGER NOT NULL DEFAULT 0,
+    activo              BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CHECK (stock_total >= 0),
+    CHECK (stock_reservado >= 0),
+    CHECK (stock_minimo >= 0),
+    CHECK (stock_reservado <= stock_total),
+    UNIQUE(sucursal_id, variante_id)
+);
+
+CREATE INDEX ix_stock_sucursal_disponible
+ON stock_sucursal(sucursal_id, activo, variante_id);
+CREATE TRIGGER trg_stock_sucursal_updated_at BEFORE UPDATE ON stock_sucursal
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
 -- ============================================================
 -- 6. MOVIMIENTOS_INVENTARIO
 -- ============================================================
 CREATE TABLE movimientos_inventario (
     id                          BIGSERIAL PRIMARY KEY,
     variante_id                 BIGINT NOT NULL REFERENCES variantes_producto(id) ON DELETE RESTRICT,
+    sucursal_id                 BIGINT REFERENCES sucursales(id) ON DELETE SET NULL,
     tipo                        tipo_movimiento_inventario NOT NULL,
     cantidad                    INTEGER NOT NULL,
     stock_total_anterior        INTEGER NOT NULL,
@@ -292,11 +361,16 @@ CREATE TABLE reservas (
     id              BIGSERIAL PRIMARY KEY,
     codigo_publico  UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
     usuario_id      BIGINT NOT NULL REFERENCES usuarios(id) ON DELETE RESTRICT,
+    sucursal_id     BIGINT REFERENCES sucursales(id) ON DELETE RESTRICT,
     estado          estado_reserva NOT NULL DEFAULT 'PENDIENTE',
     fecha_reserva   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     vence_at        TIMESTAMPTZ NOT NULL,
     qr_token        UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
     observacion     VARCHAR(300),
+    preparado_por_id BIGINT REFERENCES usuarios(id) ON DELETE SET NULL,
+    preparado_at     TIMESTAMPTZ,
+    atendido_por_id  BIGINT REFERENCES usuarios(id) ON DELETE SET NULL,
+    atendido_at      TIMESTAMPTZ,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CHECK (vence_at > fecha_reserva)
@@ -304,6 +378,7 @@ CREATE TABLE reservas (
 
 CREATE INDEX ix_reservas_usuario_estado ON reservas(usuario_id, estado);
 CREATE INDEX ix_reservas_vence_at ON reservas(vence_at);
+CREATE INDEX ix_reservas_sucursal_estado ON reservas(sucursal_id, estado, vence_at);
 
 CREATE TRIGGER trg_reservas_updated_at
 BEFORE UPDATE ON reservas
@@ -334,6 +409,7 @@ CREATE TABLE pedidos (
     codigo_publico              UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
     usuario_id                  BIGINT NOT NULL REFERENCES usuarios(id) ON DELETE RESTRICT,
     reserva_id                  BIGINT UNIQUE REFERENCES reservas(id) ON DELETE SET NULL,
+    sucursal_id                 BIGINT REFERENCES sucursales(id) ON DELETE SET NULL,
     estado                      estado_pedido NOT NULL DEFAULT 'PENDIENTE_PAGO',
     canal                       canal_pedido NOT NULL,
     tipo_entrega                tipo_entrega NOT NULL,
@@ -363,6 +439,7 @@ CREATE TABLE pedidos (
 CREATE INDEX ix_pedidos_usuario_estado ON pedidos(usuario_id, estado);
 CREATE INDEX ix_pedidos_fecha ON pedidos(created_at DESC);
 CREATE INDEX ix_pedidos_estado_fecha ON pedidos(estado, created_at DESC);
+CREATE INDEX ix_pedidos_sucursal_estado ON pedidos(sucursal_id, estado);
 
 CREATE TRIGGER trg_pedidos_updated_at
 BEFORE UPDATE ON pedidos
@@ -408,6 +485,7 @@ CREATE TABLE pagos (
     moneda              CHAR(3) NOT NULL DEFAULT 'BOB',
     estado              estado_pago NOT NULL DEFAULT 'PENDIENTE',
     referencia_externa  VARCHAR(200),
+    idempotency_key     VARCHAR(100),
     qr_payload           TEXT,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     paid_at             TIMESTAMPTZ,
@@ -418,6 +496,9 @@ CREATE INDEX ix_pagos_pedido_estado ON pagos(pedido_id, estado);
 CREATE UNIQUE INDEX ux_pago_referencia_externa
 ON pagos(referencia_externa)
 WHERE referencia_externa IS NOT NULL;
+CREATE UNIQUE INDEX ux_pagos_idempotency_key
+ON pagos(idempotency_key)
+WHERE idempotency_key IS NOT NULL;
 
 -- ============================================================
 -- 14. FAVORITOS

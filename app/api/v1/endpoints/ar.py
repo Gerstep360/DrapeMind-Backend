@@ -1,13 +1,25 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user_optional
 from app.core.config import settings
 from app.db.session import get_db
-from app.models import Product, User
+from app.models import Product, ProductVariant, User
 from app.schemas.api import ARConfig
 
 router = APIRouter()
+
+
+@router.get("/capabilities", summary="Capacidades del probador virtual")
+def capabilities() -> dict:
+    return {
+        "mode": "2d-overlay",
+        "backend": ["asset-validation", "size-recommendation", "fabric-parameters"],
+        "mobile": ["camera", "pose-tracking", "rendering"],
+        "requires": ["camera_permission", "person_in_frame", "ar_asset"],
+        "supports_3d": False,
+    }
 
 
 @router.get(
@@ -48,8 +60,15 @@ def try_on_config(
         asset_url = first_img.get("url") if isinstance(first_img, dict) else str(first_img)
 
     # 2. Extraer tallas disponibles de las variantes activas
+    variants = list(
+        db.scalars(
+            select(ProductVariant)
+            .where(ProductVariant.producto_id == product.id, ProductVariant.activo.is_(True))
+            .order_by(ProductVariant.color, ProductVariant.talla)
+        )
+    )
     available_sizes: list[str] = []
-    for v in product.variantes or []:
+    for v in variants:
         if v.activo and v.talla and v.talla not in available_sizes:
             available_sizes.append(v.talla)
 
@@ -151,4 +170,25 @@ def try_on_config(
         available_sizes=available_sizes,
         recommended_size=recommended_size,
         material=product.material or "Tejido Sastrero DrapeMind",
+        available_variants=[
+            {
+                "variante_id": variant.id,
+                "sku": variant.sku,
+                "color": variant.color,
+                "talla": variant.talla,
+                "stock_disponible": variant.stock_total - variant.stock_reservado,
+                "imagen": variant.imagen,
+            }
+            for variant in variants
+            if variant.stock_total > variant.stock_reservado
+        ],
+        tracking={
+            "landmarks": ["left_shoulder", "right_shoulder", "left_hip", "right_hip"],
+            "mirror": True,
+            "smoothing": 0.7,
+        },
+        limitations=[
+            "La superposición 2D orienta sobre color y silueta; no sustituye una prueba física.",
+            "La precisión depende de iluminación, encuadre y medidas ingresadas.",
+        ],
     )

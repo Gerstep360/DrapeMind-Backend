@@ -1,0 +1,2 @@
+# DrapeMind local AI model folder
+# Binary weights (*.gguf) are ignored by git to keep repository lightweight.

@@ -38,9 +38,13 @@ def list_addresses(
 def create_address(
     payload: AddressInput, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ) -> Address:
-    if payload.es_principal:
+    has_address = db.scalar(select(Address.id).where(Address.usuario_id == current_user.id)) is not None
+    data = payload.model_dump()
+    if not has_address:
+        data["es_principal"] = True
+    if data["es_principal"]:
         db.execute(update(Address).where(Address.usuario_id == current_user.id).values(es_principal=False))
-    address = Address(usuario_id=current_user.id, **payload.model_dump())
+    address = Address(usuario_id=current_user.id, **data)
     db.add(address)
     db.commit()
     db.refresh(address)
@@ -71,6 +75,17 @@ def delete_address(
     address = db.scalar(select(Address).where(Address.id == address_id, Address.usuario_id == current_user.id))
     if not address:
         raise HTTPException(404, "Direccion no encontrada")
+    was_primary = address.es_principal
     db.delete(address)
+    db.flush()
+    if was_primary:
+        replacement = db.scalar(
+            select(Address)
+            .where(Address.usuario_id == current_user.id)
+            .order_by(Address.id)
+            .limit(1)
+        )
+        if replacement:
+            replacement.es_principal = True
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

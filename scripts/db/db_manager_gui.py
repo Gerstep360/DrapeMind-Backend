@@ -27,7 +27,7 @@ try:
 except Exception:
     pass
 
-BACKEND_DIR = Path(__file__).resolve().parents[1]
+BACKEND_DIR = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(BACKEND_DIR))
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -44,7 +44,11 @@ from app.core.security import hash_password
 from app.models.entities import (
     Address, Category, Gender, Product, ProductVariant, Role, User, UserStatus,
 )
-from scripts.seed_data import run_full_seed, seed_categories, seed_products, seed_users
+try:
+    from scripts.db.seed_data import run_full_seed, seed_categories, seed_products, seed_users
+except ImportError:
+    from .seed_data import run_full_seed, seed_categories, seed_products, seed_users
+
 
 
 class DrapeMindDBManager(tk.Tk):

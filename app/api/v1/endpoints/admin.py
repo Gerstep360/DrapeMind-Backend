@@ -198,12 +198,16 @@ async def assisted_product(
 
 @router.get("/reservations", response_model=list[ReservationOut], summary="Gestionar reservas")
 def all_reservations(
-    state: str | None = None, staff: User = Depends(require_roles(Role.ADMIN, Role.VENDEDOR)),
+    state: str | None = None,
+    sucursal_id: int | None = None,
+    staff: User = Depends(require_roles(Role.ADMIN, Role.VENDEDOR, Role.ENCARGADO)),
     db: Session = Depends(get_db),
 ) -> list[Reservation]:
     stmt = select(Reservation)
     if state:
         stmt = stmt.where(Reservation.estado == state)
+    if sucursal_id:
+        stmt = stmt.where(Reservation.sucursal_id == sucursal_id)
     return list(db.scalars(stmt.order_by(Reservation.created_at.desc()).limit(200)))
 
 
@@ -216,12 +220,16 @@ def expire_reservations(
 
 @router.get("/orders", response_model=list[OrderOut], summary="Gestionar pedidos")
 def all_orders(
-    state: str | None = None, staff: User = Depends(require_roles(Role.ADMIN, Role.VENDEDOR)),
+    state: str | None = None,
+    sucursal_id: int | None = None,
+    staff: User = Depends(require_roles(Role.ADMIN, Role.VENDEDOR, Role.ENCARGADO, Role.CAJERO)),
     db: Session = Depends(get_db),
 ) -> list[Order]:
     stmt = select(Order)
     if state:
         stmt = stmt.where(Order.estado == state)
+    if sucursal_id:
+        stmt = stmt.where(Order.sucursal_id == sucursal_id)
     return list(db.scalars(stmt.order_by(Order.created_at.desc()).limit(200)))
 
 

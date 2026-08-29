@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
@@ -10,21 +11,39 @@ from app.services.model_runtime import ModelRuntimeError
 from app.services.realtime import event_hub, websocket_origin_allowed
 
 router = APIRouter()
+logger = logging.getLogger("drapemind.ws")
 
 
 async def _authenticate(socket: WebSocket) -> dict:
-    if not websocket_origin_allowed(socket.headers.get("origin")):
-        await socket.close(code=1008, reason="Origin no permitido")
-        raise WebSocketDisconnect(code=1008)
+    origin = socket.headers.get("origin")
+    if not websocket_origin_allowed(origin):
+        logger.warning("WS handshake rejected: Origin '%s' no permitido en CORS", origin)
+        await socket.close(code=4403, reason="Origin no permitido")
+        raise WebSocketDisconnect(code=4403)
     await socket.accept()
     try:
         message = await asyncio.wait_for(socket.receive_json(), timeout=10)
         if message.get("type") != "auth":
+            logger.warning("WS handshake rejected: Primer mensaje no es auth (%s)", message.get("type"))
             raise ValueError("El primer mensaje debe ser auth")
-        return decode_access_token(str(message.get("token", "")))
-    except (asyncio.TimeoutError, ValueError, TypeError, HTTPException, Exception):
-        await socket.close(code=1008, reason="Autenticacion invalida")
-        raise WebSocketDisconnect(code=1008)
+        token = str(message.get("token", "")).strip()
+        if not token:
+            logger.warning("WS handshake rejected: Token vacío")
+            raise ValueError("Token vacío")
+        return decode_access_token(token)
+    except Exception as exc:
+        logger.info("WS auth rejected: %s", exc)
+        try:
+            await socket.send_json({
+                "type": "error",
+                "code": "AUTH_INVALID",
+                "message": "Sesión inválida o expirada. Por favor vuelve a iniciar sesión.",
+            })
+        except Exception:
+            pass
+        await socket.close(code=4401, reason="Autenticacion invalida")
+        raise WebSocketDisconnect(code=4401)
+
 
 
 @router.websocket("/ai")
@@ -36,7 +55,15 @@ async def ai_socket(socket: WebSocket) -> None:
     with SessionLocal() as db:
         user = db.get(User, int(payload["sub"]))
         if not user or user.estado != UserStatus.ACTIVO:
-            await socket.close(code=1008, reason="Usuario inactivo")
+            try:
+                await socket.send_json({
+                    "type": "error",
+                    "code": "AUTH_INVALID",
+                    "message": "Usuario inactivo o no encontrado. Por favor inicia sesión nuevamente.",
+                })
+            except Exception:
+                pass
+            await socket.close(code=4401, reason="Usuario inactivo")
             return
 
         async def safe_send(msg: dict) -> None:
@@ -98,7 +125,15 @@ async def events_socket(socket: WebSocket) -> None:
     with SessionLocal() as db:
         user = db.get(User, int(payload["sub"]))
         if not user or user.estado != UserStatus.ACTIVO:
-            await socket.close(code=1008, reason="Usuario inactivo")
+            try:
+                await socket.send_json({
+                    "type": "error",
+                    "code": "AUTH_INVALID",
+                    "message": "Usuario inactivo o no encontrado. Por favor inicia sesión nuevamente.",
+                })
+            except Exception:
+                pass
+            await socket.close(code=4401, reason="Usuario inactivo")
             return
         await event_hub.connect(socket, user.id, user.rol.value)
         await socket.send_json({"type": "connected", "channel": "events"})

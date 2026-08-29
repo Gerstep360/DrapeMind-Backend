@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     AI_TIMEOUT_SECONDS: float = 90.0
     AI_MAX_TOKENS: int = 1024
     AI_TEMPERATURE: float = 0.35
-    RESERVATION_TTL_MINUTES: int = 30
+    RESERVATION_TTL_MINUTES: int = 2880
     PAYMENT_PROVIDER: Literal["mock", "external"] = "mock"
     PAYMENT_WEBHOOK_SECRET: str = "change-me-payment-webhook-secret"
     AR_ASSET_BASE_URL: str = "http://localhost:8000/static/ar"

@@ -5,7 +5,7 @@ from pathlib import Path
 
 from sqlalchemy import func, select
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from app.core.security import hash_password  # noqa: E402
 from app.db.session import SessionLocal  # noqa: E402
@@ -15,11 +15,12 @@ from app.models import Role, User, UserStatus  # noqa: E402
 def main() -> None:
     if len(sys.argv) == 1 or "--gui" in sys.argv:
         try:
-            from scripts.user_manager_gui import main as run_gui
+            from scripts.db.user_manager_gui import main as run_gui
         except ImportError:
             from user_manager_gui import main as run_gui
         run_gui()
         return
+
 
     parser = argparse.ArgumentParser(description="Crea un usuario interno DrapeMind")
     parser.add_argument("--gui", action="store_true", help="Abrir la interfaz grafica interactiva")

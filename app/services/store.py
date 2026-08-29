@@ -8,8 +8,9 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models import (
-    Address, Cart, CartItem, InventoryMovement, Order, OrderItem, Payment,
-    Product, ProductVariant, Reservation, ReservationItem, User,
+    Address, Branch, BranchStaff, BranchStock, Cart, CartItem, InventoryMovement,
+    Order, OrderItem, Payment, Product, ProductVariant, Reservation,
+    ReservationItem, Role, User,
 )
 
 
@@ -410,51 +411,133 @@ def _movement(variant: ProductVariant, movement_type: str, quantity: int, user_i
     )
 
 
-def create_reservation_from_cart(db: Session, user_id: int, observation: str | None) -> Reservation:
+def _sync_variant_inventory(db: Session, variant: ProductVariant) -> None:
+    totals = db.execute(
+        select(
+            func.coalesce(func.sum(BranchStock.stock_total), 0),
+            func.coalesce(func.sum(BranchStock.stock_reservado), 0),
+        ).where(BranchStock.variante_id == variant.id, BranchStock.activo.is_(True))
+    ).one()
+    variant.stock_total = int(totals[0])
+    variant.stock_reservado = int(totals[1])
+
+
+def _resolve_branch(db: Session, branch_id: int | None) -> Branch:
+    if branch_id is not None:
+        branch = db.scalar(select(Branch).where(Branch.id == branch_id, Branch.activo.is_(True)))
+    else:
+        branch = db.scalar(select(Branch).where(Branch.activo.is_(True)).order_by(Branch.id))
+    if not branch:
+        raise HTTPException(409, "No existe una sucursal activa para realizar la reserva")
+    return branch
+
+
+def staff_can_access_branch(db: Session, user: User, branch_id: int | None) -> bool:
+    if user.rol == Role.ADMIN:
+        return True
+    if branch_id is None:
+        return False
+    return db.scalar(
+        select(BranchStaff.id).where(
+            BranchStaff.usuario_id == user.id,
+            BranchStaff.sucursal_id == branch_id,
+            BranchStaff.activo.is_(True),
+        )
+    ) is not None
+
+
+def create_reservation_from_cart(
+    db: Session,
+    user_id: int,
+    observation: str | None,
+    branch_id: int | None = None,
+    requested_items: list[tuple[int, int]] | None = None,
+) -> Reservation:
     expire_due_reservations(db)
-    cart = get_active_cart(db, user_id, create=False)
-    if not cart:
-        raise HTTPException(409, "El carrito esta vacio")
-    items = db.scalars(select(CartItem).where(CartItem.carrito_id == cart.id)).all()
-    if not items:
-        raise HTTPException(409, "El carrito esta vacio")
+    branch = _resolve_branch(db, branch_id)
+    cart = None
+    source_items: list[tuple[int, int, Decimal]] = []
+    if requested_items:
+        for variant_id, quantity in requested_items:
+            variant = db.get(ProductVariant, variant_id)
+            product = db.get(Product, variant.producto_id) if variant else None
+            if not variant or not variant.activo or not product or not product.activo:
+                raise HTTPException(404, f"Variante {variant_id} no disponible")
+            source_items.append((variant.id, quantity, product.precio))
+    else:
+        cart = get_active_cart(db, user_id, create=False)
+        if cart:
+            cart_items = db.scalars(select(CartItem).where(CartItem.carrito_id == cart.id)).all()
+            source_items = [
+                (item.variante_id, item.cantidad, item.precio_referencia)
+                for item in cart_items
+            ]
+    if not source_items:
+        raise HTTPException(409, "Debe enviar prendas o tener productos en el carrito")
     reservation = Reservation(
         usuario_id=user_id,
+        sucursal_id=branch.id,
         vence_at=datetime.now(timezone.utc) + timedelta(minutes=settings.RESERVATION_TTL_MINUTES),
         observacion=observation,
     )
     db.add(reservation)
     db.flush()
-    for item in items:
-        variant = db.scalar(select(ProductVariant).where(ProductVariant.id == item.variante_id).with_for_update())
-        available = variant.stock_total - variant.stock_reservado
-        if item.cantidad > available:
+    for variant_id, quantity, reference_price in source_items:
+        variant = db.scalar(select(ProductVariant).where(ProductVariant.id == variant_id).with_for_update())
+        branch_stock = db.scalar(
+            select(BranchStock).where(
+                BranchStock.sucursal_id == branch.id,
+                BranchStock.variante_id == variant_id,
+                BranchStock.activo.is_(True),
+            ).with_for_update()
+        )
+        if not branch_stock:
             db.rollback()
-            raise HTTPException(409, f"Stock insuficiente para variante {variant.sku}")
+            raise HTTPException(409, f"La variante {variant.sku} no está disponible en {branch.nombre}")
+        available = branch_stock.stock_total - branch_stock.stock_reservado
+        if quantity > available:
+            db.rollback()
+            raise HTTPException(409, f"Stock insuficiente para {variant.sku} en {branch.nombre}")
         previous_reserved = variant.stock_reservado
-        variant.stock_reservado += item.cantidad
-        movement = _movement(variant, "RESERVA", item.cantidad, user_id, "RESERVA", reservation.id)
+        branch_stock.stock_reservado += quantity
+        _sync_variant_inventory(db, variant)
+        movement = _movement(variant, "RESERVA", quantity, user_id, "RESERVA", reservation.id)
+        movement.sucursal_id = branch.id
         movement.stock_reservado_anterior = previous_reserved
         db.add(movement)
         db.add(ReservationItem(
             reserva_id=reservation.id, variante_id=variant.id,
-            cantidad=item.cantidad, precio_referencia=item.precio_referencia,
+            cantidad=quantity, precio_referencia=reference_price,
         ))
-    cart.estado = "CONVERTIDO"
+    if cart:
+        cart.estado = "CONVERTIDO"
     db.commit()
     db.refresh(reservation)
     return reservation
 
 
 def cancel_reservation(db: Session, reservation: Reservation, actor_id: int) -> Reservation:
-    if reservation.estado not in {"PENDIENTE", "CONFIRMADA"}:
+    if reservation.estado not in {"PENDIENTE", "CONFIRMADA", "EN_PREPARACION", "LISTA"}:
         raise HTTPException(409, "La reserva ya no se puede cancelar")
     items = db.scalars(select(ReservationItem).where(ReservationItem.reserva_id == reservation.id)).all()
     for item in items:
         variant = db.scalar(select(ProductVariant).where(ProductVariant.id == item.variante_id).with_for_update())
         previous_reserved = variant.stock_reservado
-        variant.stock_reservado = max(0, variant.stock_reservado - item.cantidad)
+        branch_stock = None
+        if reservation.sucursal_id is not None:
+            branch_stock = db.scalar(
+                select(BranchStock).where(
+                    BranchStock.sucursal_id == reservation.sucursal_id,
+                    BranchStock.variante_id == item.variante_id,
+                ).with_for_update()
+            )
+        if branch_stock:
+            branch_stock.stock_reservado = max(0, branch_stock.stock_reservado - item.cantidad)
+            _sync_variant_inventory(db, variant)
+        else:
+            variant.stock_reservado = max(0, variant.stock_reservado - item.cantidad)
         movement = _movement(variant, "LIBERACION_RESERVA", -item.cantidad, actor_id, "RESERVA", reservation.id)
+        movement.sucursal_id = reservation.sucursal_id
         movement.stock_reservado_anterior = previous_reserved
         db.add(movement)
     reservation.estado = "CANCELADA"
@@ -468,7 +551,7 @@ def expire_due_reservations(db: Session, limit: int = 100) -> int:
     due = db.scalars(
         select(Reservation)
         .where(
-            Reservation.estado.in_(["PENDIENTE", "CONFIRMADA"]),
+            Reservation.estado.in_(["PENDIENTE", "CONFIRMADA", "EN_PREPARACION", "LISTA"]),
             Reservation.vence_at <= datetime.now(timezone.utc),
         )
         .order_by(Reservation.vence_at)
@@ -484,12 +567,25 @@ def expire_due_reservations(db: Session, limit: int = 100) -> int:
                 select(ProductVariant).where(ProductVariant.id == item.variante_id).with_for_update()
             )
             previous_reserved = variant.stock_reservado
-            variant.stock_reservado = max(0, variant.stock_reservado - item.cantidad)
+            branch_stock = None
+            if reservation.sucursal_id is not None:
+                branch_stock = db.scalar(
+                    select(BranchStock).where(
+                        BranchStock.sucursal_id == reservation.sucursal_id,
+                        BranchStock.variante_id == item.variante_id,
+                    ).with_for_update()
+                )
+            if branch_stock:
+                branch_stock.stock_reservado = max(0, branch_stock.stock_reservado - item.cantidad)
+                _sync_variant_inventory(db, variant)
+            else:
+                variant.stock_reservado = max(0, variant.stock_reservado - item.cantidad)
             movement = _movement(
                 variant, "LIBERACION_RESERVA", -item.cantidad,
                 reservation.usuario_id, "RESERVA", reservation.id,
             )
             movement.stock_reservado_anterior = previous_reserved
+            movement.sucursal_id = reservation.sucursal_id
             movement.observacion = "Liberacion automatica por vencimiento"
             db.add(movement)
         reservation.estado = "VENCIDA"
@@ -546,12 +642,13 @@ def checkout_cart(db: Session, user: User, delivery_type: str, address_id: int |
 
 
 def convert_reservation_to_order(db: Session, reservation: Reservation, actor_id: int) -> Order:
-    if reservation.estado not in {"PENDIENTE", "CONFIRMADA"}:
+    if reservation.estado not in {"CONFIRMADA", "EN_PREPARACION", "LISTA", "RETIRADA"}:
         raise HTTPException(409, "La reserva no se puede convertir")
     items = db.scalars(select(ReservationItem).where(ReservationItem.reserva_id == reservation.id)).all()
     subtotal = sum((item.precio_referencia * item.cantidad for item in items), Decimal("0.00"))
     order = Order(
-        usuario_id=reservation.usuario_id, reserva_id=reservation.id, estado="PENDIENTE_PAGO",
+        usuario_id=reservation.usuario_id, reserva_id=reservation.id,
+        sucursal_id=reservation.sucursal_id, estado="PENDIENTE_PAGO",
         canal="TIENDA", tipo_entrega="TIENDA", subtotal=subtotal, descuento=0,
         costo_envio=0, total=subtotal,
     )
@@ -560,13 +657,29 @@ def convert_reservation_to_order(db: Session, reservation: Reservation, actor_id
     for item in items:
         variant = db.scalar(select(ProductVariant).where(ProductVariant.id == item.variante_id).with_for_update())
         product = db.get(Product, variant.producto_id)
-        if variant.stock_reservado < item.cantidad or variant.stock_total < item.cantidad:
+        branch_stock = None
+        if reservation.sucursal_id is not None:
+            branch_stock = db.scalar(
+                select(BranchStock).where(
+                    BranchStock.sucursal_id == reservation.sucursal_id,
+                    BranchStock.variante_id == item.variante_id,
+                ).with_for_update()
+            )
+        reserved = branch_stock.stock_reservado if branch_stock else variant.stock_reservado
+        total = branch_stock.stock_total if branch_stock else variant.stock_total
+        if reserved < item.cantidad or total < item.cantidad:
             db.rollback()
             raise HTTPException(409, f"Stock reservado inconsistente para {variant.sku}")
         previous_total, previous_reserved = variant.stock_total, variant.stock_reservado
-        variant.stock_total -= item.cantidad
-        variant.stock_reservado -= item.cantidad
+        if branch_stock:
+            branch_stock.stock_total -= item.cantidad
+            branch_stock.stock_reservado -= item.cantidad
+            _sync_variant_inventory(db, variant)
+        else:
+            variant.stock_total -= item.cantidad
+            variant.stock_reservado -= item.cantidad
         movement = _movement(variant, "VENTA", -item.cantidad, actor_id, "PEDIDO", order.id)
+        movement.sucursal_id = reservation.sucursal_id
         movement.stock_total_anterior = previous_total
         movement.stock_reservado_anterior = previous_reserved
         db.add(movement)
@@ -578,20 +691,33 @@ def convert_reservation_to_order(db: Session, reservation: Reservation, actor_id
             descuento=0, subtotal=item.precio_referencia * item.cantidad,
         ))
     reservation.estado = "CONVERTIDA"
+    reservation.atendido_por_id = actor_id
+    reservation.atendido_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(order)
     return order
 
 
-def create_payment(db: Session, order: Order, method: str) -> Payment:
+def create_payment(
+    db: Session, order: Order, method: str, idempotency_key: str | None = None
+) -> Payment:
     if order.estado != "PENDIENTE_PAGO":
         raise HTTPException(409, "El pedido no esta pendiente de pago")
+    if idempotency_key:
+        existing = db.scalar(
+            select(Payment).where(Payment.idempotency_key == idempotency_key)
+        )
+        if existing:
+            if existing.pedido_id != order.id or existing.metodo != method:
+                raise HTTPException(409, "Idempotency-Key ya fue usada con otra operación")
+            return existing
     reference = f"DM-{order.id}-{uuid4().hex[:12]}"
     payment = Payment(
         pedido_id=order.id, metodo=method,
         proveedor="MOCK" if settings.PAYMENT_PROVIDER == "mock" else "EXTERNAL",
         monto=order.total, moneda="BOB", estado="PENDIENTE",
         referencia_externa=reference,
+        idempotency_key=idempotency_key,
         qr_payload=f"drapemind://pay/{reference}" if method == "QR" else None,
     )
     db.add(payment)

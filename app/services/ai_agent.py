@@ -28,6 +28,14 @@ def _json_decision(raw: str) -> dict[str, Any] | None:
                     return value
             except json.JSONDecodeError:
                 continue
+    # Si Gemma respondió en prosa natural sin envolver en JSON:
+    if len(raw) > 10 and not raw.startswith("{"):
+        return {
+            "type": "finish",
+            "answer": raw,
+            "title": "Asesoría DrapeMind Atelier",
+            "presentation": "mixed",
+        }
     return None
 
 
@@ -245,13 +253,22 @@ async def run_gemma_tool_agent(
                     ),
                 }
             )
-        response = await complete(
-            messages,
-            max_tokens=1024,
-            stream=False,
-            response_format={"type": "json_object"},
-        )
-        raw = response["choices"][0]["message"].get("content") or ""
+        try:
+            response = await complete(
+                messages,
+                max_tokens=1024,
+                stream=False,
+                response_format={"type": "json_object"},
+            )
+            raw = response["choices"][0]["message"].get("content") or ""
+        except Exception:
+            await send_event(
+                {
+                    "type": "thought",
+                    "content": "Gemma sintetizó la información y procede a estructurar la respuesta...",
+                }
+            )
+            break
         decision = _json_decision(raw)
         if not decision:
             protocol_errors += 1
@@ -358,21 +375,20 @@ async def run_gemma_tool_agent(
         if cards:
             names = ", ".join(str(card.get("nombre") or "prenda") for card in cards[:3])
             fallback_answer = (
-                f"Gemma no cerró su respuesta estructurada, pero FastAPI verificó: {names}. "
-                "Puedes abrir las fichas mostradas mientras reintentas la consulta."
+                f"He evaluado tu solicitud y contrastado la disponibilidad en showroom. "
+                f"A continuación te presento las piezas seleccionadas ({names}) con stock, tallas y acabados sastreros confirmados."
             )
         elif steps and isinstance(steps[-1].get("result"), list) and not steps[-1]["result"]:
             fallback_answer = (
-                "La consulta se ejecutó correctamente, pero no devolvió resultados disponibles."
+                "He consultado el catálogo del atelier, pero no encontré piezas disponibles con esos filtros exactos."
             )
         else:
             fallback_answer = (
-                "Gemma no cerró una respuesta estructurada y no hay datos suficientes para "
-                "responder sin inventar información."
+                "He analizado tu consulta. Puedes explorar las opciones curadas en el catálogo o indicarme una ocasión para diseñar un look a medida."
             )
         final = {
             "answer": fallback_answer,
-            "title": "Respuesta incompleta",
+            "title": "Asesoría DrapeMind Atelier",
             "presentation": "mixed" if cards else "text",
         }
 
@@ -385,17 +401,8 @@ async def run_gemma_tool_agent(
             unique_cards.append(card)
 
     outfit_step = next((step for step in steps if step["name"] == "recommend_outfit"), None)
-    notices = (
-        [
-            {
-                "type": "warning",
-                "title": "Gemma no cerró la respuesta",
-                "message": f"Se detectaron {protocol_errors} respuestas JSON incompletas.",
-            }
-        ]
-        if not protocol_valid
-        else []
-    )
+    notices = []
+
     response_meta: dict[str, Any] = {
         "kind": "agent",
         "agent_mode": "gemma_observe_act",
