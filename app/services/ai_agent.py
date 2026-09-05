@@ -1,3 +1,4 @@
+import asyncio
 import json
 import re
 from typing import Any, Awaitable, Callable
@@ -12,6 +13,29 @@ from app.services.store import get_product_detail
 
 CompleteFn = Callable[..., Awaitable[dict[str, Any]]]
 EventFn = Callable[[dict[str, Any]], Awaitable[None]]
+
+
+async def _with_keepalive(coro: Awaitable[Any], emit: EventFn | None, thoughts: list[str], interval: float = 6.0) -> Any:
+    async def _ticker():
+        idx = 0
+        while True:
+            await asyncio.sleep(interval)
+            if emit:
+                try:
+                    await emit({"type": "thought", "content": thoughts[idx % len(thoughts)]})
+                except Exception:
+                    pass
+            idx += 1
+
+    ticker_task = asyncio.create_task(_ticker())
+    try:
+        return await coro
+    finally:
+        ticker_task.cancel()
+        try:
+            await ticker_task
+        except asyncio.CancelledError:
+            pass
 
 
 def _json_decision(raw: str) -> dict[str, Any] | None:
@@ -254,11 +278,21 @@ async def run_gemma_tool_agent(
                 }
             )
         try:
-            response = await complete(
-                messages,
-                max_tokens=1024,
-                stream=False,
-                response_format={"type": "json_object"},
+            agent_thoughts = [
+                "Altair está evaluando tu consulta en el showroom...",
+                "Examinando siluetas y combinaciones disponibles...",
+                "Verificando disponibilidad de piezas atelier...",
+            ]
+            response = await _with_keepalive(
+                complete(
+                    messages,
+                    max_tokens=1024,
+                    stream=False,
+                    response_format={"type": "json_object"},
+                ),
+                emit=emit,
+                thoughts=agent_thoughts,
+                interval=5.0,
             )
             raw = response["choices"][0]["message"].get("content") or ""
         except Exception:

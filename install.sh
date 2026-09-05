@@ -387,7 +387,7 @@ Environment="PATH=/usr/local/bin:/usr/bin:/bin:${BACKEND_DIR}/.venv/bin"
 Environment="LLAMA_SERVER_PATH=/usr/local/bin/llama-server"
 Environment="LD_LIBRARY_PATH=/usr/local/bin:/usr/local/lib"
 Environment="GGML_BACKEND_PATH=/usr/local/bin"
-ExecStart=${BACKEND_DIR}/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port ${BACKEND_PORT} --workers 1 --proxy-headers --forwarded-allow-ips=127.0.0.1
+ExecStart=${BACKEND_DIR}/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port ${BACKEND_PORT} --workers 1 --proxy-headers --forwarded-allow-ips=127.0.0.1 --ws-ping-interval 60 --ws-ping-timeout 300 --timeout-keep-alive 60
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=30
