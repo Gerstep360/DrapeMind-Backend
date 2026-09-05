@@ -203,12 +203,23 @@ download_ai_models() {
 setup_systemd() {
     log_info "Configurando servicio systemd (drapemind-backend.service)..."
 
-    if ! id -u drapemind >/dev/null 2>&1; then
-        useradd -r -s /bin/false -d "${BACKEND_DIR}" drapemind || true
+    local SERVICE_USER="drapemind"
+    local SERVICE_GROUP="drapemind"
+
+    # Si el proyecto se encuentra dentro de /root, el servicio debe ejecutarse como root
+    # porque los usuarios estandar no tienen permisos para acceder o atravesar /root
+    if [[ "${BACKEND_DIR}" == /root* ]]; then
+        log_warn "El proyecto está dentro de /root. Se ejecutará con usuario root para evitar errores de permisos (CHDIR)."
+        SERVICE_USER="root"
+        SERVICE_GROUP="root"
+    else
+        if ! id -u drapemind >/dev/null 2>&1; then
+            useradd -r -s /bin/false -d "${BACKEND_DIR}" drapemind || true
+        fi
+        chown -R drapemind:drapemind "${BACKEND_DIR}/logs" "${BACKEND_DIR}/ai_models" 2>/dev/null || true
     fi
 
     mkdir -p "${BACKEND_DIR}/logs" "${BACKEND_DIR}/ai_models"
-    chown -R drapemind:drapemind "${BACKEND_DIR}/logs" "${BACKEND_DIR}/ai_models" 2>/dev/null || true
     chmod -R 775 "${BACKEND_DIR}/logs" 2>/dev/null || true
 
     local SERVICE_DEST="/etc/systemd/system/drapemind-backend.service"
@@ -221,8 +232,8 @@ Wants=postgresql.service
 
 [Service]
 Type=simple
-User=drapemind
-Group=drapemind
+User=${SERVICE_USER}
+Group=${SERVICE_GROUP}
 WorkingDirectory=${BACKEND_DIR}
 EnvironmentFile=${BACKEND_DIR}/.env
 ExecStart=${BACKEND_DIR}/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port ${BACKEND_PORT} --workers 1 --proxy-headers --forwarded-allow-ips=127.0.0.1
@@ -246,8 +257,31 @@ EOF
     if systemctl is-active --quiet drapemind-backend.service; then
         log_success "Servicio drapemind-backend activo en puerto ${BACKEND_PORT}."
     else
-        log_warn "El servicio inició con observaciones. Revisa con: journalctl -u drapemind-backend -n 30"
+        log_error "El servicio no pudo iniciar. Mostrando últimos logs:"
+        journalctl -u drapemind-backend -n 25 --no-pager || true
     fi
+}
+
+update_backend_code() {
+    log_info "Actualizando backend con los cambios más recientes..."
+    cd "${BACKEND_DIR}"
+    git pull || log_warn "Git pull no se pudo completar automáticamente (revisa si hay cambios sin commitear)."
+
+    log_info "Instalando paquetes actualizados..."
+    "${BACKEND_DIR}/.venv/bin/pip" install --quiet -r requirements.txt || true
+
+    log_info "Aplicando migraciones de base de datos..."
+    "${BACKEND_DIR}/.venv/bin/python" -m alembic upgrade head || true
+
+    log_info "Reiniciando servicio backend..."
+    setup_systemd
+    verify_backend
+}
+
+view_logs() {
+    echo "Mostrando logs en tiempo real (Presiona Ctrl+C para salir)..."
+    sleep 1
+    journalctl -u drapemind-backend -f -n 40
 }
 
 verify_backend() {
@@ -313,6 +347,12 @@ case "${1:-}" in
     --service)
         setup_systemd
         ;;
+    --update)
+        update_backend_code
+        ;;
+    --logs)
+        view_logs
+        ;;
     --check)
         verify_backend
         ;;
@@ -323,13 +363,15 @@ case "${1:-}" in
         banner
         echo "Selecciona una opción para el Backend:"
         echo "  1) Instalación completa de Backend (Recomendado)"
-        echo "  2) Solo configurar Base de Datos PostgreSQL"
-        echo "  3) Solo descargar Modelos Gemma 4 desde Hugging Face"
-        echo "  4) Solo configurar y reiniciar Servicio Systemd"
-        echo "  5) Verificar estado de salud del Backend"
-        echo "  6) Salir"
+        echo "  2) Iniciar / Reiniciar Servicio Systemd (Puerto 8045)"
+        echo "  3) Actualizar Backend con cambios recientes de Git (Pull + Restart)"
+        echo "  4) Ver logs en vivo del Backend (Journalctl)"
+        echo "  5) Solo configurar Base de Datos PostgreSQL"
+        echo "  6) Solo descargar Modelos Gemma 4 desde Hugging Face"
+        echo "  7) Verificar estado de salud del Backend"
+        echo "  8) Salir"
         echo ""
-        read -rp "Opción [1-6]: " opt
+        read -rp "Opción [1-8]: " opt
         case $opt in
             1)
                 install_system_packages
@@ -340,21 +382,28 @@ case "${1:-}" in
                 verify_backend
                 ;;
             2)
+                setup_systemd
+                verify_backend
+                ;;
+            3)
+                update_backend_code
+                ;;
+            4)
+                view_logs
+                ;;
+            5)
                 setup_postgresql
                 cd "${BACKEND_DIR}"
                 "${BACKEND_DIR}/.venv/bin/python" -m alembic upgrade head
                 "${BACKEND_DIR}/.venv/bin/python" -m scripts.db.seed_data
                 ;;
-            3)
+            6)
                 download_ai_models
                 ;;
-            4)
-                setup_systemd
-                ;;
-            5)
+            7)
                 verify_backend
                 ;;
-            6)
+            8)
                 exit 0
                 ;;
             *)
