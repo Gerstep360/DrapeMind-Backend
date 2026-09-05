@@ -39,10 +39,22 @@ class ModelRuntime:
     def executable(self) -> Path | None:
         if settings.LLAMA_SERVER_PATH:
             configured = self._resolve_path(settings.LLAMA_SERVER_PATH)
-            return configured if configured.exists() else None
+            if configured.exists():
+                return configured
         local_windows = BACKEND_DIR / "vendor" / "llama.cpp" / "llama-server.exe"
         if os.name == "nt" and local_windows.exists():
             return local_windows
+
+        linux_candidates = [
+            Path("/usr/local/bin/llama-server"),
+            Path("/usr/bin/llama-server"),
+            Path("/opt/llama.cpp/build/bin/llama-server"),
+            BACKEND_DIR / "vendor" / "llama.cpp" / "llama-server",
+        ]
+        for candidate in linux_candidates:
+            if candidate.exists() and os.access(candidate, os.X_OK):
+                return candidate
+
         found = shutil.which("llama-server") or shutil.which("llama-server.exe")
         return Path(found) if found else None
 

@@ -11,6 +11,7 @@ from app.modules.realidad_aumentada import ar_router
 from app.modules.reservas_y_atencion_en_tienda import (
     admin_reservations_router, reservations_router,
 )
+from app.api.v1.endpoints.admin import ai_runtime_router
 from app.modules.sucursales_inventario_y_proveedores import (
     admin_branches_inventory_router, branches_router,
 )
@@ -44,6 +45,7 @@ api_router.include_router(branches_router, prefix="/branches", tags=["PK-07: Suc
 
 # Endpoints administrativos consolidados de los paquetes (PK-01, PK-02, PK-03, PK-04, PK-07, PK-08)
 admin_router = APIRouter()
+admin_router.include_router(ai_runtime_router)
 admin_router.include_router(admin_users_router)
 admin_router.include_router(admin_catalog_router)
 admin_router.include_router(admin_orders_router)

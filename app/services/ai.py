@@ -269,15 +269,31 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
                 "session_id": session.id,
             }
         )
-        async with model_runtime.lease():
-            skill_res = await run_gemma_tool_agent(
-                db,
-                user,
-                message,
-                memory,
-                _completion,
-                emit=send,
-            )
+        try:
+            async with model_runtime.lease():
+                skill_res = await run_gemma_tool_agent(
+                    db,
+                    user,
+                    message,
+                    memory,
+                    _completion,
+                    emit=send,
+                )
+        except ModelRuntimeError as exc:
+            logger.warning("Gemma runtime no disponible (%s). Activando motor de habilidades del atelier.", exc)
+            from app.services.ai_skills.skill_registry import skill_registry
+            skill = skill_registry.resolve(message, {"memory": memory, "user_id": user.id})
+            skill_res = skill.execute(db, user, message, {"memory": memory, "user_id": user.id})
+            skill_res["requires_llm"] = False
+            if not skill_res.get("direct_response"):
+                skill_res["direct_response"] = (
+                    f"He preparado las prendas y combinaciones del atelier para tu consulta. "
+                    f"Revisa las opciones sugeridas a continuación."
+                )
+            if "notices" not in skill_res:
+                skill_res["notices"] = []
+            skill_res["notices"].append(f"Altair operando en modo atelier: {exc}")
+
         skill = SimpleNamespace(name="gemma_tool_agent")
         tool_name = skill_res.get("tool_name")
         tool_args = skill_res.get("tool_args") or {}
@@ -414,53 +430,62 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
             ]
             max_tokens = max(180, min(400, int(skill_res.get("llm_max_tokens") or 300)))
 
-            async with model_runtime.lease():
-                await send(
-                    {
-                        "type": "model_status",
-                        "status": "ready",
-                        "session_id": session.id,
-                    }
-                )
-                client, payload, headers = await _completion(
-                    final_messages,
-                    max_tokens=max_tokens,
-                    stream=True,
-                )
-                try:
-                    async with client.stream(
-                        "POST",
-                        f"{settings.AI_BASE_URL.rstrip('/')}/chat/completions",
-                        json=payload,
-                        headers=headers,
-                    ) as response:
-                        if response.status_code >= 400:
-                            error_body = await response.aread()
-                            logger.error(
-                                "LLM Stream Error %d: %s",
-                                response.status_code,
-                                error_body.decode("utf-8", errors="ignore"),
-                            )
-                        response.raise_for_status()
-                        async for line in response.aiter_lines():
-                            if not line.startswith("data:"):
-                                continue
-                            raw = line[5:].strip()
-                            if raw == "[DONE]":
-                                break
-                            try:
-                                event = json.loads(raw)
-                                delta = event["choices"][0]["delta"]
-                                chunk = delta.get("content") or ""
-                            except (json.JSONDecodeError, KeyError, IndexError):
-                                continue
-                            if chunk:
-                                answer_parts.append(chunk)
-                                await send({"type": "token", "content": chunk})
-                except Exception as stream_err:
-                    logger.warning("Error durante streaming LLM: %s. Utilizando síntesis de respaldo.", stream_err)
-                finally:
-                    await client.aclose()
+            try:
+                async with model_runtime.lease():
+                    await send(
+                        {
+                            "type": "model_status",
+                            "status": "ready",
+                            "session_id": session.id,
+                        }
+                    )
+                    client, payload, headers = await _completion(
+                        final_messages,
+                        max_tokens=max_tokens,
+                        stream=True,
+                    )
+                    try:
+                        async with client.stream(
+                            "POST",
+                            f"{settings.AI_BASE_URL.rstrip('/')}/chat/completions",
+                            json=payload,
+                            headers=headers,
+                        ) as response:
+                            if response.status_code >= 400:
+                                error_body = await response.aread()
+                                logger.error(
+                                    "LLM Stream Error %d: %s",
+                                    response.status_code,
+                                    error_body.decode("utf-8", errors="ignore"),
+                                )
+                            response.raise_for_status()
+                            async for line in response.aiter_lines():
+                                if not line.startswith("data:"):
+                                    continue
+                                raw = line[5:].strip()
+                                if raw == "[DONE]":
+                                    break
+                                try:
+                                    event = json.loads(raw)
+                                    delta = event["choices"][0]["delta"]
+                                    chunk = delta.get("content") or ""
+                                except (json.JSONDecodeError, KeyError, IndexError):
+                                    continue
+                                if chunk:
+                                    answer_parts.append(chunk)
+                                    await send({"type": "token", "content": chunk})
+                    except Exception as stream_err:
+                        logger.warning("Error durante streaming LLM: %s. Utilizando síntesis de respaldo.", stream_err)
+                    finally:
+                        await client.aclose()
+            except ModelRuntimeError as exc:
+                logger.warning("Gemma runtime lease no disponible en síntesis: %s", exc)
+                fallback_text = str(skill_res.get("fallback_response") or skill_res.get("direct_response") or "Aquí tienes las opciones seleccionadas según tu solicitud.")
+                answer_parts.clear()
+                for index in range(0, len(fallback_text), 48):
+                    chunk = fallback_text[index:index + 48]
+                    answer_parts.append(chunk)
+                    await send({"type": "token", "content": chunk})
 
         if not "".join(answer_parts).strip() and skill_res.get("fallback_response"):
             fallback_text = str(skill_res["fallback_response"])

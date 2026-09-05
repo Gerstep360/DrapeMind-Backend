@@ -22,17 +22,18 @@ from app.services.store import variant_payload
 from app.services.store import expire_due_reservations
 
 router = APIRouter()
+ai_runtime_router = APIRouter()
 logger = logging.getLogger("drapemind.ai")
 
 
-@router.get("/ai/runtime", summary="Estado del runtime Gemma")
+@ai_runtime_router.get("/ai/runtime", summary="Estado del runtime Gemma")
 async def ai_runtime_status(
     admin: User = Depends(require_roles(Role.ADMIN)),
 ) -> dict:
     return await model_runtime.status()
 
 
-@router.post("/ai/runtime/start", summary="Encender Gemma")
+@ai_runtime_router.post("/ai/runtime/start", summary="Encender Gemma")
 async def start_ai_runtime(
     admin: User = Depends(require_roles(Role.ADMIN)),
 ) -> dict:
@@ -51,7 +52,7 @@ async def start_ai_runtime(
     return await model_runtime.status()
 
 
-@router.post("/ai/runtime/stop", summary="Apagar Gemma")
+@ai_runtime_router.post("/ai/runtime/stop", summary="Apagar Gemma")
 async def stop_ai_runtime(
     admin: User = Depends(require_roles(Role.ADMIN)),
 ) -> dict:

@@ -169,6 +169,12 @@ setup_python_venv() {
         sed -i "s|^PAYMENT_WEBHOOK_SECRET=.*|PAYMENT_WEBHOOK_SECRET=\"${WEBHOOK_SECRET}\"|" .env
     fi
 
+    if grep -q "^LLAMA_SERVER_PATH=" .env; then
+        sed -i 's|^LLAMA_SERVER_PATH=.*|LLAMA_SERVER_PATH="/usr/local/bin/llama-server"|' .env
+    else
+        echo 'LLAMA_SERVER_PATH="/usr/local/bin/llama-server"' >> .env
+    fi
+
     log_info "Aplicando migraciones Alembic a PostgreSQL..."
     "${BACKEND_DIR}/.venv/bin/python" -m alembic upgrade head
 
@@ -178,25 +184,84 @@ setup_python_venv() {
     log_success "Entorno Python y base de datos configurados."
 }
 
+install_llama_server() {
+    log_info "Verificando binario llama-server para Gemma 4..."
+    if command -v llama-server >/dev/null 2>&1 || [[ -x "/usr/local/bin/llama-server" ]] || [[ -x "/opt/llama.cpp/build/bin/llama-server" ]]; then
+        log_success "llama-server ya está presente en el servidor."
+        return 0
+    fi
+
+    log_info "Instalando paquetes de compilación y descarga para llama-server..."
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -qq
+    apt-get install -y -qq curl wget unzip git build-essential cmake
+
+    local ARCH
+    ARCH=$(uname -m)
+    local INSTALLED=false
+
+    if [[ "${ARCH}" == "x86_64" ]]; then
+        log_info "Intentando descargar release precompilado oficial de llama.cpp (Ubuntu x64)..."
+        local TMP_ZIP="/tmp/llama-bin.zip"
+        local TMP_DIR="/tmp/llama-extract"
+        rm -rf "${TMP_ZIP}" "${TMP_DIR}"
+        mkdir -p "${TMP_DIR}"
+
+        local DOWNLOAD_URL
+        DOWNLOAD_URL=$(curl -fsSL https://api.github.com/repos/ggml-org/llama.cpp/releases/latest 2>/dev/null | grep "browser_download_url.*bin-ubuntu-x64.zip" | head -n 1 | cut -d '"' -f 4 || true)
+        if [[ -z "${DOWNLOAD_URL}" ]]; then
+            DOWNLOAD_URL="https://github.com/ggml-org/llama.cpp/releases/download/b4610/llama-b4610-bin-ubuntu-x64.zip"
+        fi
+
+        log_info "Descargando: ${DOWNLOAD_URL}..."
+        if curl -fsSL "${DOWNLOAD_URL}" -o "${TMP_ZIP}" 2>/dev/null && unzip -q "${TMP_ZIP}" -d "${TMP_DIR}" 2>/dev/null; then
+            local SERVER_BIN
+            SERVER_BIN=$(find "${TMP_DIR}" -type f -name "llama-server" | head -n 1)
+            if [[ -n "${SERVER_BIN}" && -f "${SERVER_BIN}" ]]; then
+                cp "${SERVER_BIN}" /usr/local/bin/llama-server
+                chmod +x /usr/local/bin/llama-server
+                find "${TMP_DIR}" -type f -name "*.so*" -exec cp {} /usr/local/lib/ \; 2>/dev/null || true
+                ldconfig 2>/dev/null || true
+                INSTALLED=true
+                log_success "llama-server instalado exitosamente desde release precompilado."
+            fi
+        fi
+        rm -rf "${TMP_ZIP}" "${TMP_DIR}"
+    fi
+
+    if [[ "${INSTALLED}" != true ]]; then
+        log_info "Compilando llama-server desde código fuente con CMake (esto puede tomar unos minutos)..."
+        mkdir -p /opt
+        rm -rf /opt/llama.cpp
+        git clone --depth 1 https://github.com/ggml-org/llama.cpp.git /opt/llama.cpp
+        cmake -B /opt/llama.cpp/build /opt/llama.cpp -DGGML_OPENMP=ON
+        cmake --build /opt/llama.cpp/build --config Release -j$(nproc) --target llama-server
+        cp /opt/llama.cpp/build/bin/llama-server /usr/local/bin/llama-server
+        chmod +x /usr/local/bin/llama-server
+        log_success "llama-server compilado e instalado en /usr/local/bin/llama-server."
+    fi
+
+    if [[ -f "${BACKEND_DIR}/.env" ]]; then
+        if grep -q "^LLAMA_SERVER_PATH=" "${BACKEND_DIR}/.env"; then
+            sed -i 's|^LLAMA_SERVER_PATH=.*|LLAMA_SERVER_PATH="/usr/local/bin/llama-server"|' "${BACKEND_DIR}/.env"
+        else
+            echo 'LLAMA_SERVER_PATH="/usr/local/bin/llama-server"' >> "${BACKEND_DIR}/.env"
+        fi
+    fi
+
+    if command -v llama-server >/dev/null 2>&1 || [[ -x "/usr/local/bin/llama-server" ]]; then
+        log_success "Binario llama-server listo en /usr/local/bin/llama-server."
+    fi
+}
+
 download_ai_models() {
+    install_llama_server
+
     log_info "Comprobando y descargando modelos de Hugging Face (Gemma 4)..."
     cd "${BACKEND_DIR}"
 
     if [[ -f "${BACKEND_DIR}/scripts/ai/download_models.py" ]]; then
         "${BACKEND_DIR}/.venv/bin/python" "${BACKEND_DIR}/scripts/ai/download_models.py" -y
-    fi
-
-    if ! command -v llama-server >/dev/null 2>&1 && [[ ! -f "/usr/local/bin/llama-server" ]]; then
-        log_warn "llama-server no detectado en el PATH ni en /usr/local/bin/llama-server."
-        echo -e "   ${YELLOW}Para habilitar la inferencia local de IA con Gemma 4:${NC}"
-        echo -e "   Puedes descargar o compilar llama.cpp ejecutando:"
-        echo -e "     sudo apt-get install -y cmake"
-        echo -e "     git clone https://github.com/ggerganov/llama.cpp /opt/llama.cpp"
-        echo -e "     cmake -B /opt/llama.cpp/build /opt/llama.cpp"
-        echo -e "     cmake --build /opt/llama.cpp/build --config Release -j\$(nproc) --target llama-server"
-        echo -e "     sudo cp /opt/llama.cpp/build/bin/llama-server /usr/local/bin/"
-    else
-        log_success "Binario llama-server listo."
     fi
 }
 
@@ -236,6 +301,8 @@ User=${SERVICE_USER}
 Group=${SERVICE_GROUP}
 WorkingDirectory=${BACKEND_DIR}
 EnvironmentFile=${BACKEND_DIR}/.env
+Environment="PATH=/usr/local/bin:/usr/bin:/bin:${BACKEND_DIR}/.venv/bin"
+Environment="LLAMA_SERVER_PATH=/usr/local/bin/llama-server"
 ExecStart=${BACKEND_DIR}/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port ${BACKEND_PORT} --workers 1 --proxy-headers --forwarded-allow-ips=127.0.0.1
 Restart=on-failure
 RestartSec=5
@@ -272,6 +339,8 @@ update_backend_code() {
 
     log_info "Aplicando migraciones de base de datos..."
     "${BACKEND_DIR}/.venv/bin/python" -m alembic upgrade head || true
+
+    install_llama_server
 
     log_info "Reiniciando servicio backend..."
     setup_systemd
@@ -344,6 +413,9 @@ case "${1:-}" in
     --models)
         download_ai_models
         ;;
+    --llama)
+        install_llama_server
+        ;;
     --service)
         setup_systemd
         ;;
@@ -362,21 +434,23 @@ case "${1:-}" in
     *)
         banner
         echo "Selecciona una opción para el Backend:"
-        echo "  1) Instalación completa de Backend (Recomendado)"
+        echo "  1) Instalación completa de Backend (Recomendado con Gemma 4)"
         echo "  2) Iniciar / Reiniciar Servicio Systemd (Puerto 8045)"
         echo "  3) Actualizar Backend con cambios recientes de Git (Pull + Restart)"
         echo "  4) Ver logs en vivo del Backend (Journalctl)"
         echo "  5) Solo configurar Base de Datos PostgreSQL"
-        echo "  6) Solo descargar Modelos Gemma 4 desde Hugging Face"
-        echo "  7) Verificar estado de salud del Backend"
-        echo "  8) Salir"
+        echo "  6) Solo descargar e instalar binario llama-server (Gemma 4)"
+        echo "  7) Solo descargar Modelos Gemma 4 desde Hugging Face"
+        echo "  8) Verificar estado de salud del Backend"
+        echo "  9) Salir"
         echo ""
-        read -rp "Opción [1-8]: " opt
+        read -rp "Opción [1-9]: " opt
         case $opt in
             1)
                 install_system_packages
                 setup_postgresql
                 setup_python_venv
+                install_llama_server
                 download_ai_models
                 setup_systemd
                 verify_backend
@@ -398,12 +472,15 @@ case "${1:-}" in
                 "${BACKEND_DIR}/.venv/bin/python" -m scripts.db.seed_data
                 ;;
             6)
-                download_ai_models
+                install_llama_server
                 ;;
             7)
-                verify_backend
+                download_ai_models
                 ;;
             8)
+                verify_backend
+                ;;
+            9)
                 exit 0
                 ;;
             *)
