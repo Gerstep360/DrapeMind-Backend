@@ -280,8 +280,8 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
                     _completion,
                     emit=send,
                 )
-        except ModelRuntimeError as exc:
-            logger.warning("Gemma runtime no disponible (%s). Activando motor de habilidades del atelier.", exc)
+        except (ModelRuntimeError, httpx.HTTPError, Exception) as exc:
+            logger.warning("Gemma runtime no disponible o falló (%s). Activando motor de habilidades del atelier.", exc)
             from app.services.ai_skills.skill_registry import skill_registry
             skill = skill_registry.resolve(message, {"memory": memory, "user_id": user.id})
             skill_res = skill.execute(db, user, message, {"memory": memory, "user_id": user.id})
@@ -488,8 +488,8 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
                         logger.warning("Error durante streaming LLM: %s. Utilizando síntesis de respaldo.", stream_err)
                     finally:
                         await client.aclose()
-            except ModelRuntimeError as exc:
-                logger.warning("Gemma runtime lease no disponible en síntesis: %s", exc)
+            except (ModelRuntimeError, httpx.HTTPError, Exception) as exc:
+                logger.warning("Gemma runtime lease no disponible o falló en síntesis: %s", exc)
                 fallback_text = str(skill_res.get("fallback_response") or skill_res.get("direct_response") or "Aquí tienes las opciones seleccionadas según tu solicitud.")
                 answer_parts.clear()
                 for index in range(0, len(fallback_text), 48):

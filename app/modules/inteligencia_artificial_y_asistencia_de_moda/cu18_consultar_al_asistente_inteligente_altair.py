@@ -128,6 +128,7 @@ async def ai_socket(socket: WebSocket) -> None:
                         safe_send,
                     )
                 except Exception as exc:
+                    logger.exception("Error procesando mensaje de IA en WebSocket: %s", exc)
                     await safe_send(
                         {
                             "type": "error",
