@@ -181,9 +181,60 @@ class ModelRuntime:
             self._log_handle = (log_dir / "llama-server.log").open("ab")
             creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
             logger.info("Iniciando proceso llama-server (puerto %s)...", settings.AI_SERVER_PORT)
+
+            # Configure environment for GGML dynamic backend loading
+            runtime_env = os.environ.copy()
+            exec_path = self.executable()
+            exec_dir = exec_path.parent if exec_path else Path("/usr/local/bin")
+            candidate_dirs = [
+                exec_dir,
+                Path("/usr/local/bin"),
+                Path("/usr/local/lib"),
+                Path("/opt/llama.cpp"),
+                BACKEND_DIR / "vendor" / "llama.cpp",
+            ]
+
+            backend_dir = exec_dir
+            for cdir in candidate_dirs:
+                if cdir.is_dir() and (
+                    (cdir / "libggml-cpu-x64.so").exists()
+                    or list(cdir.glob("libggml-cpu*.so"))
+                ):
+                    backend_dir = cdir
+                    break
+
+            # If libraries are in /usr/local/lib but missing in exec_dir, copy them next to llama-server
+            if backend_dir != exec_dir and exec_dir.is_dir():
+                try:
+                    for lib_file in backend_dir.glob("libggml*"):
+                        dest = exec_dir / lib_file.name
+                        if not dest.exists():
+                            shutil.copy2(lib_file, dest)
+                    for lib_file in backend_dir.glob("libllama*"):
+                        dest = exec_dir / lib_file.name
+                        if not dest.exists():
+                            shutil.copy2(lib_file, dest)
+                except Exception:
+                    pass
+
+            lib_paths = [
+                str(backend_dir),
+                str(exec_dir),
+                "/usr/local/bin",
+                "/usr/local/lib",
+                "/opt/llama.cpp",
+                str(BACKEND_DIR / "vendor" / "llama.cpp"),
+            ]
+            existing_ld = runtime_env.get("LD_LIBRARY_PATH", "")
+            runtime_env["LD_LIBRARY_PATH"] = ":".join(
+                p for p in [existing_ld] + lib_paths if p
+            ).strip(":")
+            runtime_env["GGML_BACKEND_PATH"] = str(backend_dir)
+
             self.process = subprocess.Popen(
                 command,
                 cwd=str(BACKEND_DIR),
+                env=runtime_env,
                 stdout=self._log_handle,
                 stderr=subprocess.STDOUT,
                 creationflags=creationflags,

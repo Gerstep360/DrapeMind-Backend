@@ -223,19 +223,34 @@ ensure_env_defaults() {
 }
 
 install_llama_server() {
-    log_info "Verificando compatibilidad de llama-server con arquitectura 'gemma4'..."
-    local NEED_INSTALL=true
+    local FORCE="${1:-false}"
+    log_info "Verificando compatibilidad y librerías de backend GGML para llama-server..."
+    local NEED_INSTALL=false
 
-    if command -v llama-server >/dev/null 2>&1 || [[ -x "/usr/local/bin/llama-server" ]]; then
+    # Si las librerías ya existen en /usr/local/lib, asegurar que también estén en /usr/local/bin/
+    if [[ -d "/usr/local/lib" ]]; then
+        cp -a /usr/local/lib/libggml* /usr/local/bin/ 2>/dev/null || true
+        cp -a /usr/local/lib/libllama* /usr/local/bin/ 2>/dev/null || true
+        cp -a /usr/local/lib/libmtmd* /usr/local/bin/ 2>/dev/null || true
+    fi
+
+    if [[ "${FORCE}" == "true" ]]; then
+        NEED_INSTALL=true
+    elif ! command -v llama-server >/dev/null 2>&1 && [[ ! -x "/usr/local/bin/llama-server" ]]; then
+        NEED_INSTALL=true
+    else
         local CURRENT_BIN
         CURRENT_BIN=$(command -v llama-server || echo "/usr/local/bin/llama-server")
         local VER
         VER=$("${CURRENT_BIN}" --version 2>&1 || true)
-        if echo "${VER}" | grep -qE "b108|b109|b11|v0\.[4-9]"; then
-            log_success "llama-server con soporte nativo para Gemma 4 verificado: ${VER}"
-            NEED_INSTALL=false
-        else
+        if ! echo "${VER}" | grep -qE "b108|b109|b11|v0\.[4-9]"; then
             log_warn "llama-server instalado es antiguo y no reconoce la arquitectura 'gemma4' (${VER}). Actualizando a release actual..."
+            NEED_INSTALL=true
+        elif [[ ! -f "/usr/local/bin/libggml-cpu-x64.so" && ! -f "/usr/local/lib/libggml-cpu-x64.so" ]]; then
+            log_warn "Se detectó llama-server pero faltan las librerías dinámicas de backend CPU (libggml-cpu-x64.so). Reinstalando..."
+            NEED_INSTALL=true
+        else
+            log_success "llama-server y backend CPU de Gemma 4 verificados (${VER})."
         fi
     fi
 
@@ -253,7 +268,7 @@ install_llama_server() {
     local INSTALLED=false
 
     if [[ "${ARCH}" == "x86_64" ]]; then
-        log_info "Descargando release oficial de llama.cpp con soporte Gemma 4 (Ubuntu x64)..."
+        log_info "Descargando release oficial de llama.cpp con soporte Gemma 4 y backends modulares..."
         local TMP_ARCHIVE="/tmp/llama-bin.tar.gz"
         local TMP_DIR="/tmp/llama-extract"
         rm -rf "${TMP_ARCHIVE}" "${TMP_DIR}"
@@ -270,12 +285,27 @@ install_llama_server() {
             local SERVER_BIN
             SERVER_BIN=$(find "${TMP_DIR}" -type f -name "llama-server" | head -n 1)
             if [[ -n "${SERVER_BIN}" && -f "${SERVER_BIN}" ]]; then
-                cp -f "${SERVER_BIN}" /usr/local/bin/llama-server
-                chmod +x /usr/local/bin/llama-server
-                find "${TMP_DIR}" -type f -name "*.so*" -exec cp -f {} /usr/local/lib/ \; 2>/dev/null || true
+                local EXTRACTED_DIR
+                EXTRACTED_DIR=$(dirname "${SERVER_BIN}")
+                log_info "Instalando binario llama-server y todas las librerías dinámicas desde ${EXTRACTED_DIR}..."
+
+                # 1. Copiar todos los binarios y librerías .so al mismo directorio (/usr/local/bin/)
+                # llama-server busca libggml-cpu-*.so en su propio directorio de ejecución
+                cp -a "${EXTRACTED_DIR}"/* /usr/local/bin/
+                chmod +x /usr/local/bin/llama-* 2>/dev/null || true
+
+                # 2. Copiar también a /usr/local/lib/ y registrar en ldconfig
+                cp -a "${EXTRACTED_DIR}"/*.so* /usr/local/lib/ 2>/dev/null || true
+                echo "/usr/local/lib" > /etc/ld.so.conf.d/llama.conf
+                echo "/usr/local/bin" >> /etc/ld.so.conf.d/llama.conf
                 ldconfig 2>/dev/null || true
+
+                # 3. Respaldo en /opt/llama.cpp
+                mkdir -p /opt/llama.cpp
+                cp -a "${EXTRACTED_DIR}"/* /opt/llama.cpp/
+
                 INSTALLED=true
-                log_success "llama-server actualizado exitosamente a versión con soporte Gemma 4."
+                log_success "llama-server y librerías GGML dinámicas instaladas exitosamente."
             fi
         fi
         rm -rf "${TMP_ARCHIVE}" "${TMP_DIR}"
@@ -288,8 +318,8 @@ install_llama_server() {
         git clone --depth 1 https://github.com/ggml-org/llama.cpp.git /opt/llama.cpp
         cmake -B /opt/llama.cpp/build /opt/llama.cpp -DGGML_OPENMP=ON
         cmake --build /opt/llama.cpp/build --config Release -j$(nproc) --target llama-server
-        cp -f /opt/llama.cpp/build/bin/llama-server /usr/local/bin/llama-server
-        chmod +x /usr/local/bin/llama-server
+        cp -a /opt/llama.cpp/build/bin/* /usr/local/bin/
+        chmod +x /usr/local/bin/llama-*
         log_success "llama-server compilado e instalado en /usr/local/bin/llama-server."
     fi
 
@@ -355,6 +385,8 @@ WorkingDirectory=${BACKEND_DIR}
 EnvironmentFile=${BACKEND_DIR}/.env
 Environment="PATH=/usr/local/bin:/usr/bin:/bin:${BACKEND_DIR}/.venv/bin"
 Environment="LLAMA_SERVER_PATH=/usr/local/bin/llama-server"
+Environment="LD_LIBRARY_PATH=/usr/local/bin:/usr/local/lib"
+Environment="GGML_BACKEND_PATH=/usr/local/bin"
 ExecStart=${BACKEND_DIR}/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port ${BACKEND_PORT} --workers 1 --proxy-headers --forwarded-allow-ips=127.0.0.1
 Restart=on-failure
 RestartSec=5
@@ -474,7 +506,7 @@ case "${1:-}" in
         download_ai_models
         ;;
     --llama)
-        install_llama_server
+        install_llama_server true
         ;;
     --service)
         setup_systemd
@@ -532,7 +564,7 @@ case "${1:-}" in
                 "${BACKEND_DIR}/.venv/bin/python" -m scripts.db.seed_data
                 ;;
             6)
-                install_llama_server
+                install_llama_server true
                 ;;
             7)
                 download_ai_models
