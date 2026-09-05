@@ -124,6 +124,7 @@ class ModelRuntime:
             "--parallel", str(parallel_slots),
             "-ngl", ngl_val,
             "--jinja",
+            "--reasoning", "off",
         ]
         # llama-server is an OpenAI-compatible text/reasoning server; --mmproj is not a valid CLI argument for llama-server
 

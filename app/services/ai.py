@@ -239,7 +239,7 @@ async def _completion(
         "model": settings.AI_MODEL,
         "messages": clean_messages,
         "temperature": temperature if temperature is not None else settings.AI_TEMPERATURE,
-        "max_tokens": max_tokens or 120,
+        "max_tokens": max_tokens or 160,
         "stream": stream,
         "stop": [
             "<end_of_turn>",
@@ -481,10 +481,10 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
                     ),
                 },
             ]
-            max_tokens = max(60, min(140, int(skill_res.get("llm_max_tokens") or 110)))
-            target_temp = float(settings.AI_TEMPERATURE or 0.6)
-            if target_temp < 0.55:
-                target_temp = 0.6
+            max_tokens = max(80, min(240, int(skill_res.get("llm_max_tokens") or 160)))
+            target_temp = float(settings.AI_TEMPERATURE or 0.65)
+            if target_temp < 0.6:
+                target_temp = 0.65
 
             try:
                 async with model_runtime.lease():
@@ -525,7 +525,7 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
                                 try:
                                     event = json.loads(raw)
                                     delta = event["choices"][0]["delta"]
-                                    chunk = delta.get("content") or ""
+                                    chunk = delta.get("content") or delta.get("reasoning_content") or ""
                                 except (json.JSONDecodeError, KeyError, IndexError):
                                     continue
                                 if chunk:
@@ -549,7 +549,8 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
                                 )
                                 if resp.status_code == 200:
                                     data = resp.json()
-                                    direct_text = data["choices"][0]["message"]["content"]
+                                    msg = data["choices"][0]["message"]
+                                    direct_text = msg.get("content") or msg.get("reasoning_content") or ""
                                     if direct_text and direct_text.strip():
                                         for idx in range(0, len(direct_text), 12):
                                             c = direct_text[idx:idx + 12]
