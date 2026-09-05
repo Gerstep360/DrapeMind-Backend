@@ -223,58 +223,72 @@ ensure_env_defaults() {
 }
 
 install_llama_server() {
-    log_info "Verificando binario llama-server para Gemma 4..."
-    if command -v llama-server >/dev/null 2>&1 || [[ -x "/usr/local/bin/llama-server" ]] || [[ -x "/opt/llama.cpp/build/bin/llama-server" ]]; then
-        log_success "llama-server ya está presente en el servidor."
+    log_info "Verificando compatibilidad de llama-server con arquitectura 'gemma4'..."
+    local NEED_INSTALL=true
+
+    if command -v llama-server >/dev/null 2>&1 || [[ -x "/usr/local/bin/llama-server" ]]; then
+        local CURRENT_BIN
+        CURRENT_BIN=$(command -v llama-server || echo "/usr/local/bin/llama-server")
+        local VER
+        VER=$("${CURRENT_BIN}" --version 2>&1 || true)
+        if echo "${VER}" | grep -qE "b108|b109|b11|v0\.[4-9]"; then
+            log_success "llama-server con soporte nativo para Gemma 4 verificado: ${VER}"
+            NEED_INSTALL=false
+        else
+            log_warn "llama-server instalado es antiguo y no reconoce la arquitectura 'gemma4' (${VER}). Actualizando a release actual..."
+        fi
+    fi
+
+    if [[ "${NEED_INSTALL}" == false ]]; then
         return 0
     fi
 
     log_info "Instalando paquetes de compilación y descarga para llama-server..."
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq
-    apt-get install -y -qq curl wget unzip git build-essential cmake
+    apt-get install -y -qq curl wget tar gzip git build-essential cmake
 
     local ARCH
     ARCH=$(uname -m)
     local INSTALLED=false
 
     if [[ "${ARCH}" == "x86_64" ]]; then
-        log_info "Intentando descargar release precompilado oficial de llama.cpp (Ubuntu x64)..."
-        local TMP_ZIP="/tmp/llama-bin.zip"
+        log_info "Descargando release oficial de llama.cpp con soporte Gemma 4 (Ubuntu x64)..."
+        local TMP_ARCHIVE="/tmp/llama-bin.tar.gz"
         local TMP_DIR="/tmp/llama-extract"
-        rm -rf "${TMP_ZIP}" "${TMP_DIR}"
+        rm -rf "${TMP_ARCHIVE}" "${TMP_DIR}"
         mkdir -p "${TMP_DIR}"
 
         local DOWNLOAD_URL
-        DOWNLOAD_URL=$(curl -fsSL https://api.github.com/repos/ggml-org/llama.cpp/releases/latest 2>/dev/null | grep "browser_download_url.*bin-ubuntu-x64.zip" | head -n 1 | cut -d '"' -f 4 || true)
+        DOWNLOAD_URL=$(curl -fsSL https://api.github.com/repos/ggml-org/llama.cpp/releases 2>/dev/null | grep -o 'https://github.com/ggml-org/llama.cpp/releases/download/[^"]*bin-ubuntu-x64\.tar\.gz' | head -n 1 || true)
         if [[ -z "${DOWNLOAD_URL}" ]]; then
-            DOWNLOAD_URL="https://github.com/ggml-org/llama.cpp/releases/download/b4610/llama-b4610-bin-ubuntu-x64.zip"
+            DOWNLOAD_URL="https://github.com/ggml-org/llama.cpp/releases/download/b10819/llama-b10819-bin-ubuntu-x64.tar.gz"
         fi
 
         log_info "Descargando: ${DOWNLOAD_URL}..."
-        if curl -fsSL "${DOWNLOAD_URL}" -o "${TMP_ZIP}" 2>/dev/null && unzip -q "${TMP_ZIP}" -d "${TMP_DIR}" 2>/dev/null; then
+        if curl -fsSL "${DOWNLOAD_URL}" -o "${TMP_ARCHIVE}" 2>/dev/null && tar -xzf "${TMP_ARCHIVE}" -C "${TMP_DIR}" 2>/dev/null; then
             local SERVER_BIN
             SERVER_BIN=$(find "${TMP_DIR}" -type f -name "llama-server" | head -n 1)
             if [[ -n "${SERVER_BIN}" && -f "${SERVER_BIN}" ]]; then
-                cp "${SERVER_BIN}" /usr/local/bin/llama-server
+                cp -f "${SERVER_BIN}" /usr/local/bin/llama-server
                 chmod +x /usr/local/bin/llama-server
-                find "${TMP_DIR}" -type f -name "*.so*" -exec cp {} /usr/local/lib/ \; 2>/dev/null || true
+                find "${TMP_DIR}" -type f -name "*.so*" -exec cp -f {} /usr/local/lib/ \; 2>/dev/null || true
                 ldconfig 2>/dev/null || true
                 INSTALLED=true
-                log_success "llama-server instalado exitosamente desde release precompilado."
+                log_success "llama-server actualizado exitosamente a versión con soporte Gemma 4."
             fi
         fi
-        rm -rf "${TMP_ZIP}" "${TMP_DIR}"
+        rm -rf "${TMP_ARCHIVE}" "${TMP_DIR}"
     fi
 
     if [[ "${INSTALLED}" != true ]]; then
-        log_info "Compilando llama-server desde código fuente con CMake (esto puede tomar unos minutos)..."
+        log_info "Compilando llama-server desde código fuente actual con CMake..."
         mkdir -p /opt
         rm -rf /opt/llama.cpp
         git clone --depth 1 https://github.com/ggml-org/llama.cpp.git /opt/llama.cpp
         cmake -B /opt/llama.cpp/build /opt/llama.cpp -DGGML_OPENMP=ON
         cmake --build /opt/llama.cpp/build --config Release -j$(nproc) --target llama-server
-        cp /opt/llama.cpp/build/bin/llama-server /usr/local/bin/llama-server
+        cp -f /opt/llama.cpp/build/bin/llama-server /usr/local/bin/llama-server
         chmod +x /usr/local/bin/llama-server
         log_success "llama-server compilado e instalado en /usr/local/bin/llama-server."
     fi
