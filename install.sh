@@ -217,6 +217,9 @@ ensure_env_defaults() {
     else
         echo "AI_BASE_URL=\"http://127.0.0.1:${AI_SERVER_PORT}/v1\"" >> "${ENV_FILE}"
     fi
+
+    mkdir -p "${BACKEND_DIR}/app/static/products"
+    chmod -R 755 "${BACKEND_DIR}/app/static" 2>/dev/null || true
 }
 
 install_llama_server() {

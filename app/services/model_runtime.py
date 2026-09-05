@@ -124,9 +124,7 @@ class ModelRuntime:
             "--parallel", str(parallel_slots),
             "-ngl", ngl_val,
         ]
-        mmproj = self.mmproj_path()
-        if mmproj and mmproj.exists() and mmproj.stat().st_size > 50 * 1024 * 1024:
-            command.extend(["--mmproj", str(mmproj)])
+        # llama-server is an OpenAI-compatible text/reasoning server; --mmproj is not a valid CLI argument for llama-server
 
         threads = settings.AI_THREADS
         if threads <= 0 and os.name != "nt":

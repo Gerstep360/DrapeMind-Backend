@@ -6,7 +6,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
@@ -85,6 +85,30 @@ async def request_context(request: Request, call_next):
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
+
+PLACEHOLDER_SVG_FALLBACK = (
+    '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1000" viewBox="0 0 800 1000" role="img">'
+    '<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">'
+    '<stop offset="0" stop-color="#10281f"/><stop offset="1" stop-color="#244d3e"/></linearGradient></defs>'
+    '<rect width="800" height="1000" fill="url(#bg)"/>'
+    '<circle cx="400" cy="410" r="168" fill="none" stroke="#c5ff3d" stroke-width="5"/>'
+    '<path d="M310 330l90-48 90 48 72 110-73 44-24-43v221H335V441l-24 43-73-44z" fill="#f4f0e7" opacity=".96"/>'
+    '<text x="400" y="760" text-anchor="middle" fill="#f4f0e7" font-family="Georgia,serif" font-size="62">DrapeMind</text>'
+    '<text x="400" y="820" text-anchor="middle" fill="#c5ff3d" font-family="Arial,sans-serif" font-size="24" letter-spacing="8">ATELIER</text>'
+    '<text x="400" y="900" text-anchor="middle" fill="#cbd3ce" font-family="Arial,sans-serif" font-size="22">Prenda en exhibición</text>'
+    '</svg>'
+)
+
+
+@app.get("/static/products/placeholder.svg", include_in_schema=False)
+@app.get("/DrapeMind/static/products/placeholder.svg", include_in_schema=False)
+def get_product_placeholder():
+    file_path = STATIC_DIR / "products" / "placeholder.svg"
+    if file_path.exists():
+        return FileResponse(str(file_path), media_type="image/svg+xml")
+    return Response(content=PLACEHOLDER_SVG_FALLBACK, media_type="image/svg+xml")
+
+
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 app.mount("/DrapeMind/static", StaticFiles(directory=str(STATIC_DIR)), name="drapemind_static")
 
