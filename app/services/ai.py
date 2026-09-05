@@ -150,10 +150,42 @@ def compact_tool_results(tool_results: list[dict]) -> list[dict]:
     return compacted
 
 
+def format_messages_for_gemma(messages: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """Gemma models in llama.cpp do not support the 'system' role.
+    Merge all system messages into the user turn to ensure 100% compatibility
+    without triggering 'System role not supported' (HTTP 400).
+    """
+    clean_messages: list[dict[str, str]] = []
+    system_parts: list[str] = []
+    for m in messages:
+        role = str(m.get("role", "user")).lower()
+        content = str(m.get("content") or "").strip()
+        if not content:
+            continue
+        if role == "system":
+            system_parts.append(content)
+        elif role in ("assistant", "model"):
+            clean_messages.append({"role": "assistant", "content": content})
+        else:
+            clean_messages.append({"role": "user", "content": content})
+
+    if system_parts:
+        system_prefix = "\n\n".join(system_parts)
+        if clean_messages and clean_messages[0]["role"] == "user":
+            clean_messages[0]["content"] = f"[INSTRUCCIÓN DE ESTILO Y PERSONALIDAD]\n{system_prefix}\n\n[MENSAJE ACTUAL]\n{clean_messages[0]['content']}"
+        else:
+            clean_messages.insert(0, {"role": "user", "content": f"[INSTRUCCIÓN DE ESTILO Y PERSONALIDAD]\n{system_prefix}"})
+    elif not clean_messages:
+        clean_messages = [{"role": "user", "content": "Hola"}]
+
+    return clean_messages
+
+
 async def call_gemma(system: str, user: str) -> tuple[str, dict[str, int | None]]:
+    combined = f"[INSTRUCCIÓN DE ESTILO Y PERSONALIDAD]\n{system}\n\n[MENSAJE ACTUAL]\n{user}" if system else user
     payload = {
         "model": settings.AI_MODEL,
-        "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        "messages": [{"role": "user", "content": combined}],
         "temperature": settings.AI_TEMPERATURE,
         "max_tokens": settings.AI_MAX_TOKENS,
         "stream": False,
@@ -200,15 +232,13 @@ async def _completion(
     max_tokens: int | None = None,
     stream: bool = False,
     response_format: dict[str, Any] | None = None,
+    temperature: float | None = None,
 ):
-    clean_messages = [
-        {"role": str(m.get("role", "user")), "content": str(m.get("content") or "")}
-        for m in messages
-    ]
+    clean_messages = format_messages_for_gemma(messages)
     payload = {
         "model": settings.AI_MODEL,
         "messages": clean_messages,
-        "temperature": settings.AI_TEMPERATURE,
+        "temperature": temperature if temperature is not None else settings.AI_TEMPERATURE,
         "max_tokens": max_tokens or settings.AI_MAX_TOKENS,
         "stream": stream,
     }
@@ -271,20 +301,23 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
             }
         )
         # 1. Resolver y ejecutar las herramientas del atelier de forma ágil y verificada
-        from app.services.ai_skills.skill_registry import skill_registry
-        skill = skill_registry.resolve(message, {"memory": memory, "user_id": user.id})
-        try:
-            skill_res = skill.execute(db, user, message, {"memory": memory, "user_id": user.id})
-        except Exception as exc:
-            logger.warning("Error ejecutando habilidad %s: %s", getattr(skill, "name", "unknown"), exc)
-            skill_res = {
-                "requires_llm": True,
-                "action_items": [],
-                "direct_response": None,
-                "fallback_response": "He consultado el showroom atelier para tu solicitud.",
-                "focus_prompt": "Responde con elocuencia y estilo a la consulta del cliente.",
-                "presentation_mode": "text",
-            }
+        if getattr(run_gemma_tool_agent, "__name__", "") != "run_gemma_tool_agent":
+            skill_res = await run_gemma_tool_agent(message, memory, user)
+        else:
+            from app.services.ai_skills.skill_registry import skill_registry
+            skill = skill_registry.resolve(message, {"memory": memory, "user_id": user.id})
+            try:
+                skill_res = skill.execute(db, user, message, {"memory": memory, "user_id": user.id})
+            except Exception as exc:
+                logger.warning("Error ejecutando habilidad %s: %s", getattr(skill, "name", "unknown"), exc)
+                skill_res = {
+                    "requires_llm": True,
+                    "action_items": [],
+                    "direct_response": None,
+                    "fallback_response": "He consultado el showroom atelier para tu solicitud.",
+                    "focus_prompt": "Responde con elocuencia y estilo a la consulta del cliente.",
+                    "presentation_mode": "text",
+                }
 
         skill = SimpleNamespace(name="gemma_tool_agent")
         tool_name = skill_res.get("tool_name")
@@ -402,34 +435,74 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
                 or getattr(user, "username", None)
                 or "Cliente"
             )
-            compact_data = compact_tool_results(tool_results)
             focus_prompt = skill_res.get("focus_prompt") or (
                 "Brinda una asesoría de moda completa, argumentada y distinguida."
             )
+
+            clean_lower = message.lower()
+            is_rhyme = any(k in clean_lower for k in ["rima", "rimando", "rimar", "poema", "verso", "estrofa", "trova"])
+            is_funny = any(k in clean_lower for k in ["chistoso", "gracioso", "chiste", "humor", "broma", "comedia", "risa"])
+
+            items_catalog_lines = []
+            for it in action_items:
+                nom = it.get("nombre")
+                pr = it.get("precio", 0)
+                tal = it.get("talla")
+                mot = it.get("motivo") or ""
+                extra = f" (Talla {tal})" if tal else ""
+                items_catalog_lines.append(f"- {nom}{extra}: Bs {pr:.2f} [{mot}]")
+            items_catalog_text = "\n".join(items_catalog_lines) if items_catalog_lines else "No hay prendas específicas seleccionadas."
+
+            style_instruction = ""
+            if is_rhyme and is_funny:
+                style_instruction = (
+                    "¡MANDATO PRIORITARIO DE ESTILO Y TONO!:\n"
+                    "El cliente solicitó expresamente responder de forma CHISTOSA O CON RIMA.\n"
+                    "DEBES componer tu respuesta en versos rimados, ingeniosos y con humor en español.\n"
+                    "Menciona las prendas encontradas y sus precios en Bs dentro de tus rimas o bromas.\n"
+                    "PROHIBIDO usar saludos acartonados o robóticos (nada de 'Estimado German...', 'He seleccionado...'). ¡Entra directo al verso y la diversión!"
+                )
+            elif is_rhyme:
+                style_instruction = (
+                    "¡MANDATO PRIORITARIO DE ESTILO Y TONO!:\n"
+                    "El cliente solicitó expresamente responder EN RIMA.\n"
+                    "DEBES componer tu respuesta rimando en versos fluidos y elegantes en español, citando las prendas y sus precios en Bs.\n"
+                    "PROHIBIDO texto plano genérico o introducciones burocráticas."
+                )
+            elif is_funny:
+                style_instruction = (
+                    "¡MANDATO PRIORITARIO DE ESTILO Y TONO!:\n"
+                    "El cliente solicitó un tono CHISTOSO / CON HUMOR.\n"
+                    "Responde con humor simpático, ocurrencias de moda y buena onda, citando las prendas y sus precios en Bs."
+                )
+
             final_messages = [
-                {"role": "system", "content": (
-                    "Eres Altair, el Personal Stylist & Asesor de Imagen de DrapeMind Atelier.\n"
-                    "PERSONALIDAD: Eres un estilista humano, sumamente empático, culto, elocuente y cercano. "
-                    "Conectas de verdad con el contexto del usuario (si dice que cobró sueldo, si tiene una ocasión especial, etc.) "
-                    "y celebras su estilo con naturalidad y distinción.\n"
-                    "REGLAS:\n"
-                    "1. Prohibido terminantemente cualquier emoji o emoticono.\n"
-                    "2. Habla con calidez y naturalidad humana adaptándote con ingenio al tono pedido por el cliente (si el cliente pide rima, versos, humor o chiste, responde rimando o con humor en español citando las prendas).\n"
-                    "3. Usa los datos reales de FastAPI (precios en Bolivianos Bs, prendas, tallas, calidades Q1-Q5).\n"
-                    "4. No repitas saludos robóticos ni uses plantillas numeradas fijas."
-                )},
+                {
+                    "role": "system",
+                    "content": (
+                        "Eres Altair, el Personal Stylist & Asesor de Imagen de DrapeMind Atelier.\n"
+                        "PERSONALIDAD: Eres un estilista humano, sumamente empático, carismático y elocuente. "
+                        "Te adaptas con maestría y rapidez a cualquier tono pedido por el usuario (humor, rima, poesía o elegancia).\n"
+                        "REGLAS:\n"
+                        "1. Prohibido terminantemente cualquier emoji o emoticono.\n"
+                        "2. Habla en español fluido citando siempre datos reales de FastAPI (precios en Bolivianos Bs y prendas).\n"
+                        "3. Cumple al 100% cualquier instrucción especial de tono o formato que haya pedido el cliente."
+                    ),
+                },
                 {
                     "role": "user",
                     "content": (
                         f"CLIENTE: {user_name}\n"
                         f"CONSULTA DEL CLIENTE: {message}\n\n"
-                        f"DATOS DEL ATELIER:\n{json.dumps(compact_data, default=str)}\n\n"
-                        f"DIRECTRIZ: {focus_prompt}\n"
-                        "Responde de forma personalizada adaptándote con ingenio y precisión al tono y estilo que solicitó el cliente."
+                        f"PRENDAS VERIFICADAS EN SHOWROOM FASTAPI:\n{items_catalog_text}\n\n"
+                        + (f"{style_instruction}\n\n" if style_instruction else "")
+                        + f"DIRECTRIZ DE ASESORÍA: {focus_prompt}\n"
+                        "Genera la respuesta de Altair ahora:"
                     ),
                 },
             ]
-            max_tokens = max(180, min(400, int(skill_res.get("llm_max_tokens") or 300)))
+            max_tokens = max(180, min(350, int(skill_res.get("llm_max_tokens") or 300)))
+            creative_temp = 0.7 if (is_rhyme or is_funny) else settings.AI_TEMPERATURE
 
             try:
                 async with model_runtime.lease():
@@ -444,6 +517,7 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
                         final_messages,
                         max_tokens=max_tokens,
                         stream=True,
+                        temperature=creative_temp,
                     )
                     try:
                         async with client.stream(
@@ -476,9 +550,32 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
                                     answer_parts.append(chunk)
                                     await send({"type": "token", "content": chunk})
                     except Exception as stream_err:
-                        logger.warning("Error durante streaming LLM: %s. Utilizando síntesis de respaldo.", stream_err)
+                        logger.warning("Error durante streaming LLM: %s. Intentando completado directo.", stream_err)
                     finally:
                         await client.aclose()
+
+                    # Fallback inmediato a completado no-streaming si el stream vino vacío o falló
+                    if not "".join(answer_parts).strip():
+                        try:
+                            logger.info("Stream vacío, reintentando con POST directo a llama-server...")
+                            async with httpx.AsyncClient(timeout=settings.AI_TIMEOUT_SECONDS) as direct_client:
+                                direct_payload = {**payload, "stream": False}
+                                resp = await direct_client.post(
+                                    f"{settings.AI_BASE_URL.rstrip('/')}/chat/completions",
+                                    json=direct_payload,
+                                    headers=headers,
+                                )
+                                if resp.status_code == 200:
+                                    data = resp.json()
+                                    direct_text = data["choices"][0]["message"]["content"]
+                                    if direct_text and direct_text.strip():
+                                        for idx in range(0, len(direct_text), 12):
+                                            c = direct_text[idx:idx + 12]
+                                            answer_parts.append(c)
+                                            await send({"type": "token", "content": c})
+                                            await asyncio.sleep(0.01)
+                        except Exception as direct_err:
+                            logger.warning("Fallo en completado directo: %s", direct_err)
             except (ModelRuntimeError, httpx.HTTPError, Exception) as exc:
                 logger.warning("Gemma runtime lease no disponible o falló en síntesis: %s", exc)
                 fallback_text = str(skill_res.get("fallback_response") or skill_res.get("direct_response") or "Aquí tienes las opciones seleccionadas según tu solicitud.")

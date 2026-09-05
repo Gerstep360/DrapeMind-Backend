@@ -110,9 +110,9 @@ class ModelRuntime:
         ngl = str(settings.AI_GPU_LAYERS).strip()
         ngl_val = ngl if (ngl.isdigit() or (ngl.startswith("-") and ngl[1:].isdigit())) else "0"
 
-        # Context size: limit to 4096 on CPU to avoid massive KV cache memory allocation
-        ctx_size = min(int(settings.AI_CONTEXT_SIZE or 4096), 4096)
-        parallel_slots = max(1, min(int(settings.AI_PARALLEL_SLOTS or 1), 2))
+        # Context size: limit to 3072 on CPU to keep memory footprint strictly under 2.8 GB
+        ctx_size = min(int(settings.AI_CONTEXT_SIZE or 4096), 3072)
+        parallel_slots = max(1, min(int(settings.AI_PARALLEL_SLOTS or 1), 1))
 
         command = [
             str(executable),
@@ -123,12 +123,14 @@ class ModelRuntime:
             "--ctx-size", str(ctx_size),
             "--parallel", str(parallel_slots),
             "-ngl", ngl_val,
+            "--jinja",
         ]
         # llama-server is an OpenAI-compatible text/reasoning server; --mmproj is not a valid CLI argument for llama-server
 
         threads = settings.AI_THREADS
         if threads <= 0 and os.name != "nt":
-            threads = min(os.cpu_count() or 2, 4)
+            # Cap at 2 threads to protect the 8 GB VPS and other concurrent services
+            threads = min(os.cpu_count() or 2, 2)
         if threads > 0:
             command.extend(["--threads", str(threads)])
 

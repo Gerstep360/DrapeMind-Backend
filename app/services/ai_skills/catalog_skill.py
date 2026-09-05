@@ -1,3 +1,4 @@
+import re
 from typing import Any
 from sqlalchemy.orm import Session
 from app.models import User
@@ -32,8 +33,17 @@ class CatalogSkill(BaseAiSkill):
         query_words = [w for w in GARMENT_VOCABULARY if w in clean]
         query = " ".join(query_words) if query_words else ""
 
-        tokens = [w for w in clean.replace(",", " ").replace(".", " ").replace("?", " ").split() if len(w) > 2]
+        # Extracción robusta de presupuesto o precio máximo (ej. "a 1000bs", "1000 bs", "hasta 800", "presupuesto de 500")
         max_price = None
+        price_match = re.search(r'(\d{2,5})\s*(?:bs|bob|bolivianos)', clean)
+        if price_match:
+            max_price = float(price_match.group(1))
+        else:
+            price_match = re.search(r'(?:hasta|menos\s+de|maximo\s+de|máximo\s+de|tope\s+de|presupuesto(?:\s+de)?|a)\s+(\d{2,5})\b', clean)
+            if price_match:
+                max_price = float(price_match.group(1))
+
+        tokens = [w for w in clean.replace(",", " ").replace(".", " ").replace("?", " ").split() if len(w) > 2]
         requested_size = None
         for i, w in enumerate(tokens):
             if w in ("talla", "size") and i + 1 < len(tokens):
@@ -42,7 +52,7 @@ class CatalogSkill(BaseAiSkill):
                     requested_size = candidate
             elif w in ("bs", "bob", "presupuesto", "tope", "menos", "maximo", "máximo") and i + 1 < len(tokens):
                 num_str = "".join(c for c in tokens[i + 1] if c.isdigit())
-                if num_str:
+                if num_str and not max_price:
                     max_price = float(num_str)
 
         # Si el usuario pide exclusivas / calidad / tendencia
@@ -138,11 +148,11 @@ class CatalogSkill(BaseAiSkill):
             "requires_llm": True,
             "direct_response": None,
             "fallback_response": fallback,
-            "focus_prompt": f"Presenta las {len(action_items)} prendas encontradas para {user_name} destacando materiales y calidad Q1-Q5.",
+            "focus_prompt": f"Presenta con carisma y precisión las {len(action_items)} prendas encontradas con sus precios en Bolivianos (Bs). Adáptate estrictamente al tono solicitado por el cliente (humor, rima, poesía o formalidad).",
             "presentation_mode": "mixed" if action_items else "text",
-            "response_title": f"Selección Showroom: {query.capitalize() if query else 'Piezas Destacadas'}",
+            "response_title": f"Selección Showroom: {query.capitalize()}" if query else (f"Selección Showroom: Hasta Bs {int(max_price)}" if max_price else "Selección Showroom: Piezas Destacadas"),
             "suggested_actions": suggested_actions[:4],
-            "llm_max_tokens": 260,
+            "llm_max_tokens": 280,
         }
 
     def get_system_prompt(self) -> str:
