@@ -129,8 +129,8 @@ class ModelRuntime:
 
         threads = settings.AI_THREADS
         if threads <= 0 and os.name != "nt":
-            # Cap at 2 threads to protect the 8 GB VPS and other concurrent services
-            threads = min(os.cpu_count() or 2, 2)
+            cpu_cnt = os.cpu_count() or 2
+            threads = max(1, min(cpu_cnt, 3 if cpu_cnt >= 4 else 2))
         if threads > 0:
             command.extend(["--threads", str(threads)])
 

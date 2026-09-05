@@ -152,7 +152,7 @@ class CatalogSkill(BaseAiSkill):
             "presentation_mode": "mixed" if action_items else "text",
             "response_title": f"Selección Showroom: {query.capitalize()}" if query else (f"Selección Showroom: Hasta Bs {int(max_price)}" if max_price else "Selección Showroom: Piezas Destacadas"),
             "suggested_actions": suggested_actions[:4],
-            "llm_max_tokens": 280,
+            "llm_max_tokens": 120,
         }
 
     def get_system_prompt(self) -> str:

@@ -239,8 +239,17 @@ async def _completion(
         "model": settings.AI_MODEL,
         "messages": clean_messages,
         "temperature": temperature if temperature is not None else settings.AI_TEMPERATURE,
-        "max_tokens": max_tokens or settings.AI_MAX_TOKENS,
+        "max_tokens": max_tokens or 120,
         "stream": stream,
+        "stop": [
+            "<end_of_turn>",
+            "<eos>",
+            "</s>",
+            "<|im_end|>",
+            "\nCLIENTE:",
+            "\nCONSULTA:",
+            "\nUSUARIO:",
+        ],
     }
     if response_format:
         payload["response_format"] = response_format
@@ -472,7 +481,7 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
                     ),
                 },
             ]
-            max_tokens = max(180, min(350, int(skill_res.get("llm_max_tokens") or 300)))
+            max_tokens = max(60, min(140, int(skill_res.get("llm_max_tokens") or 110)))
             target_temp = float(settings.AI_TEMPERATURE or 0.6)
             if target_temp < 0.55:
                 target_temp = 0.6
@@ -531,7 +540,7 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
                     if not "".join(answer_parts).strip():
                         try:
                             logger.info("Stream vacío, reintentando con POST directo a llama-server...")
-                            async with httpx.AsyncClient(timeout=settings.AI_TIMEOUT_SECONDS) as direct_client:
+                            async with httpx.AsyncClient(timeout=25.0) as direct_client:
                                 direct_payload = {**payload, "stream": False}
                                 resp = await direct_client.post(
                                     f"{settings.AI_BASE_URL.rstrip('/')}/chat/completions",
@@ -551,16 +560,15 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
                             logger.warning("Fallo en completado directo: %s", direct_err)
             except (ModelRuntimeError, httpx.HTTPError, Exception) as exc:
                 logger.warning("Gemma runtime lease no disponible o falló en síntesis: %s", exc)
-                fallback_text = str(skill_res.get("fallback_response") or skill_res.get("direct_response") or "Aquí tienes las opciones seleccionadas según tu solicitud.")
-                answer_parts.clear()
-                for index in range(0, len(fallback_text), 48):
-                    chunk = fallback_text[index:index + 48]
-                    answer_parts.append(chunk)
-                    await send({"type": "token", "content": chunk})
+                if not "".join(answer_parts).strip():
+                    fallback_text = str(skill_res.get("fallback_response") or skill_res.get("direct_response") or "Aquí tienes las opciones seleccionadas según tu solicitud.")
+                    for index in range(0, len(fallback_text), 48):
+                        chunk = fallback_text[index:index + 48]
+                        answer_parts.append(chunk)
+                        await send({"type": "token", "content": chunk})
 
         if not "".join(answer_parts).strip() and skill_res.get("fallback_response"):
             fallback_text = str(skill_res["fallback_response"])
-            answer_parts.clear()
             for index in range(0, len(fallback_text), 48):
                 chunk = fallback_text[index:index + 48]
                 answer_parts.append(chunk)
