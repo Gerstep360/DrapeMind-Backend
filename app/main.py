@@ -44,6 +44,7 @@ app = FastAPI(
     openapi_url=f"{settings.API_V1_PREFIX}/openapi.json" if settings.DOCS_ENABLED else None,
     docs_url="/docs" if settings.DOCS_ENABLED else None,
     redoc_url="/redoc" if settings.DOCS_ENABLED else None,
+    root_path=settings.ROOT_PATH,
     lifespan=lifespan,
 )
 

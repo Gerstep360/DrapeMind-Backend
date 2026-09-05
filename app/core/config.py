@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     ENVIRONMENT: Literal["development", "test", "production"] = "development"
     DEBUG: bool = True
     API_V1_PREFIX: str = "/api/v1"
+    ROOT_PATH: str = ""
+    PORT: int = 8045
     DOCS_ENABLED: bool = True
     SECRET_KEY: str = "change-me-with-at-least-32-characters"
     JWT_ALGORITHM: str = "HS256"

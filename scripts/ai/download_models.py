@@ -270,11 +270,25 @@ if __name__ == "__main__":
         print(f"{state} {m['filename']} - {m['size_str']} ({m['description']})")
 
     missing = [m for m in status_list if not m["exists"]]
+
+    if "--check" in sys.argv:
+        if missing:
+            print(f"\nFaltan {len(missing)} archivo(s) de modelo.")
+            sys.exit(1)
+        else:
+            print("\nTodos los modelos de IA se encuentran presentes y listos.")
+            sys.exit(0)
+
     if not missing:
         print("\nTodos los modelos de IA se encuentran presentes y listos.")
     else:
         print(f"\nFaltan {len(missing)} archivo(s) de modelo.")
-        ans = input("¿Deseas iniciar la descarga rápida ahora? (s/n): ").strip().lower()
+        auto_yes = "-y" in sys.argv or "--yes" in sys.argv
+        if not auto_yes:
+            ans = input("¿Deseas iniciar la descarga rápida ahora? (s/n): ").strip().lower()
+        else:
+            ans = "s"
+
         if ans == "s":
             for m in missing:
                 print(f"\nDescargando {m['filename']}...")
