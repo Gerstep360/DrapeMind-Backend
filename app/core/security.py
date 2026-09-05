@@ -1,6 +1,14 @@
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from jose import JWTError, jwt
+import bcrypt
+
+# Compatibilidad de passlib con versiones modernas de bcrypt (>= 4.1.0 en Python 3.12 - 3.14)
+if not hasattr(bcrypt, "__about__"):
+    class _BcryptAbout:
+        __version__ = getattr(bcrypt, "__version__", "4.0.1")
+    bcrypt.__about__ = _BcryptAbout()
+
 from passlib.context import CryptContext
 from app.core.config import settings
 
@@ -8,11 +16,27 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def verify_password(plain_password: str, password_hash: str) -> bool:
-    return pwd_context.verify(plain_password, password_hash)
+    try:
+        return pwd_context.verify(plain_password, password_hash)
+    except Exception:
+        # Fallback nativo directo con bcrypt si passlib tiene conflicto
+        try:
+            return bcrypt.checkpw(
+                plain_password.encode("utf-8")[:72],
+                password_hash.encode("utf-8")
+            )
+        except Exception:
+            return False
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    truncated = password.encode("utf-8")[:72]
+    try:
+        return pwd_context.hash(truncated.decode("utf-8", errors="ignore"))
+    except Exception:
+        # Fallback nativo directo con bcrypt
+        salt = bcrypt.gensalt()
+        return bcrypt.hashpw(truncated, salt).decode("utf-8")
 
 
 get_password_hash = hash_password
