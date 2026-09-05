@@ -175,6 +175,8 @@ setup_python_venv() {
         echo 'LLAMA_SERVER_PATH="/usr/local/bin/llama-server"' >> .env
     fi
 
+    ensure_env_defaults
+
     log_info "Aplicando migraciones Alembic a PostgreSQL..."
     "${BACKEND_DIR}/.venv/bin/python" -m alembic upgrade head
 
@@ -182,6 +184,39 @@ setup_python_venv() {
     "${BACKEND_DIR}/.venv/bin/python" -m scripts.db.seed_data || log_warn "El sembrado finalizó o ya contenía datos."
 
     log_success "Entorno Python y base de datos configurados."
+}
+
+ensure_env_defaults() {
+    local ENV_FILE="${BACKEND_DIR}/.env"
+    if [[ ! -f "${ENV_FILE}" ]]; then
+        return 0
+    fi
+    log_info "Saneando configuración de IA para CPU VPS..."
+    if grep -q "^AI_GPU_LAYERS=" "${ENV_FILE}"; then
+        sed -i 's|^AI_GPU_LAYERS=.*|AI_GPU_LAYERS="0"|' "${ENV_FILE}"
+    else
+        echo 'AI_GPU_LAYERS="0"' >> "${ENV_FILE}"
+    fi
+    if grep -q "^AI_CONTEXT_SIZE=" "${ENV_FILE}"; then
+        sed -i 's|^AI_CONTEXT_SIZE=.*|AI_CONTEXT_SIZE=4096|' "${ENV_FILE}"
+    else
+        echo 'AI_CONTEXT_SIZE=4096' >> "${ENV_FILE}"
+    fi
+    if grep -q "^AI_PARALLEL_SLOTS=" "${ENV_FILE}"; then
+        sed -i 's|^AI_PARALLEL_SLOTS=.*|AI_PARALLEL_SLOTS=1|' "${ENV_FILE}"
+    else
+        echo 'AI_PARALLEL_SLOTS=1' >> "${ENV_FILE}"
+    fi
+    if grep -q "^AI_SERVER_PORT=" "${ENV_FILE}"; then
+        sed -i "s|^AI_SERVER_PORT=.*|AI_SERVER_PORT=${AI_SERVER_PORT}|" "${ENV_FILE}"
+    else
+        echo "AI_SERVER_PORT=${AI_SERVER_PORT}" >> "${ENV_FILE}"
+    fi
+    if grep -q "^AI_BASE_URL=" "${ENV_FILE}"; then
+        sed -i "s|^AI_BASE_URL=.*|AI_BASE_URL=\"http://127.0.0.1:${AI_SERVER_PORT}/v1\"|" "${ENV_FILE}"
+    else
+        echo "AI_BASE_URL=\"http://127.0.0.1:${AI_SERVER_PORT}/v1\"" >> "${ENV_FILE}"
+    fi
 }
 
 install_llama_server() {
@@ -340,6 +375,7 @@ update_backend_code() {
     log_info "Aplicando migraciones de base de datos..."
     "${BACKEND_DIR}/.venv/bin/python" -m alembic upgrade head || true
 
+    ensure_env_defaults
     install_llama_server
 
     log_info "Reiniciando servicio backend..."
@@ -360,6 +396,12 @@ verify_backend() {
 
     local HEALTH
     HEALTH=$(curl -s "http://127.0.0.1:${BACKEND_PORT}/health/ready" || echo '{"status":"error"}')
+    local AI_HEALTH
+    AI_HEALTH=$(curl -s "http://127.0.0.1:${BACKEND_PORT}/health/ai" || echo '{"healthy":false}')
+    local AI_DESC="En reposo (inicia automáticamente al consultar a Altair)"
+    if echo "${AI_HEALTH}" | grep -q '"healthy":true'; then
+        AI_DESC="${GREEN}ACTIVO Y RESPONDIENDO${NC}"
+    fi
 
     echo ""
     echo "======================================================================"
@@ -370,6 +412,7 @@ verify_backend() {
     echo -e " • Swagger Docs:        ${CYAN}${BOLD}http://${SERVER_IP}/DrapeMind/docs${NC}"
     echo -e " • Puerto FastAPI:      ${BOLD}${BACKEND_PORT}${NC} (8000 libre)"
     echo -e " • Puerto Gemma 4:      ${BOLD}${AI_SERVER_PORT}${NC} (8080 libre)"
+    echo -e " • Estado Gemma 4:      ${AI_DESC}"
     echo -e " • PostgreSQL BD:       ${BOLD}${CONFIGURED_DB_NAME:-drapemind_db}${NC}"
     echo -e " • PostgreSQL Usuario:  ${BOLD}${CONFIGURED_DB_USER:-drapemind_user}${NC}"
     echo -e " • Ver servicio:        systemctl status drapemind-backend"

@@ -209,7 +209,7 @@ async def run_gemma_tool_agent(
         "precios ni resultados. Respeta tallas exactas y alternativas explícitas.\n"
         "Responde EXCLUSIVAMENTE JSON con uno de estos formatos:\n"
         "{\"type\":\"tool\",\"tool\":\"nombre\",\"arguments\":{},\"reason\":\"acción breve\"}\n"
-        "{\"type\":\"finish\",\"answer\":\"respuesta breve y útil\",\"title\":\"título\",\"presentation\":\"text|cards|mixed\"}"
+        "{\"type\":\"finish\",\"answer\":\"asesoría elocuente, argumentada y personalizada basada en los resultados verificados del atelier\",\"title\":\"título elegante\",\"presentation\":\"text|cards|mixed\"}"
     )
     messages: list[dict[str, str]] = [
         {"role": "system", "content": system},

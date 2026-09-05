@@ -149,7 +149,20 @@ async def events_socket(socket: WebSocket) -> None:
         if not user or user.estado != UserStatus.ACTIVO:
             await socket.close(code=4401, reason="Usuario inactivo")
             return
-        from app.services.realtime import event_hub
-        await event_hub.register(socket, user.id, {user.rol.value})
+        user_id = user.id
+        user_role = user.rol.value
+
+    from app.services.realtime import event_hub
+    await event_hub.connect(socket, user_id, user_role)
+    try:
+        await socket.send_json({"type": "connected", "channel": "events"})
+        while True:
+            data = await socket.receive_json()
+            if data.get("type") == "ping":
+                await socket.send_json({"type": "pong"})
+    except (WebSocketDisconnect, RuntimeError):
+        pass
+    finally:
+        await event_hub.disconnect(socket)
 
 

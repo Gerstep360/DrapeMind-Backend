@@ -1,6 +1,7 @@
 import asyncio
 import re
 from dataclasses import dataclass
+from typing import Any
 
 from fastapi import WebSocket
 
@@ -37,6 +38,14 @@ class EventHub:
     async def connect(self, socket: WebSocket, user_id: int, role: str) -> None:
         async with self.lock:
             self.connections.append(EventConnection(socket, user_id, role))
+
+    async def register(self, socket: WebSocket, user_id: int, roles: Any = None) -> None:
+        role = "CLIENTE"
+        if isinstance(roles, (set, list, tuple)) and roles:
+            role = str(next(iter(roles)))
+        elif isinstance(roles, str):
+            role = roles
+        await self.connect(socket, user_id, role)
 
     async def disconnect(self, socket: WebSocket) -> None:
         async with self.lock:

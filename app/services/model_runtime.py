@@ -67,11 +67,30 @@ class ModelRuntime:
         path = self._resolve_path(settings.AI_MMPROJ_PATH)
         return path if path.exists() else None
 
+    def _read_recent_logs(self, max_lines: int = 15) -> str:
+        log_file = BACKEND_DIR / "logs" / "llama-server.log"
+        if not log_file.exists():
+            return ""
+        try:
+            with log_file.open("r", encoding="utf-8", errors="ignore") as f:
+                lines = f.readlines()
+                return "".join(lines[-max_lines:]).strip()
+        except Exception:
+            return ""
+
     async def is_healthy(self) -> bool:
+        base = settings.AI_BASE_URL.rstrip("/")
+        root_url = base[:-3] if base.endswith("/v1") else base
         try:
             async with httpx.AsyncClient(timeout=2.0) as client:
-                response = await client.get(f"{settings.AI_BASE_URL.rstrip('/')}/models")
-                return response.status_code < 500
+                try:
+                    resp = await client.get(f"{root_url}/health")
+                    if resp.status_code == 200:
+                        return True
+                except httpx.HTTPError:
+                    pass
+                response = await client.get(f"{base}/models")
+                return response.status_code == 200
         except httpx.HTTPError:
             return False
 
@@ -84,21 +103,35 @@ class ModelRuntime:
             )
         if not model.exists():
             raise ModelRuntimeError(f"Modelo GGUF no encontrado: {model}")
+
+        # Ensure GPU layers is an integer string: llama.cpp CLI rejects "auto"
+        ngl = str(settings.AI_GPU_LAYERS).strip()
+        ngl_val = ngl if (ngl.isdigit() or (ngl.startswith("-") and ngl[1:].isdigit())) else "0"
+
+        # Context size: limit to 4096 on CPU to avoid massive KV cache memory allocation
+        ctx_size = min(int(settings.AI_CONTEXT_SIZE or 4096), 4096)
+        parallel_slots = max(1, min(int(settings.AI_PARALLEL_SLOTS or 1), 2))
+
         command = [
             str(executable),
             "--model", str(model),
             "--alias", settings.AI_MODEL,
             "--host", settings.AI_SERVER_HOST,
             "--port", str(settings.AI_SERVER_PORT),
-            "--ctx-size", str(settings.AI_CONTEXT_SIZE),
-            "--parallel", str(settings.AI_PARALLEL_SLOTS),
-            "--n-gpu-layers", settings.AI_GPU_LAYERS,
+            "--ctx-size", str(ctx_size),
+            "--parallel", str(parallel_slots),
+            "-ngl", ngl_val,
         ]
         mmproj = self.mmproj_path()
-        if mmproj:
+        if mmproj and mmproj.exists() and mmproj.stat().st_size > 50 * 1024 * 1024:
             command.extend(["--mmproj", str(mmproj)])
-        if settings.AI_THREADS > 0:
-            command.extend(["--threads", str(settings.AI_THREADS)])
+
+        threads = settings.AI_THREADS
+        if threads <= 0 and os.name != "nt":
+            threads = min(os.cpu_count() or 2, 4)
+        if threads > 0:
+            command.extend(["--threads", str(threads)])
+
         if settings.AI_SERVER_EXTRA_ARGS:
             command.extend(shlex.split(settings.AI_SERVER_EXTRA_ARGS, posix=os.name != "nt"))
         return command
@@ -123,11 +156,9 @@ class ModelRuntime:
             log_dir.mkdir(exist_ok=True)
             self._log_handle = (log_dir / "llama-server.log").open("ab")
             creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-            # Uvicorn --reload uses a Windows selector loop that doesn't implement
-            # asyncio subprocesses. Popen is portable; only wait() goes to a thread.
             self.process = subprocess.Popen(
                 command,
-                cwd=str(self.executable().parent),
+                cwd=str(BACKEND_DIR),
                 stdout=self._log_handle,
                 stderr=subprocess.STDOUT,
                 creationflags=creationflags,
@@ -140,18 +171,21 @@ class ModelRuntime:
         deadline = time.monotonic() + settings.AI_STARTUP_TIMEOUT_SECONDS
         while time.monotonic() < deadline:
             if self.process and self.process.poll() is not None:
+                exit_code = self.process.returncode
+                log_tail = self._read_recent_logs(15)
                 await self._stop_process()
+                detail = f" (Código de salida {exit_code}):\n{log_tail}" if log_tail else f" (Código {exit_code})."
                 raise ModelRuntimeError(
-                    "llama-server termino durante el arranque. Revise logs/llama-server.log"
+                    f"llama-server terminó durante el arranque{detail}"
                 )
             if await self.is_healthy():
                 return
             await asyncio.sleep(1.0)
-        # ensure_started owns _start_lock while waiting. Cleaning up here must not
-        # reacquire that same lock or a failed startup would deadlock forever.
+        log_tail = self._read_recent_logs(15)
         await self._stop_process()
+        detail = f":\n{log_tail}" if log_tail else "."
         raise ModelRuntimeError(
-            "Gemma no estuvo listo antes del timeout. Revise logs/llama-server.log"
+            f"Gemma no estuvo listo antes del timeout ({settings.AI_STARTUP_TIMEOUT_SECONDS}s){detail}"
         )
 
     @asynccontextmanager

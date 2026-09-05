@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import re
@@ -287,8 +288,8 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
             skill_res["requires_llm"] = False
             if not skill_res.get("direct_response"):
                 skill_res["direct_response"] = (
-                    f"He preparado las prendas y combinaciones del atelier para tu consulta. "
-                    f"Revisa las opciones sugeridas a continuación."
+                    skill_res.get("fallback_response")
+                    or f"He preparado las prendas y combinaciones del showroom para tu consulta. Revisa las opciones sugeridas a continuación."
                 )
             if "notices" not in skill_res:
                 skill_res["notices"] = []
@@ -382,11 +383,20 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
         )
 
         if not skill_res.get("requires_llm"):
-            direct_text = skill_res.get("direct_response") or ""
-            for index in range(0, len(direct_text), 48):
-                chunk = direct_text[index:index + 48]
+            direct_text = skill_res.get("direct_response") or skill_res.get("fallback_response") or ""
+            if not direct_text:
+                if action_items:
+                    direct_text = (
+                        f"He preparado {len(action_items)} prenda(s) y combinaciones del showroom "
+                        f"con stock y disponibilidad confirmados en FastAPI."
+                    )
+                else:
+                    direct_text = "He consultado la información del atelier para tu solicitud."
+            for index in range(0, len(direct_text), 36):
+                chunk = direct_text[index:index + 36]
                 answer_parts.append(chunk)
                 await send({"type": "token", "content": chunk})
+                await asyncio.sleep(0.015)
         else:
             was_ready = await model_runtime.is_healthy()
             await send(
