@@ -270,30 +270,21 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
                 "session_id": session.id,
             }
         )
+        # 1. Resolver y ejecutar las herramientas del atelier de forma ágil y verificada
+        from app.services.ai_skills.skill_registry import skill_registry
+        skill = skill_registry.resolve(message, {"memory": memory, "user_id": user.id})
         try:
-            async with model_runtime.lease():
-                skill_res = await run_gemma_tool_agent(
-                    db,
-                    user,
-                    message,
-                    memory,
-                    _completion,
-                    emit=send,
-                )
-        except (ModelRuntimeError, httpx.HTTPError, Exception) as exc:
-            logger.warning("Gemma runtime no disponible o falló (%s). Activando motor de habilidades del atelier.", exc)
-            from app.services.ai_skills.skill_registry import skill_registry
-            skill = skill_registry.resolve(message, {"memory": memory, "user_id": user.id})
             skill_res = skill.execute(db, user, message, {"memory": memory, "user_id": user.id})
-            skill_res["requires_llm"] = False
-            if not skill_res.get("direct_response"):
-                skill_res["direct_response"] = (
-                    skill_res.get("fallback_response")
-                    or f"He preparado las prendas y combinaciones del showroom para tu consulta. Revisa las opciones sugeridas a continuación."
-                )
-            if "notices" not in skill_res:
-                skill_res["notices"] = []
-            skill_res["notices"].append(f"Altair operando en modo atelier: {exc}")
+        except Exception as exc:
+            logger.warning("Error ejecutando habilidad %s: %s", getattr(skill, "name", "unknown"), exc)
+            skill_res = {
+                "requires_llm": True,
+                "action_items": [],
+                "direct_response": None,
+                "fallback_response": "He consultado el showroom atelier para tu solicitud.",
+                "focus_prompt": "Responde con elocuencia y estilo a la consulta del cliente.",
+                "presentation_mode": "text",
+            }
 
         skill = SimpleNamespace(name="gemma_tool_agent")
         tool_name = skill_res.get("tool_name")
@@ -423,8 +414,8 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
                     "y celebras su estilo con naturalidad y distinción.\n"
                     "REGLAS:\n"
                     "1. Prohibido terminantemente cualquier emoji o emoticono.\n"
-                    "2. Habla con calidez y naturalidad humana como si estuvieras charlando con tu cliente en un showroom privado.\n"
-                    "3. Usa los datos reales de FastAPI (precios en Bs, tallas, calidades Q1-Q5).\n"
+                    "2. Habla con calidez y naturalidad humana adaptándote con ingenio al tono pedido por el cliente (si el cliente pide rima, versos, humor o chiste, responde rimando o con humor en español citando las prendas).\n"
+                    "3. Usa los datos reales de FastAPI (precios en Bolivianos Bs, prendas, tallas, calidades Q1-Q5).\n"
                     "4. No repitas saludos robóticos ni uses plantillas numeradas fijas."
                 )},
                 {
@@ -434,7 +425,7 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
                         f"CONSULTA DEL CLIENTE: {message}\n\n"
                         f"DATOS DEL ATELIER:\n{json.dumps(compact_data, default=str)}\n\n"
                         f"DIRECTRIZ: {focus_prompt}\n"
-                        "Responde de forma personalizada, cálida y profesional reconociendo el contexto que te comentó el cliente."
+                        "Responde de forma personalizada adaptándote con ingenio y precisión al tono y estilo que solicitó el cliente."
                     ),
                 },
             ]
