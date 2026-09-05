@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import shlex
 import shutil
@@ -13,6 +14,7 @@ import httpx
 from app.core.config import settings
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
+logger = logging.getLogger("drapemind.ai.runtime")
 
 
 class ModelRuntimeError(RuntimeError):
@@ -136,7 +138,29 @@ class ModelRuntime:
             command.extend(shlex.split(settings.AI_SERVER_EXTRA_ARGS, posix=os.name != "nt"))
         return command
 
+    def _cleanup_stale_processes(self) -> None:
+        """Kills any orphaned llama-server process on the system."""
+        if os.name == "nt":
+            try:
+                subprocess.run(
+                    ["taskkill", "/F", "/IM", "llama-server.exe"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            except Exception:
+                pass
+        else:
+            try:
+                subprocess.run(
+                    ["pkill", "-9", "-f", "llama-server"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            except Exception:
+                pass
+
     async def ensure_started(self) -> None:
+        self.start_monitor()
         if await self.is_healthy():
             self.last_used_at = time.monotonic()
             return
@@ -151,11 +175,14 @@ class ModelRuntime:
             if self.process and self.process.poll() is None:
                 await self._wait_until_healthy()
                 return
+            # Clean up any stale process binding port before starting
+            self._cleanup_stale_processes()
             command = self.command()
             log_dir = BACKEND_DIR / "logs"
             log_dir.mkdir(exist_ok=True)
             self._log_handle = (log_dir / "llama-server.log").open("ab")
             creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+            logger.info("Iniciando proceso llama-server (puerto %s)...", settings.AI_SERVER_PORT)
             self.process = subprocess.Popen(
                 command,
                 cwd=str(BACKEND_DIR),
@@ -179,6 +206,7 @@ class ModelRuntime:
                     f"llama-server terminó durante el arranque{detail}"
                 )
             if await self.is_healthy():
+                logger.info("llama-server listo y saludable en puerto %s", settings.AI_SERVER_PORT)
                 return
             await asyncio.sleep(1.0)
         log_tail = self._read_recent_logs(15)
@@ -208,23 +236,18 @@ class ModelRuntime:
         if process and process.poll() is None:
             process.terminate()
             try:
-                await asyncio.to_thread(process.wait, 10)
+                await asyncio.to_thread(process.wait, 5)
             except subprocess.TimeoutExpired:
                 process.kill()
-                await asyncio.to_thread(process.wait)
-        # Kill any orphaned llama-server process on Windows if still running
-        if os.name == "nt":
+                await asyncio.to_thread(process.wait, 5)
+        self._cleanup_stale_processes()
+        if self._log_handle:
             try:
-                subprocess.run(
-                    ["taskkill", "/F", "/IM", "llama-server.exe"],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
+                self._log_handle.close()
             except Exception:
                 pass
-        if self._log_handle:
-            self._log_handle.close()
             self._log_handle = None
+        logger.info("llama-server detenido exitosamente; memoria RAM liberada.")
 
     async def stop(self) -> None:
         async with self._start_lock:
@@ -233,19 +256,29 @@ class ModelRuntime:
     async def _monitor(self) -> None:
         interval = max(5, min(15, settings.AI_IDLE_TIMEOUT_SECONDS // 4))
         while True:
-            await asyncio.sleep(interval)
-            if not settings.AI_MANAGED_SERVER:
-                continue
-            is_alive = await self.is_healthy() or (self.process and self.process.poll() is None)
-            if not is_alive:
-                continue
-            async with self._state_lock:
-                if self.last_used_at == 0.0:
-                    self.last_used_at = time.monotonic()
-                idle = time.monotonic() - self.last_used_at
-                should_stop = self.active_requests == 0 and idle >= settings.AI_IDLE_TIMEOUT_SECONDS
-            if should_stop:
-                await self.stop()
+            try:
+                await asyncio.sleep(interval)
+                if not settings.AI_MANAGED_SERVER:
+                    continue
+                is_alive = await self.is_healthy() or (self.process and self.process.poll() is None)
+                if not is_alive:
+                    continue
+                async with self._state_lock:
+                    if self.last_used_at == 0.0:
+                        self.last_used_at = time.monotonic()
+                    idle = time.monotonic() - self.last_used_at
+                    should_stop = self.active_requests == 0 and idle >= settings.AI_IDLE_TIMEOUT_SECONDS
+                if should_stop:
+                    logger.info(
+                        "AI Idle timeout alcanzado (%ds inactivo >= %ds). Deteniendo llama-server para liberar memoria...",
+                        int(idle),
+                        settings.AI_IDLE_TIMEOUT_SECONDS,
+                    )
+                    await self.stop()
+            except asyncio.CancelledError:
+                break
+            except Exception as err:
+                logger.error("Error en monitor de inactividad de IA: %s", err)
 
     def start_monitor(self) -> None:
         if not self._monitor_task:
