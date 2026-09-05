@@ -8,7 +8,7 @@ from app.api.deps import get_current_user
 from app.core.security import create_access_token, hash_password, verify_password
 from app.db.session import get_db
 from app.models import Role, User, UserStatus
-from app.schemas.api import LoginRequest, RegisterRequest, TokenResponse, UserOut
+from app.schemas.api import ForgotPasswordRequest, LoginRequest, Message, RegisterRequest, TokenResponse, UserOut
 
 router = APIRouter()
 
@@ -63,6 +63,21 @@ def oauth_token(
     form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)
 ) -> TokenResponse:
     return _token(_authenticate(db, form.username, form.password))
+
+
+@router.post(
+    "/forgot-password", response_model=Message, summary="Restablecer contraseña",
+    description="Permite a un usuario restablecer su contraseña indicando su email registrado.",
+)
+def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db)) -> Message:
+    user = db.scalar(select(User).where(func.lower(User.email) == str(payload.email).lower()))
+    if not user:
+        raise HTTPException(status_code=404, detail="No existe una cuenta registrada con este correo.")
+    if user.estado != UserStatus.ACTIVO:
+        raise HTTPException(status_code=403, detail="La cuenta se encuentra inactiva o suspendida.")
+    user.password_hash = hash_password(payload.new_password)
+    db.commit()
+    return Message(message="Contraseña actualizada exitosamente. Ya puedes iniciar sesión con tu nueva contraseña.")
 
 
 @router.get("/me", response_model=UserOut, summary="Consultar usuario autenticado")

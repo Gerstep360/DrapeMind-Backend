@@ -2,16 +2,33 @@
 Paquete: Acceso y gestión de usuarios (PK-01).
 """
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
-from app.core.security import create_access_token, verify_password
+from app.core.security import create_access_token, hash_password, verify_password
 from app.db.session import get_db
 from app.models import Role, User, UserStatus
-from app.schemas.api import LoginRequest, TokenResponse, UserOut
+from app.schemas.api import ForgotPasswordRequest, LoginRequest, Message, TokenResponse, UserOut
 
 router = APIRouter()
+
+
+@router.post(
+    "/forgot-password",
+    response_model=Message,
+    summary="CU-02: Restablecer contraseña",
+    description="Permite a un usuario restablecer su contraseña indicando su email registrado.",
+)
+def restablecer_contrasena(payload: ForgotPasswordRequest, db: Session = Depends(get_db)) -> Message:
+    user = db.scalar(select(User).where(func.lower(User.email) == str(payload.email).lower()))
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No existe una cuenta registrada con este correo.")
+    if user.estado != UserStatus.ACTIVO:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="La cuenta se encuentra inactiva o bloqueada.")
+    user.password_hash = hash_password(payload.new_password)
+    db.commit()
+    return Message(message="Contraseña actualizada exitosamente. Ya puedes iniciar sesión con tu nueva contraseña.")
 
 
 @router.post(
@@ -22,7 +39,7 @@ router = APIRouter()
 )
 def iniciar_sesion(payload: LoginRequest, db: Session = Depends(get_db)) -> dict:
     """CU-02: Autentica credenciales y emite token JWT."""
-    user = db.scalar(select(User).where(User.email == payload.email))
+    user = db.scalar(select(User).where(func.lower(User.email) == str(payload.email).lower()))
     if not user or not verify_password(payload.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

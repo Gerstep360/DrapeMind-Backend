@@ -57,6 +57,7 @@ def test_openapi_exposes_main_use_cases():
     paths = schema["paths"]
     expected = {
         "/api/v1/auth/register",
+        "/api/v1/auth/forgot-password",
         "/api/v1/catalog/products",
         "/api/v1/branches",
         "/api/v1/branches/{branch_id}/availability",
@@ -116,3 +117,13 @@ def test_payment_creation_accepts_idempotency_key():
         if parameter["in"] == "header"
     }
     assert "Idempotency-Key" in header_names
+
+
+def test_forgot_password_contract():
+    client = TestClient(app)
+    res = client.post(
+        "/api/v1/auth/forgot-password",
+        json={"email": "inexistente@drapemind.com", "new_password": "NewPassword123!"},
+    )
+    assert res.status_code == 404
+    assert "No existe una cuenta" in res.json()["detail"]
