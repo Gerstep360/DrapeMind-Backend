@@ -148,7 +148,7 @@ class CatalogSkill(BaseAiSkill):
             "requires_llm": True,
             "direct_response": None,
             "fallback_response": fallback,
-            "focus_prompt": f"Presenta con carisma y precisión las {len(action_items)} prendas encontradas con sus precios en Bolivianos (Bs). Adáptate estrictamente al tono solicitado por el cliente (humor, rima, poesía o formalidad).",
+            "focus_prompt": f"Presenta las {len(action_items)} prendas seleccionadas con sus precios en Bolivianos (Bs) integrándolas naturalmente según lo solicitado.",
             "presentation_mode": "mixed" if action_items else "text",
             "response_title": f"Selección Showroom: {query.capitalize()}" if query else (f"Selección Showroom: Hasta Bs {int(max_price)}" if max_price else "Selección Showroom: Piezas Destacadas"),
             "suggested_actions": suggested_actions[:4],

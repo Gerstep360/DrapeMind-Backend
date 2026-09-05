@@ -439,10 +439,6 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
                 "Brinda una asesoría de moda completa, argumentada y distinguida."
             )
 
-            clean_lower = message.lower()
-            is_rhyme = any(k in clean_lower for k in ["rima", "rimando", "rimar", "poema", "verso", "estrofa", "trova"])
-            is_funny = any(k in clean_lower for k in ["chistoso", "gracioso", "chiste", "humor", "broma", "comedia", "risa"])
-
             items_catalog_lines = []
             for it in action_items:
                 nom = it.get("nombre")
@@ -453,40 +449,16 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
                 items_catalog_lines.append(f"- {nom}{extra}: Bs {pr:.2f} [{mot}]")
             items_catalog_text = "\n".join(items_catalog_lines) if items_catalog_lines else "No hay prendas específicas seleccionadas."
 
-            style_instruction = ""
-            if is_rhyme and is_funny:
-                style_instruction = (
-                    "¡MANDATO PRIORITARIO DE ESTILO Y TONO!:\n"
-                    "El cliente solicitó expresamente responder de forma CHISTOSA O CON RIMA.\n"
-                    "DEBES componer tu respuesta en versos rimados, ingeniosos y con humor en español.\n"
-                    "Menciona las prendas encontradas y sus precios en Bs dentro de tus rimas o bromas.\n"
-                    "PROHIBIDO usar saludos acartonados o robóticos (nada de 'Estimado German...', 'He seleccionado...'). ¡Entra directo al verso y la diversión!"
-                )
-            elif is_rhyme:
-                style_instruction = (
-                    "¡MANDATO PRIORITARIO DE ESTILO Y TONO!:\n"
-                    "El cliente solicitó expresamente responder EN RIMA.\n"
-                    "DEBES componer tu respuesta rimando en versos fluidos y elegantes en español, citando las prendas y sus precios en Bs.\n"
-                    "PROHIBIDO texto plano genérico o introducciones burocráticas."
-                )
-            elif is_funny:
-                style_instruction = (
-                    "¡MANDATO PRIORITARIO DE ESTILO Y TONO!:\n"
-                    "El cliente solicitó un tono CHISTOSO / CON HUMOR.\n"
-                    "Responde con humor simpático, ocurrencias de moda y buena onda, citando las prendas y sus precios en Bs."
-                )
-
             final_messages = [
                 {
                     "role": "system",
                     "content": (
-                        "Eres Altair, el Personal Stylist & Asesor de Imagen de DrapeMind Atelier.\n"
-                        "PERSONALIDAD: Eres un estilista humano, sumamente empático, carismático y elocuente. "
-                        "Te adaptas con maestría y rapidez a cualquier tono pedido por el usuario (humor, rima, poesía o elegancia).\n"
-                        "REGLAS:\n"
-                        "1. Prohibido terminantemente cualquier emoji o emoticono.\n"
-                        "2. Habla en español fluido citando siempre datos reales de FastAPI (precios en Bolivianos Bs y prendas).\n"
-                        "3. Cumple al 100% cualquier instrucción especial de tono o formato que haya pedido el cliente."
+                        "Eres Altair, Personal Stylist e Inteligencia Artificial de DrapeMind Atelier.\n"
+                        "DIRECTRICES GENERALES DE RESPUESTA:\n"
+                        "1. ADAPTABILIDAD TOTAL Y FIDELIDAD AL PROMPT: Cumple estrictamente con el tono, formato, estilo o personalidad que el usuario te solicite en su mensaje (humor, rima, poesía, sarcasmo, ironía, concisión extrema, formalidad, análisis técnico, o cualquier otro estilo). Adopta de inmediato ese estilo con naturalidad e ingenio.\n"
+                        "2. INTEGRACIÓN DE PRENDAS Y PRECIOS: Fundamenta tu asesoría en los datos reales del showroom (prendas verificadas y sus precios en Bolivianos Bs). Cita los nombres y precios reales integrándolos fluidamente en el formato que el usuario pidió.\n"
+                        "3. NATURALIDAD HUMANA: No uses saludos robóticos ni fórmulas repetitivas ('Estimado cliente...', 'A continuación te presento...'). Ve directo al grano y habla con carisma y soltura.\n"
+                        "4. PROHIBICIÓN ESTRICTA: Cero emojis o emoticonos bajo cualquier circunstancia."
                     ),
                 },
                 {
@@ -494,15 +466,16 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
                     "content": (
                         f"CLIENTE: {user_name}\n"
                         f"CONSULTA DEL CLIENTE: {message}\n\n"
-                        f"PRENDAS VERIFICADAS EN SHOWROOM FASTAPI:\n{items_catalog_text}\n\n"
-                        + (f"{style_instruction}\n\n" if style_instruction else "")
-                        + f"DIRECTRIZ DE ASESORÍA: {focus_prompt}\n"
-                        "Genera la respuesta de Altair ahora:"
+                        f"DATOS DEL ATELIER (Prendas y precios verificados):\n{items_catalog_text}\n\n"
+                        f"ENFOQUE: {focus_prompt}\n\n"
+                        "Responde a la consulta del cliente cumpliendo con fidelidad todas sus instrucciones de tono, contenido y estilo:"
                     ),
                 },
             ]
             max_tokens = max(180, min(350, int(skill_res.get("llm_max_tokens") or 300)))
-            creative_temp = 0.7 if (is_rhyme or is_funny) else settings.AI_TEMPERATURE
+            target_temp = float(settings.AI_TEMPERATURE or 0.6)
+            if target_temp < 0.55:
+                target_temp = 0.6
 
             try:
                 async with model_runtime.lease():
@@ -517,7 +490,7 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
                         final_messages,
                         max_tokens=max_tokens,
                         stream=True,
-                        temperature=creative_temp,
+                        temperature=target_temp,
                     )
                     try:
                         async with client.stream(
