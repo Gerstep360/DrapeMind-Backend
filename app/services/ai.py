@@ -281,7 +281,7 @@ async def _completion(
 
 
 async def run_agent_socket(db: Session, user: User, message: str, session_id: int | None, send) -> None:
-    """Execute verified tools first and wake Gemma only when prose adds value."""
+    """Let Gemma select tools under a runtime lease and stream real execution events."""
     started = time.perf_counter()
     session = get_ai_session(db, user.id, session_id)
     tool_results: list[dict] = []
@@ -297,7 +297,7 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
     try:
         await send({
             "type": "thought",
-            "content": "Activando a Gemma con las tools disponibles para esta conversación..."
+            "content": "Preparando a Altair para tu consulta..."
         })
 
         memory = load_ai_memory(session.resumen_contexto)
@@ -309,24 +309,10 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
                 "session_id": session.id,
             }
         )
-        # 1. Resolver y ejecutar las herramientas del atelier de forma ágil y verificada
-        if getattr(run_gemma_tool_agent, "__name__", "") != "run_gemma_tool_agent":
-            skill_res = await run_gemma_tool_agent(message, memory, user)
-        else:
-            from app.services.ai_skills.skill_registry import skill_registry
-            skill = skill_registry.resolve(message, {"memory": memory, "user_id": user.id})
-            try:
-                skill_res = skill.execute(db, user, message, {"memory": memory, "user_id": user.id})
-            except Exception as exc:
-                logger.warning("Error ejecutando habilidad %s: %s", getattr(skill, "name", "unknown"), exc)
-                skill_res = {
-                    "requires_llm": True,
-                    "action_items": [],
-                    "direct_response": None,
-                    "fallback_response": "He consultado el showroom atelier para tu solicitud.",
-                    "focus_prompt": "Responde con elocuencia y estilo a la consulta del cliente.",
-                    "presentation_mode": "text",
-                }
+        async with model_runtime.lease():
+            skill_res = await run_gemma_tool_agent(
+                db, user, message, memory, _completion, emit=send,
+            )
 
         skill = SimpleNamespace(name="gemma_tool_agent")
         tool_name = skill_res.get("tool_name")

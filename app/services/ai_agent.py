@@ -122,6 +122,7 @@ def _cards_from_tool(
         "get_new_arrivals",
         "get_most_expensive_product",
         "find_alternatives",
+        "get_my_favorites",
     } and isinstance(result, list):
         for product in result[:6]:
             if isinstance(product, dict):
@@ -216,7 +217,7 @@ async def run_gemma_tool_agent(
                 "arguments": {
                     name: {
                         key: value[key]
-                        for key in ("type", "default", "minimum", "maximum")
+                        for key in ("type", "default", "minimum", "maximum", "anyOf", "items", "enum", "minItems", "maxItems", "description")
                         if key in value
                     }
                     for name, value in (schema.get("properties") or {}).items()
@@ -231,6 +232,13 @@ async def run_gemma_tool_agent(
         "entre una prenda individual, varias opciones, un outfit y datos de la cuenta. "
         "No saludes: la interfaz ya dio la bienvenida al abrir el chat. Nunca inventes productos, tallas, "
         "precios ni resultados. Respeta tallas exactas y alternativas explícitas.\n"
+        "Personaliza usando preferencias explícitas y memoria verificada; no deduzcas gustos de datos inexistentes. "
+        "Puedes consultar favoritos, disponibilidad por showroom, pagos propios y presupuesto exacto de una selección. "
+        "Elige el formato de answer según la pregunta: texto breve, listas, tabla Markdown para comparar, "
+        "o diagrama ASCII dentro de un bloque ```text para explicar combinaciones. Conserva espacios y saltos. "
+        "Usa negritas con moderación. No uses HTML. No incluyas dibujos si no ayudan. "
+        "Adapta el tono al cliente y evita saludos repetidos. Las acciones describen consultas reales, no pensamientos privados. "
+        "Ver el estado de un pago no significa verificar un banco ni aprobarlo; no afirmes que cobraste. "
         "Responde EXCLUSIVAMENTE JSON con uno de estos formatos:\n"
         "{\"type\":\"tool\",\"tool\":\"nombre\",\"arguments\":{},\"reason\":\"acción breve\"}\n"
         "{\"type\":\"finish\",\"answer\":\"asesoría elocuente, argumentada y personalizada basada en los resultados verificados del atelier\",\"title\":\"título elegante\",\"presentation\":\"text|cards|mixed\"}"
@@ -279,9 +287,7 @@ async def run_gemma_tool_agent(
             )
         try:
             agent_thoughts = [
-                "Altair está evaluando tu consulta en el showroom...",
-                "Examinando siluetas y combinaciones disponibles...",
-                "Verificando disponibilidad de piezas atelier...",
+                "Altair sigue procesando tu consulta...",
             ]
             response = await _with_keepalive(
                 complete(
@@ -299,7 +305,7 @@ async def run_gemma_tool_agent(
             await send_event(
                 {
                     "type": "thought",
-                    "content": "Gemma sintetizó la información y procede a estructurar la respuesta...",
+                    "content": "No se pudo completar la respuesta del modelo. Conservamos las consultas realizadas.",
                 }
             )
             break
@@ -386,7 +392,9 @@ async def run_gemma_tool_agent(
         await send_event(
             {
                 "type": "thought",
-                "content": f"FastAPI devolvió {result_count} resultado(s) verificado(s); Gemma los está evaluando.",
+                "content": ("La consulta no pudo completarse; Altair está revisando el error."
+                            if isinstance(result, dict) and result.get("error")
+                            else f"Se recibieron {result_count} resultado(s); Altair los está revisando."),
             }
         )
         observation = json.dumps(result, ensure_ascii=False, default=str)
@@ -409,8 +417,7 @@ async def run_gemma_tool_agent(
         if cards:
             names = ", ".join(str(card.get("nombre") or "prenda") for card in cards[:3])
             fallback_answer = (
-                f"He evaluado tu solicitud y contrastado la disponibilidad en showroom. "
-                f"A continuación te presento las piezas seleccionadas ({names}) con stock, tallas y acabados sastreros confirmados."
+                f"Encontré estas prendas: {names}. El modelo no pudo terminar la explicación; puedes revisar los resultados y reintentar."
             )
         elif steps and isinstance(steps[-1].get("result"), list) and not steps[-1]["result"]:
             fallback_answer = (
@@ -418,7 +425,7 @@ async def run_gemma_tool_agent(
             )
         else:
             fallback_answer = (
-                "He analizado tu consulta. Puedes explorar las opciones curadas en el catálogo o indicarme una ocasión para diseñar un look a medida."
+                "No pude completar la respuesta. Puedes reintentar tu consulta; no realicé cambios en tu cuenta."
             )
         final = {
             "answer": fallback_answer,

@@ -11,16 +11,16 @@ from app.core.config import settings
 from app.db.session import get_db
 from app.models import Order, Payment, Role, User
 from app.schemas.api import PaymentCreate, PaymentOut, PaymentWebhook
-from app.services.store import confirm_payment, create_payment
+from app.services.store import confirm_payment, create_payment, staff_can_access_branch
 from app.services.realtime import event_hub
 
 router = APIRouter()
 
 
-def _can_read_payment(user: User, order: Order) -> bool:
-    return order.usuario_id == user.id or user.rol in {
+def _can_read_payment(user: User, order: Order, db: Session) -> bool:
+    return order.usuario_id == user.id or (user.rol in {
         Role.ADMIN, Role.VENDEDOR, Role.ENCARGADO, Role.CAJERO,
-    }
+    } and staff_can_access_branch(db, user, order.sucursal_id))
 
 
 @router.post(
@@ -46,7 +46,7 @@ def payments_for_order(
     db: Session = Depends(get_db),
 ) -> list[Payment]:
     order = db.get(Order, order_id)
-    if not order or not _can_read_payment(current_user, order):
+    if not order or not _can_read_payment(current_user, order, db):
         raise HTTPException(404, "Pedido no encontrado")
     return list(
         db.scalars(select(Payment).where(Payment.pedido_id == order_id).order_by(Payment.created_at.desc()))
@@ -61,7 +61,7 @@ def get_payment(
 ) -> Payment:
     payment = db.get(Payment, payment_id)
     order = db.get(Order, payment.pedido_id) if payment else None
-    if not payment or not order or not _can_read_payment(current_user, order):
+    if not payment or not order or not _can_read_payment(current_user, order, db):
         raise HTTPException(404, "Pago no encontrado")
     return payment
 

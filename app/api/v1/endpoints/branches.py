@@ -5,7 +5,8 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import require_roles
 from app.db.session import get_db
-from app.models import Branch, BranchStaff, BranchStock, City, Product, ProductVariant, Role, User
+from app.models import Branch, BranchStaff, BranchStock, City, InventoryMovement, Product, ProductVariant, Role, User
+from app.services.store import staff_can_access_branch
 from app.schemas.api import (
     BranchInput, BranchOut, BranchStockInput, BranchStockOut, CityInput, CityOut,
     StaffAssignmentInput,
@@ -52,6 +53,19 @@ def _sync_variant_totals(db: Session, variant_id: int) -> None:
 @router.get("/cities", response_model=list[CityOut], summary="Listar ciudades con sucursales")
 def list_cities(db: Session = Depends(get_db)) -> list[City]:
     return list(db.scalars(select(City).where(City.activo.is_(True)).order_by(City.nombre)))
+
+
+@router.get("/staff/assigned", response_model=list[BranchOut], summary="Mis sucursales de trabajo")
+def assigned_branches(
+    staff: User = Depends(require_roles(Role.ADMIN, Role.ENCARGADO, Role.CAJERO, Role.VENDEDOR)),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    stmt = select(Branch, City).join(City, City.id == Branch.ciudad_id).where(Branch.activo.is_(True))
+    if staff.rol != Role.ADMIN:
+        stmt = stmt.where(Branch.id.in_(select(BranchStaff.sucursal_id).where(
+            BranchStaff.usuario_id == staff.id, BranchStaff.activo.is_(True),
+        )))
+    return [_branch_payload(branch, city) for branch, city in db.execute(stmt.order_by(Branch.nombre))]
 
 
 @router.get("", response_model=list[BranchOut], summary="Listar sucursales")
@@ -169,8 +183,11 @@ def create_branch(
 @router.put("/{branch_id}/stock", response_model=BranchStockOut, summary="Ajustar stock en sucursal")
 def set_branch_stock(
     branch_id: int, payload: BranchStockInput,
-    admin: User = Depends(require_roles(Role.ADMIN)), db: Session = Depends(get_db),
+    admin: User = Depends(require_roles(Role.ADMIN, Role.ENCARGADO)), db: Session = Depends(get_db),
+    observacion: str = Query(default="Ajuste de existencias", min_length=5, max_length=300),
 ) -> dict:
+    if not staff_can_access_branch(db, admin, branch_id):
+        raise HTTPException(403, "No está asignado a esta sucursal")
     branch = db.get(Branch, branch_id)
     variant = db.scalar(select(ProductVariant).where(ProductVariant.id == payload.variante_id).with_for_update())
     if not branch:
@@ -184,6 +201,10 @@ def set_branch_stock(
     )
     if row and payload.stock_total < row.stock_reservado:
         raise HTTPException(409, "El stock total no puede ser menor al reservado")
+    if row and row.stock_reservado and not payload.activo:
+        raise HTTPException(409, "No se puede desactivar stock con reservas activas")
+    previous_total = row.stock_total if row else 0
+    previous_reserved = row.stock_reservado if row else 0
     if not row:
         row = BranchStock(
             sucursal_id=branch_id, variante_id=variant.id, stock_reservado=0,
@@ -195,10 +216,39 @@ def set_branch_stock(
         row.stock_total = payload.stock_total
         row.stock_minimo = payload.stock_minimo
         row.activo = payload.activo
+    # SessionLocal disables autoflush: persist branch changes before summing.
+    db.flush()
     _sync_variant_totals(db, variant.id)
+    if previous_total != payload.stock_total:
+        db.add(InventoryMovement(
+            variante_id=variant.id, sucursal_id=branch_id,
+            tipo="ENTRADA" if payload.stock_total > previous_total else "AJUSTE",
+            cantidad=abs(payload.stock_total - previous_total),
+            stock_total_anterior=previous_total, stock_total_nuevo=payload.stock_total,
+            stock_reservado_anterior=previous_reserved, stock_reservado_nuevo=previous_reserved,
+            usuario_id=admin.id, observacion=observacion,
+            referencia_tipo="SUCURSAL", referencia_id=branch_id,
+        ))
     db.commit()
     db.refresh(row)
     return _stock_payload(row, variant, db.get(Product, variant.producto_id))
+
+
+@router.get("/{branch_id}/movements", summary="Historial de movimientos de sucursal")
+def branch_movements(
+    branch_id: int, limit: int = Query(default=50, ge=1, le=200),
+    staff: User = Depends(require_roles(Role.ADMIN, Role.ENCARGADO)),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    if not staff_can_access_branch(db, staff, branch_id):
+        raise HTTPException(403, "No está asignado a esta sucursal")
+    rows = db.scalars(select(InventoryMovement).where(
+        InventoryMovement.sucursal_id == branch_id,
+    ).order_by(InventoryMovement.id.desc()).limit(limit))
+    return [{key: getattr(row, key) for key in (
+        "id", "variante_id", "sucursal_id", "tipo", "cantidad", "stock_total_anterior",
+        "stock_total_nuevo", "usuario_id", "observacion", "created_at",
+    )} for row in rows]
 
 
 @router.post("/{branch_id}/staff", status_code=status.HTTP_201_CREATED, summary="Asignar personal a sucursal")

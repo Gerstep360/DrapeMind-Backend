@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import (
-    Order, Product, ProductVariant, Reservation, User,
+    Branch, BranchStock, Favorite, Order, Payment, Product, ProductVariant, Reservation, User,
 )
 from app.services.store import cart_payload, get_product_detail, product_payload, search_products
 
@@ -29,6 +29,77 @@ class SearchProductsArgs(BaseModel):
 
 class ProductArgs(BaseModel):
     product_id: int
+
+
+class BranchAvailabilityArgs(BaseModel):
+    product_id: int = Field(gt=0)
+    size: str | None = Field(default=None, max_length=20)
+    color: str | None = Field(default=None, max_length=60)
+
+
+class OrderPaymentArgs(BaseModel):
+    order_id: int = Field(gt=0)
+
+
+class SelectionBudgetArgs(BaseModel):
+    variant_ids: list[int] = Field(min_length=1, max_length=20)
+    budget: Decimal = Field(ge=0, max_digits=10, decimal_places=2)
+
+
+def _favorites(context: "ToolContext", raw: BaseModel) -> Any:
+    products = context.db.scalars(select(Product).join(Favorite, Favorite.producto_id == Product.id).where(
+        Favorite.usuario_id == context.user.id, Product.activo.is_(True),
+    ).order_by(Product.id.desc()).limit(20))
+    return [get_product_detail(context.db, product.id) for product in products]
+
+
+def _branch_availability(context: "ToolContext", raw: BaseModel) -> Any:
+    args = BranchAvailabilityArgs.model_validate(raw)
+    stmt = select(Branch, BranchStock, ProductVariant).join(
+        BranchStock, BranchStock.sucursal_id == Branch.id,
+    ).join(ProductVariant, ProductVariant.id == BranchStock.variante_id).join(
+        Product, Product.id == ProductVariant.producto_id,
+    ).where(
+        Product.id == args.product_id, Product.activo.is_(True), Branch.activo.is_(True),
+        BranchStock.activo.is_(True), ProductVariant.activo.is_(True),
+        BranchStock.stock_total > BranchStock.stock_reservado,
+    )
+    if args.size:
+        stmt = stmt.where(ProductVariant.talla.ilike(args.size))
+    if args.color:
+        stmt = stmt.where(ProductVariant.color.ilike(args.color))
+    return [{"sucursal": branch.nombre, "direccion": branch.direccion, "sucursal_id": branch.id,
+             "variante_id": variant.id, "talla": variant.talla, "color": variant.color,
+             "disponible": stock.stock_total - stock.stock_reservado}
+            for branch, stock, variant in context.db.execute(stmt.order_by(Branch.id, ProductVariant.id).limit(40))]
+
+
+def _my_payment_status(context: "ToolContext", raw: BaseModel) -> Any:
+    args = OrderPaymentArgs.model_validate(raw)
+    order = context.db.scalar(select(Order).where(Order.id == args.order_id, Order.usuario_id == context.user.id))
+    if not order:
+        return {"error": "Pedido no encontrado en tu cuenta"}
+    rows = context.db.scalars(select(Payment).where(Payment.pedido_id == order.id).order_by(Payment.id.desc()).limit(10))
+    return {"pedido_id": order.id, "estado_pedido": order.estado, "total": str(order.total),
+            "pagos": [{"estado": p.estado, "metodo": p.metodo, "monto": str(p.monto)} for p in rows],
+            "nota": "Estado registrado en el servidor. Esta consulta no verifica el banco ni confirma pagos."}
+
+
+def _selection_budget(context: "ToolContext", raw: BaseModel) -> Any:
+    args = SelectionBudgetArgs.model_validate(raw)
+    if len(args.variant_ids) != len(set(args.variant_ids)):
+        return {"error": "Indica cada variante una sola vez; se calcula una unidad por prenda"}
+    rows = context.db.execute(select(ProductVariant, Product).join(Product, Product.id == ProductVariant.producto_id).where(
+        ProductVariant.id.in_(args.variant_ids), ProductVariant.activo.is_(True), Product.activo.is_(True),
+    )).all()
+    if len(rows) != len(args.variant_ids):
+        return {"error": "Una o más variantes ya no están disponibles"}
+    total = sum((product.precio for _, product in rows), Decimal("0"))
+    return {"total": str(total), "presupuesto": str(args.budget), "saldo": str(args.budget - total),
+            "dentro_presupuesto": total <= args.budget,
+            "stock_verificado": all(v.stock_total > v.stock_reservado for v, _ in rows),
+            "prendas": [{"producto_id": p.id, "nombre": p.nombre, "variante_id": v.id,
+                         "talla": v.talla, "color": v.color, "precio": str(p.precio)} for v, p in rows]}
 
 
 class StockArgs(BaseModel):
@@ -605,6 +676,10 @@ def _evaluate_fit(context: ToolContext, raw: BaseModel) -> Any:
 TOOLS = {
     tool.name: tool
     for tool in [
+        ToolDefinition("get_my_favorites", "Consulta los favoritos reales del usuario para personalizar sugerencias.", EmptyArgs, _favorites),
+        ToolDefinition("get_branch_availability", "Busca showrooms con stock exacto por prenda, talla y color, e indica dirección.", BranchAvailabilityArgs, _branch_availability),
+        ToolDefinition("get_my_payment_status", "Lee el estado registrado del pago de un pedido propio; nunca aprueba pagos.", OrderPaymentArgs, _my_payment_status),
+        ToolDefinition("calculate_selection_budget", "Calcula total exacto y saldo de una selección de variantes, una unidad por variante, sin cambiar el carrito.", SelectionBudgetArgs, _selection_budget),
         ToolDefinition(
             "search_products",
             "Busca prendas reales en el catálogo con filtros de nombre, categoría, presupuesto, color o talla.",

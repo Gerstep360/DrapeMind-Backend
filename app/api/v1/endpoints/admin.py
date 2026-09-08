@@ -10,7 +10,7 @@ from app.api.deps import require_roles
 from app.core.config import settings
 from app.db.session import get_db
 from app.models import (
-    Category, InventoryMovement, Order, Product, ProductVariant, Reservation, Role, User,
+    BranchStaff, Category, InventoryMovement, Order, Product, ProductVariant, Reservation, Role, User,
 )
 from app.schemas.api import (
     AssistedProductRequest, CategoryInput, CategoryOut, InventoryAdjustment,
@@ -201,10 +201,14 @@ async def assisted_product(
 def all_reservations(
     state: str | None = None,
     sucursal_id: int | None = None,
-    staff: User = Depends(require_roles(Role.ADMIN, Role.VENDEDOR, Role.ENCARGADO)),
+    staff: User = Depends(require_roles(Role.ADMIN, Role.VENDEDOR, Role.ENCARGADO, Role.CAJERO)),
     db: Session = Depends(get_db),
 ) -> list[Reservation]:
     stmt = select(Reservation)
+    if staff.rol != Role.ADMIN:
+        stmt = stmt.where(Reservation.sucursal_id.in_(select(BranchStaff.sucursal_id).where(
+            BranchStaff.usuario_id == staff.id, BranchStaff.activo.is_(True),
+        )))
     if state:
         stmt = stmt.where(Reservation.estado == state)
     if sucursal_id:
@@ -227,6 +231,10 @@ def all_orders(
     db: Session = Depends(get_db),
 ) -> list[Order]:
     stmt = select(Order)
+    if staff.rol != Role.ADMIN:
+        stmt = stmt.where(Order.sucursal_id.in_(select(BranchStaff.sucursal_id).where(
+            BranchStaff.usuario_id == staff.id, BranchStaff.activo.is_(True),
+        )))
     if state:
         stmt = stmt.where(Order.estado == state)
     if sucursal_id:
