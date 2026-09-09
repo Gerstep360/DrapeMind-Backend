@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =====================================================================
-# DRAPEMIND - INSTALADOR PRINCIPAL MODULAR DE BACKEND (FASTAPI + IA)
+# DRAPEMIND - INSTALADOR PRINCIPAL MODULAR Y TUI (FASTAPI + ALTAIR AI)
 # Servidor IP: 157.173.102.129
 # Puerto API: 8045 (8000 libre)
 # Puerto Gemma 4: 8088 (8080 libre)
@@ -14,7 +14,7 @@ DEPLOY_DIR="${BACKEND_DIR}/scripts/deploy"
 
 # Cargar módulos de despliegue
 if [[ ! -d "${DEPLOY_DIR}" ]]; then
-    echo "ERROR: Directorio de módulos ${DEPLOY_DIR} no encontrado." >&2
+    echo "ERROR CRÍTICO: Directorio de módulos ${DEPLOY_DIR} no encontrado." >&2
     exit 1
 fi
 
@@ -29,51 +29,101 @@ source "${DEPLOY_DIR}/07_systemd.sh"
 source "${DEPLOY_DIR}/08_health.sh"
 
 install_full() {
-    banner
+    tui_banner
+    tui_pulse_delay "Iniciando proceso de instalación integral de DrapeMind..." 1
+
+    tui_step 1 8 "Instalación de Paquetes Base del Sistema (Ubuntu Linux)"
     install_system_packages
-    setup_postgresql
-    setup_python_venv
+
+    tui_step 2 8 "Configuración y Protección de Variables de Entorno (.env)"
     sync_env_production
+
+    tui_step 3 8 "Configuración Aislada de Base de Datos PostgreSQL"
+    setup_postgresql
+
+    tui_step 4 8 "Configuración de Entorno Virtual Python y Dependencias"
+    setup_python_venv
+
+    tui_step 5 8 "Aplicación de Migraciones Alembic y Sembrado Inicial"
     run_migrations_and_seed
+
+    tui_step 6 8 "Instalación de Motor de Inferencia llama-server (Gemma 4)"
     install_llama_server false
+
+    tui_step 7 8 "Descarga y Validación de Modelos Gemma 4 en Hugging Face"
     download_ai_models
+
+    tui_step 8 8 "Configuración e Inicio del Servicio Systemd"
     setup_systemd
+
     verify_backend
 }
 
 update_backend_code() {
-    log_info "Actualizando backend con los cambios más recientes de Git..."
-    cd "${BACKEND_DIR}"
-    git pull || log_warn "Git pull no se pudo completar automáticamente (revisa si hay cambios locales sin confirmar)."
+    tui_banner
+    tui_pulse_delay "Iniciando actualización segura del backend con cambios de Git..." 1
 
+    tui_step 1 5 "Sincronizando Código Fuente desde el Repositorio Git"
+    cd "${BACKEND_DIR}"
+    if ! tui_spin_cmd "Descargando commits recientes con git pull" git pull; then
+        log_warn "Git pull reportó cambios locales o conflictos. Continuando con la migración..."
+    fi
+
+    tui_step 2 5 "Verificando Entorno Virtual y Nuevas Dependencias PIP"
     setup_python_venv
+
+    tui_step 3 5 "Sincronizando Nuevas Variables en .env (Preservando Secretos)"
     sync_env_production
+
+    tui_step 4 5 "Aplicando Migraciones de Base de Datos Alembic"
     run_migrations_and_seed
-    install_llama_server false
-    setup_systemd
+
+    tui_step 5 5 "Reiniciando Servicio Systemd drapemind-backend"
+    restart_service
+
     verify_backend
 }
 
+show_menu() {
+    tui_banner
+    echo -e "${COLOR_PRIMARY}╭── [MENÚ DE ADMINISTRACIÓN Y DESPLIEGUE] ──────────────────────────────────╮${NC}"
+    echo -e "${COLOR_PRIMARY}│${NC}  Selecciona una acción para gestionar el Backend de DrapeMind:           ${COLOR_PRIMARY}│${NC}"
+    echo -e "${COLOR_PRIMARY}├────┬──────────────────────────────────────────────────────────────────────┤${NC}"
+    echo -e "${COLOR_PRIMARY}│${BOLD}  1 ${NC}${COLOR_PRIMARY}│${NC}  ${ICON_ROCKET} ${BOLD}Instalación Completa${NC} (Paquetes, BD, Python, .env, Gemma 4, Systemd)${COLOR_PRIMARY}│${NC}"
+    echo -e "${COLOR_PRIMARY}│${BOLD}  2 ${NC}${COLOR_PRIMARY}│${NC}  🔄 ${BOLD}Actualizar desde Git${NC} (Pull + Migrar .env + Restart)                ${COLOR_PRIMARY}│${NC}"
+    echo -e "${COLOR_PRIMARY}│${BOLD}  3 ${NC}${COLOR_PRIMARY}│${NC}  ${ICON_SHIELD} ${BOLD}Sincronizar y Proteger .env${NC} (Agregar nuevas variables sin daño)    ${COLOR_PRIMARY}│${NC}"
+    echo -e "${COLOR_PRIMARY}│${BOLD}  4 ${NC}${COLOR_PRIMARY}│${NC}  ${ICON_GEAR} ${BOLD}Iniciar / Reiniciar Servicio${NC} (drapemind-backend en puerto 8045)    ${COLOR_PRIMARY}│${NC}"
+    echo -e "${COLOR_PRIMARY}│${BOLD}  5 ${NC}${COLOR_PRIMARY}│${NC}  📜 ${BOLD}Ver Logs en Vivo${NC} (Journalctl en tiempo real)                       ${COLOR_PRIMARY}│${NC}"
+    echo -e "${COLOR_PRIMARY}│${BOLD}  6 ${NC}${COLOR_PRIMARY}│${NC}  ${ICON_DATABASE} ${BOLD}Configurar PostgreSQL${NC} (Usuario, base de datos y migraciones)        ${COLOR_PRIMARY}│${NC}"
+    echo -e "${COLOR_PRIMARY}│${BOLD}  7 ${NC}${COLOR_PRIMARY}│${NC}  ⚡ ${BOLD}Instalar llama-server${NC} (Binarios GGML con soporte Gemma 4)           ${COLOR_PRIMARY}│${NC}"
+    echo -e "${COLOR_PRIMARY}│${BOLD}  8 ${NC}${COLOR_PRIMARY}│${NC}  ${ICON_BRAIN} ${BOLD}Descargar Modelos Gemma 4${NC} (Pesos E2B desde Hugging Face)            ${COLOR_PRIMARY}│${NC}"
+    echo -e "${COLOR_PRIMARY}│${BOLD}  9 ${NC}${COLOR_PRIMARY}│${NC}  🩺 ${BOLD}Verificar Diagnóstico y Salud${NC} (/health/ready y /health/ai)          ${COLOR_PRIMARY}│${NC}"
+    echo -e "${COLOR_PRIMARY}│${BOLD}  0 ${NC}${COLOR_PRIMARY}│${NC}  🚪 ${BOLD}Salir del Instalador${NC}                                                ${COLOR_PRIMARY}│${NC}"
+    echo -e "${COLOR_PRIMARY}╰────┴──────────────────────────────────────────────────────────────────────╯${NC}"
+    echo ""
+}
+
 show_help() {
+    tui_banner
     echo "Uso: sudo bash install.sh [OPCION]"
     echo ""
-    echo "Opciones disponibles:"
-    echo "  --all         Instalación completa modular (Paquetes, BD, Python, .env, llama-server, modelos, systemd)"
+    echo "Opciones disponibles por línea de comando:"
+    echo "  --all         Instalación completa (Paquetes, BD, Python, .env, llama-server, modelos, systemd)"
     echo "  --update      Actualiza código de Git, sincroniza .env con nuevas variables, migra BD y reinicia"
     echo "  --env         Sincroniza y actualiza únicamente las variables de entorno en .env"
     echo "  --db          Solo configura PostgreSQL, migraciones Alembic y sembrado inicial"
     echo "  --llama       Descarga o compila el binario llama-server con librerías GGML"
     echo "  --models      Descarga modelos Gemma 4 de Hugging Face"
     echo "  --service     Reconfigura y reinicia el servicio systemd"
+    echo "  --restart     Solo reinicia el servicio systemd actual"
     echo "  --logs        Muestra logs de journalctl en tiempo real"
     echo "  --check       Verifica endpoints de salud (/health/ready y /health/ai)"
     echo "  --help        Muestra esta ayuda"
     echo ""
 }
 
-# --- Ejecución ---
+# Verificación de privilegios
 check_root
-detect_python
 
 case "${1:-}" in
     --all)
@@ -100,6 +150,10 @@ case "${1:-}" in
         setup_systemd
         verify_backend
         ;;
+    --restart)
+        restart_service
+        verify_backend
+        ;;
     --logs)
         view_logs
         ;;
@@ -110,48 +164,41 @@ case "${1:-}" in
         show_help
         ;;
     *)
-        banner
-        echo "Selecciona una opción para el Backend:"
-        echo "  1) Instalación completa de Backend (Recomendado con Gemma 4)"
-        echo "  2) Iniciar / Reiniciar Servicio Systemd (Puerto 8045)"
-        echo "  3) Actualizar Backend con cambios recientes de Git (Pull + Sincronizar .env + Restart)"
-        echo "  4) Ver logs en vivo del Backend (Journalctl)"
-        echo "  5) Solo configurar Base de Datos PostgreSQL"
-        echo "  6) Solo descargar e instalar binario llama-server (Gemma 4)"
-        echo "  7) Solo descargar Modelos Gemma 4 desde Hugging Face"
-        echo "  8) Verificar estado de salud del Backend"
-        echo "  9) Salir"
-        echo ""
-        read -rp "Opción [1-9]: " opt
+        show_menu
+        read -rp "  ${COLOR_ACCENT}${ICON_CHEVRON}${NC} ${BOLD}Selecciona una opción [0-9]:${NC} " opt
         case $opt in
             1)
                 install_full
                 ;;
             2)
-                setup_systemd
-                verify_backend
-                ;;
-            3)
                 update_backend_code
                 ;;
+            3)
+                sync_env_production
+                ;;
             4)
-                view_logs
+                restart_service
+                verify_backend
                 ;;
             5)
+                view_logs
+                ;;
+            6)
                 setup_postgresql
                 sync_env_production
                 run_migrations_and_seed
                 ;;
-            6)
+            7)
                 install_llama_server true
                 ;;
-            7)
+            8)
                 download_ai_models
                 ;;
-            8)
+            9)
                 verify_backend
                 ;;
-            9)
+            0)
+                echo -e "  ${COLOR_MUTED}Saliendo del instalador...${NC}"
                 exit 0
                 ;;
             *)

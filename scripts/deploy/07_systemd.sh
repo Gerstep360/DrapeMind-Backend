@@ -10,7 +10,10 @@ source "${SCRIPT_DIR}/00_common.sh"
 
 setup_systemd() {
     check_root
-    log_info "Configurando servicio systemd (drapemind-backend.service)..."
+
+    echo -e "${COLOR_PRIMARY}╭── [SERVICIO DEL SISTEMA SYSTEMD] ─────────────────────────────────────────╮${NC}"
+    echo -e "${COLOR_PRIMARY}│${NC}  ${BOLD}${ICON_GEAR} Registro y Configuración de drapemind-backend.service${NC}"
+    echo -e "${COLOR_PRIMARY}╰───────────────────────────────────────────────────────────────────────────╯${NC}"
 
     local SERVICE_USER="drapemind"
     local SERVICE_GROUP="drapemind"
@@ -62,29 +65,40 @@ LimitNOFILE=65535
 WantedBy=multi-user.target
 EOF
 
-    systemctl daemon-reload
-    systemctl enable drapemind-backend.service
-    systemctl restart drapemind-backend.service
+    _reload_and_start_systemd() {
+        systemctl daemon-reload
+        systemctl enable drapemind-backend.service
+        systemctl restart drapemind-backend.service
+    }
+
+    tui_spin_cmd "Habilitando e iniciando servicio drapemind-backend en systemd" _reload_and_start_systemd
 
     sleep 3
     if systemctl is-active --quiet drapemind-backend.service; then
-        log_success "Servicio drapemind-backend activo en puerto ${BACKEND_PORT}."
+        log_success "Servicio drapemind-backend activo y corriendo en el puerto ${BACKEND_PORT}."
     else
-        log_error "El servicio no pudo iniciar. Mostrando últimos logs:"
+        log_error "El servicio no pudo iniciar. Mostrando últimos logs del journal:"
         journalctl -u drapemind-backend -n 25 --no-pager || true
+        return 1
     fi
 }
 
 restart_service() {
     check_root
-    log_info "Reiniciando servicio drapemind-backend..."
-    systemctl restart drapemind-backend.service
+
+    echo -e "${COLOR_PRIMARY}╭── [REINICIAR SERVICIO] ───────────────────────────────────────────────────╮${NC}"
+    echo -e "${COLOR_PRIMARY}│${NC}  ${BOLD}${ICON_GEAR} Reiniciando servicio drapemind-backend${NC}"
+    echo -e "${COLOR_PRIMARY}╰───────────────────────────────────────────────────────────────────────────╯${NC}"
+
+    tui_spin_cmd "Reiniciando proceso drapemind-backend en systemd" systemctl restart drapemind-backend.service
+
     sleep 2
     if systemctl is-active --quiet drapemind-backend.service; then
-        log_success "Servicio drapemind-backend reiniciado correctamente."
+        log_success "Servicio reiniciado y respondiendo en el puerto ${BACKEND_PORT}."
     else
-        log_error "Error al reiniciar drapemind-backend."
+        log_error "Error al reiniciar el servicio drapemind-backend."
         journalctl -u drapemind-backend -n 25 --no-pager || true
+        return 1
     fi
 }
 

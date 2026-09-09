@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =====================================================================
-# DRAPEMIND - MODULO 06: DESCARGA Y VERIFICACION DE MODELOS GEMMA 4
+# DRAPEMIND - MODULO 06: MODELOS GEMMA 4 Y PROYECTOR MULTIMODAL
 # =====================================================================
 
 set -eo pipefail
@@ -11,16 +11,20 @@ source "${SCRIPT_DIR}/05_llama.sh"
 
 download_ai_models() {
     install_llama_server false
-
-    log_info "Comprobando y descargando modelos Gemma 4 de Hugging Face..."
     cd "${BACKEND_DIR}"
+
+    echo -e "${COLOR_PRIMARY}╭── [MODELOS DE INTELIGENCIA ARTIFICIAL] ───────────────────────────────────╮${NC}"
+    echo -e "${COLOR_PRIMARY}│${NC}  ${BOLD}${ICON_BRAIN} Comprobación y Descarga de Gemma 4 E2B + Proyector Multimodal${NC}"
+    echo -e "${COLOR_PRIMARY}╰───────────────────────────────────────────────────────────────────────────╯${NC}"
 
     local PYTHON_BIN="python3"
     [[ -x "${BACKEND_DIR}/.venv/bin/python" ]] && PYTHON_BIN="${BACKEND_DIR}/.venv/bin/python"
 
     if [[ -f "${BACKEND_DIR}/scripts/ai/download_models.py" ]]; then
-        "${PYTHON_BIN}" "${BACKEND_DIR}/scripts/ai/download_models.py" -y
-        log_success "Modelos Gemma 4 listos en ${BACKEND_DIR}/ai_models/."
+        tui_spin_cmd "Descargando / verificando pesos de Gemma 4 desde Hugging Face" \
+            "${PYTHON_BIN}" "${BACKEND_DIR}/scripts/ai/download_models.py" -y
+
+        log_success "Pesos de inferencia listos en ${DIM}${BACKEND_DIR}/ai_models/${NC}"
     else
         log_warn "Script download_models.py no encontrado en scripts/ai/."
     fi
