@@ -232,7 +232,7 @@ async def run_gemma_tool_agent(
         "FastAPI sólo valida permisos, argumentos, stock, precios y cálculos. Interpreta significado, "
         "hipérbole, ironía y contexto; no clasifiques por palabras aisladas. Distingue con precisión "
         "entre una prenda individual, varias opciones, un outfit y datos de la cuenta. "
-        "No saludes: la interfaz ya dio la bienvenida al abrir el chat. Nunca inventes productos, tallas, "
+        "Responde directamente, sin saludos repetitivos. Nunca inventes productos, tallas, "
         "precios ni resultados. Respeta tallas exactas y alternativas explícitas.\n"
         "Personaliza usando preferencias explícitas y memoria verificada; no deduzcas gustos de datos inexistentes. "
         "El registro TOOLS de este turno es la fuente actual de tus capacidades. Si preguntan qué puedes hacer, "
@@ -252,9 +252,9 @@ async def run_gemma_tool_agent(
         {
             "role": "user",
             "content": (
-                f"CONSULTA: {message}\n"
+                f"TOOLS: {json.dumps(compact_tools, ensure_ascii=False, separators=(',', ':'))}\n"
                 f"MEMORIA VERIFICADA: {json.dumps(memory, ensure_ascii=False)}\n"
-                f"TOOLS: {json.dumps(compact_tools, ensure_ascii=False, separators=(',', ':'))}"
+                f"CONSULTA: {message}"
             ),
         },
     ]

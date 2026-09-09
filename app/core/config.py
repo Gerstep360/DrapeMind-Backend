@@ -58,6 +58,8 @@ class Settings(BaseSettings):
     AI_AGENT_MAX_TOKENS: int = Field(default=768, ge=128, le=4096)
     AI_AGENT_DEADLINE_SECONDS: float = Field(default=180, ge=30, le=600)
     AI_REASONING_MODE: Literal["auto", "on", "off"] = "auto"
+    AI_REASONING_BUDGET: int = Field(default=64, ge=0, le=512)
+    AI_FIRST_TOKEN_TIMEOUT_SECONDS: float = Field(default=45, ge=5, le=120)
     AI_TEMPERATURE: float = 0.35
     RESERVATION_TTL_MINUTES: int = 2880
     PAYMENT_PROVIDER: Literal["mock", "external"] = "mock"

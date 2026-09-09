@@ -1,5 +1,30 @@
 # Altair: streaming y perfil CPU
 
+## Revisión posterior: timeout real y mediciones locales
+
+El debug recibido muestra TimeoutError al agotarse el límite absoluto de 180 s durante la lectura SSE.
+Eso confirma el punto de fallo, no permite medir la velocidad del VPS ni demostrar por sí solo la causa interna del modelo.
+
+Se añadió AI_REASONING_BUDGET=64 (CLI y petición), AI_FIRST_TOKEN_TIMEOUT_SECONDS=45 y un error público legible.
+La lectura termina cuando llega una decisión JSON completa; no espera espacios o generación posterior al objeto.
+El catálogo estable precede al mensaje variable para reutilizar el prefijo cacheado.
+Los logs contienen tiempo hasta primer delta, duración, caracteres públicos/de razonamiento y motivo de finalización, sin volcar pensamientos.
+
+Mediciones con el GGUF local real, CPU, 3 hilos y contexto 4096:
+
+| Consulta independiente | Tiempo total | Primer contenido del protocolo |
+| --- | ---: | ---: |
+| Explicar capacidades | 23,09 s | 13,83 s |
+| Orientación sobre tejido | 12,11 s | 6,52 s |
+| Búsqueda mediante search_products + PostgreSQL local | 31,94 s | No medido por separado |
+
+El primer contenido del protocolo puede preceder al texto público visible: incluye el comienzo del JSON.
+La consulta de catálogo se ejecutó en una transacción READ ONLY y se cerró con rollback.
+El benchmark reproducible es scripts/benchmark_agent_local.py --database; siempre fuerza loopback y solo termina el proceso que él creó.
+No se contactó el VPS. Estos tiempos no son una garantía de rendimiento en ese servidor.
+
+Validación actualizada: 60 pruebas backend aprobadas. La nota histórica de falta de modelo al final de este documento corresponde a la revisión anterior y queda superada por estas mediciones locales.
+
 ## Correcciones implementadas
 
 - La ruta del agente solicita streaming real a llama-server y entrega snapshots del campo público answer por WebSocket. Web y Flutter muestran ese texto mientras se genera.

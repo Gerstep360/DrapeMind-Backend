@@ -125,6 +125,7 @@ class ModelRuntime:
             "-ngl", ngl_val,
             "--jinja",
             "--reasoning", settings.AI_REASONING_MODE,
+            "--reasoning-budget", str(settings.AI_REASONING_BUDGET),
         ]
         # llama-server is an OpenAI-compatible text/reasoning server; --mmproj is not a valid CLI argument for llama-server
 

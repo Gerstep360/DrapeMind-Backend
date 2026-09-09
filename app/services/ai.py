@@ -244,6 +244,7 @@ async def _completion(
         "max_tokens": max_tokens or settings.AI_AGENT_MAX_TOKENS,
         "stream": stream or on_text is not None,
         "cache_prompt": True,
+        "reasoning_budget": settings.AI_REASONING_BUDGET,
         "stop": [
             "<end_of_turn>",
             "<eos>",
@@ -261,6 +262,9 @@ async def _completion(
     if on_text is not None:
         content = ""
         finish_reason = None
+        started = time.monotonic()
+        first_delta = None
+        reasoning_chars = 0
         try:
             async with asyncio.timeout(settings.AI_AGENT_DEADLINE_SECONDS):
                 async with client.stream("POST", f"{settings.AI_BASE_URL.rstrip('/')}/chat/completions", json=payload, headers=headers) as response:
@@ -268,7 +272,14 @@ async def _completion(
                         await response.aread()
                         logger.error("Agent inference HTTP %s: %s", response.status_code, response.text[:500])
                     response.raise_for_status()
-                    async for line in response.aiter_lines():
+                    lines = response.aiter_lines().__aiter__()
+                    while True:
+                        try:
+                            remaining = (settings.AI_FIRST_TOKEN_TIMEOUT_SECONDS - (time.monotonic() - started)
+                                         if first_delta is None else settings.AI_TIMEOUT_SECONDS)
+                            line = await asyncio.wait_for(anext(lines), timeout=max(0.01, remaining))
+                        except StopAsyncIteration:
+                            break
                         if not line.startswith("data:"):
                             continue
                         data = line[5:].strip()
@@ -280,15 +291,41 @@ async def _completion(
                         if event.get("error"):
                             raise ModelRuntimeError("El servidor de inferencia devolvió un error durante la respuesta")
                         for choice in event.get("choices", []):
+                            reasoning = choice.get("delta", {}).get("reasoning_content") or ""
                             delta = choice.get("delta", {}).get("content") or ""
+                            if (delta or reasoning) and first_delta is None:
+                                first_delta = time.monotonic() - started
+                            reasoning_chars += len(reasoning)
                             if delta:
                                 content += delta
                                 await on_text(content)
                             finish_reason = choice.get("finish_reason") or finish_reason
+                        # A complete decision is sufficient; do not wait for extra whitespace/EOS.
+                        if response_format and content:
+                            try:
+                                decision = json.loads(content)
+                            except ValueError:
+                                decision = None
+                            if isinstance(decision, dict) and (
+                                decision.get("type") == "finish" and isinstance(decision.get("answer"), str)
+                                or decision.get("type") == "tool" and isinstance(decision.get("arguments"), dict)
+                                and isinstance(decision.get("tool"), str)
+                            ):
+                                finish_reason = "stop"
+                                break
             if not content:
                 raise ModelRuntimeError("El modelo no devolvió contenido de respuesta")
+            if finish_reason == "length":
+                raise ModelRuntimeError("Altair agotó su presupuesto de generación sin finalizar. Reintenta con una consulta más breve.")
             return {"choices": [{"message": {"content": content}, "finish_reason": finish_reason}]}
+        except (TimeoutError, httpx.TimeoutException) as exc:
+            raise ModelRuntimeError(
+                "El modelo excedió el tiempo de respuesta. La generación fue cancelada; "
+                "puedes reintentar. Si se repite, revisa la carga y los logs de llama-server."
+            ) from exc
         finally:
+            logger.info("agent_inference elapsed=%.2fs first_delta=%s answer_chars=%d reasoning_chars=%d finish=%s",
+                        time.monotonic() - started, first_delta, len(content), reasoning_chars, finish_reason)
             await client.aclose()
     if not stream:
         try:

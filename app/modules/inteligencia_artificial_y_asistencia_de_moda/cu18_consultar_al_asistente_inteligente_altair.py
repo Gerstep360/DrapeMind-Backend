@@ -132,7 +132,9 @@ async def ai_socket(socket: WebSocket) -> None:
                     await safe_send(
                         {
                             "type": "error",
-                            "message": f"No se pudo completar la consulta: {str(exc)}",
+                            "code": "AI_UNAVAILABLE",
+                            "message": str(exc) if isinstance(exc, (ModelRuntimeError, HTTPException)) and str(exc) else
+                                "La generación no pudo completarse. Reintenta en unos instantes; el detalle quedó registrado en el servidor.",
                         }
                     )
         except (WebSocketDisconnect, RuntimeError):
@@ -165,5 +167,4 @@ async def events_socket(socket: WebSocket) -> None:
         pass
     finally:
         await event_hub.disconnect(socket)
-
 
