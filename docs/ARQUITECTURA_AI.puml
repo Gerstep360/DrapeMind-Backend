@@ -1,0 +1,139 @@
+@startuml arquitectura_ia_drapemind
+!theme plain
+skinparam roundcorner 12
+skinparam shadowing false
+skinparam defaultFontName "Segoe UI", Arial, sans-serif
+skinparam defaultFontSize 12
+skinparam packageFontSize 14
+skinparam packageFontStyle bold
+skinparam componentStyle uml2
+skinparam linetype ortho
+
+' =====================================================================
+' PALETA DE COLORES MODERNA
+' =====================================================================
+!define COLOR_CLIENT #E0F2FE
+!define COLOR_NGINX #F1F5F9
+!define COLOR_FASTAPI #ECFDF5
+!define COLOR_AGENT #FEF3C7
+!define COLOR_TOOLS #EDE9FE
+!define COLOR_RUNTIME #FCE7F3
+!define COLOR_LLAMA #FED7AA
+!define COLOR_DB #DCFCE7
+
+title <size:18><b>DrapeMind Atelier — Arquitectura del Subsistema de Inteligencia Artificial (Backend)</b></size>\n<size:12>FastAPI • ReAct Agent Loop • Streaming WebSocket • llama-server local • Gemma 4 E2B QAT</size>
+
+' =====================================================================
+' CLIENTES
+' =====================================================================
+package "Clientes Externos" as P_CLIENTS {
+    [Angular Web Client\n(Browser / Desktop UI)] as FE_WEB #COLOR_CLIENT
+    [Flutter Mobile Client\n(Android / iOS App)] as FE_MOB #COLOR_CLIENT
+}
+
+' =====================================================================
+' SERVIDOR VPS LINUX
+' =====================================================================
+node "Servidor Producción Linux VPS (157.173.102.129)" as VPS {
+
+    package "Reverse Proxy Nginx (:80 / :443)" as P_NGINX #COLOR_NGINX {
+        [Nginx Subpath Router\n• /DrapeMind/api/v1/ws/ai (Upgrade WS)\n• Buffering: OFF | Timeout: 600s] as NGINX
+    }
+
+    package "FastAPI Backend Enterprise (:8045)" as P_FASTAPI #COLOR_FASTAPI {
+        
+        package "Capa de Transporte & Seguridad" as P_TRANS {
+            [WebSocket AI Endpoint\n<b>/api/v1/ws/ai</b>\n• Handshake JWT (type: auth)\n• CORS Origin Verification\n• Ping / Pong Keepalive] as WS_AI
+            [REST AI Endpoints\n<b>/api/v1/ai/*</b>\n• /chat, /search, /outfits\n• /cart/style-check, /value-check] as REST_AI
+        }
+
+        package "Núcleo del Agente Altair (ReAct Loop)" as P_AGENT #COLOR_AGENT {
+            [Altair Orchestrator\n<b>app/services/ai.py</b>\n• Deadline: 180s | Max Steps: 4\n• Sanitización JSON segura\n• Historial & Memoria de Sesión] as AG_ORCHESTRATOR
+            
+            [ReAct Tool Agent Loop\n<b>app/services/ai_agent.py</b>\n• System Prompt DrapeMind Atelier\n• JSON Parser (tool vs finish)\n• Inyección de Observaciones Compactas] as AG_LOOP
+            
+            [Snapshot Emitter\n<b>app/services/agent_stream.py</b>\n• Streaming incremental de respuesta\n• Aislamiento de reasoning_content\n• Filtro de JSON interno en vivo] as AG_STREAM
+            
+            [Gestor de Memoria\n<b>app/services/ai_memory.py</b>\n• Resumen contextual de sesión\n• Carga y fusión de preferencias] as AG_MEMORY
+        }
+
+        package "Capa de Habilidades (Skills)" as P_SKILLS {
+            [Skill Registry\n(Despacho Dinámico)] as SK_REG
+            [Catalog Skill\n(Búsqueda semántica)] as SK_CAT
+            [Outfit Skill\n(Coordinación armónica)] as SK_OUTFIT
+            [Cart & Style Skill\n(Silueta, ocasión y ahorro)] as SK_CART
+            [Orders & Reserve Skill\n(Trazabilidad logística)] as SK_ORDERS
+        }
+
+        package "Catálogo de Herramientas Deterministas (Tools)" as P_TOOLS #COLOR_TOOLS {
+            [Herramientas Autorizadas\n<b>app/services/ai_tools.py</b>\n• search_products(query, categoria, precio)\n• get_product_detail(product_id)\n• get_my_cart()\n• recommend_outfit(ocasion, presupuesto)\n• analyze_styling(prendas)\n• get_my_orders() / get_my_reservations()\n• find_alternatives(product_id)] as TOOLS_CAT
+            
+            [ToolContext\n• Aislamiento por User ID y Tenant\n• Validación Pydantic estricta] as TOOL_CTX
+        }
+
+        package "Gestor de Inferencia (ModelRuntime)" as P_RUNTIME #COLOR_RUNTIME {
+            [ModelRuntime Process Manager\n<b>app/services/model_runtime.py</b>\n• Auto-arranque bajo demanda\n• Auto-unload por inactividad (600s)\n• Monitor de salud (/health & /v1/models)\n• Gestión de proceso Popen] as MODEL_RT
+            
+            [HTTPX Async Streaming Client\n• POST /v1/chat/completions\n• SSE Parser (data: {choices: ...})\n• First Token Timeout: 120s\n• Reasoning Budget: 64 tokens\n• Temperature: 0.35] as SSE_CLIENT
+        }
+    }
+
+    package "Motor Local de Inferencia llama-server (:8088)" as P_LLAMA #COLOR_LLAMA {
+        [llama-server Binary\n<b>/usr/local/bin/llama-server</b>\n• Soporte GGML CPU OpenMP\n• Concurrencia: 1 slot paralelo\n• Hilos CPU: 3 hilos optimizados\n• Ventana de Contexto: 4096 tokens] as LLAMA_PROC
+        
+        artifact "gemma-4-E2B_q4_0-it.gguf\n(Pesos Principales QAT Q4_0)" as MODEL_WEIGHTS
+        artifact "gemma-4-E2B-it-mmproj.gguf\n(Proyector Multimodal Visión/AR)" as MMPROJ_WEIGHTS
+    }
+
+    database "PostgreSQL (:5432)" as P_DB #COLOR_DB {
+        folder "drapemind_db" {
+            [Catálogo e Inventario\n• products, variants, fabrics] as DB_CATALOG
+            [Carrito y Órdenes\n• carts, cart_items, orders, reservations] as DB_ORDERS
+            [Trazabilidad y Métricas AI\n• ai_sessions, ai_interactions, ai_recommendations] as DB_AI
+        }
+    }
+}
+
+' =====================================================================
+' RELACIONES Y FLUJO DE DATOS
+' =====================================================================
+FE_WEB --> NGINX : WSS (WebSocket /ws/ai)\nHTTPS (REST API)
+FE_MOB --> NGINX : WSS (WebSocket /ws/ai)\nHTTPS (REST API)
+
+NGINX --> WS_AI : Proxy Pass (Upgrade: WebSocket)
+NGINX --> REST_AI : Proxy Pass (HTTP /api/v1/ai/*)
+
+WS_AI --> AG_ORCHESTRATOR : Handshake JWT + Mensajes Usuario
+REST_AI --> AG_ORCHESTRATOR : Peticiones Síncronas
+
+AG_ORCHESTRATOR --> AG_MEMORY : Carga contexto previo
+AG_ORCHESTRATOR <--> AG_LOOP : Control del ciclo ReAct
+AG_LOOP --> AG_STREAM : Emite tokens y deltas de respuesta
+AG_STREAM ..> WS_AI : Eventos WebSocket en vivo\n(start, reasoning, tool_call, delta, done)
+
+AG_LOOP --> SK_REG : Evalúa intención del usuario
+SK_REG --> SK_CAT
+SK_REG --> SK_OUTFIT
+SK_REG --> SK_CART
+SK_REG --> SK_ORDERS
+
+SK_CAT --> TOOLS_CAT
+SK_OUTFIT --> TOOLS_CAT
+SK_CART --> TOOLS_CAT
+SK_ORDERS --> TOOLS_CAT
+
+TOOLS_CAT --> TOOL_CTX : Aplica sesión del usuario
+TOOL_CTX --> DB_CATALOG : Consultas SELECT parametrizadas
+TOOL_CTX --> DB_ORDERS : Lectura de pedidos/carrito
+
+AG_LOOP <--> MODEL_RT : Solicita inferencia / streaming
+MODEL_RT --> SSE_CLIENT : Inicia sesión HTTP streaming
+MODEL_RT ..> LLAMA_PROC : Arranca subproceso si está inactivo
+
+SSE_CLIENT <--> LLAMA_PROC : POST /v1/chat/completions\n(HTTP SSE Streaming Chunk a Chunk)
+LLAMA_PROC --> MODEL_WEIGHTS : Inferencia en CPU
+LLAMA_PROC --> MMPROJ_WEIGHTS : Inferencia Multimodal
+
+AG_ORCHESTRATOR --> DB_AI : Guarda interacción, feedback y recomendaciones
+
+@enduml

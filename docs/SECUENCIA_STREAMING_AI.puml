@@ -1,0 +1,85 @@
+@startuml secuencia_streaming_ai_drapemind
+!theme plain
+skinparam roundcorner 10
+skinparam shadowing false
+skinparam defaultFontName "Segoe UI", Arial, sans-serif
+skinparam defaultFontSize 12
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+
+title <size:16><b>Flujo de Consulta y Streaming WebSocket del Agente Altair</b></size>\n<size:11>Cliente Web/Móvil ➔ WebSocket ➔ ReAct Loop ➔ llama-server (Gemma 4) ➔ PostgreSQL</size>
+
+actor "Usuario\n(Web / Móvil)" as User
+boundary "WebSocket Endpoint\n(/api/v1/ws/ai)" as WS
+control "Agente Altair\n(ai.py / ai_agent.py)" as Agent
+control "ModelRuntime\n(model_runtime.py)" as Runtime
+entity "llama-server :8088\n(Gemma 4 E2B)" as LLM
+control "Herramientas Deterministas\n(ai_tools.py)" as Tools
+database "PostgreSQL\n(drapemind_db)" as DB
+
+== 1. Autenticación y Conexión WebSocket ==
+User -> WS : Conexión WSS inicial
+WS -->> User : Conexión aceptada
+User -> WS : {"type": "auth", "token": "<JWT_ACCESS_TOKEN>"}
+WS -> WS : decode_access_token(token)
+WS -->> User : {"type": "connected", "channel": "ai"}
+
+== 2. Envío de Consulta y Verificación del Motor de IA ==
+User -> WS : {"type": "chat", "message": "¿Qué vestido me recomiendas para gala?", "session_id": "ses_01"}
+WS -> Agent : run_agent_socket(db, user, message, session_id, emit)
+Agent -> WS : emit({"type": "start", "session_id": "ses_01"})
+WS -->> User : {"type": "start"} (Muestra indicador visual "Pensando...")
+
+Agent -> Runtime : ensure_running()
+alt Si llama-server está apagado (Cold Start)
+    Runtime -> LLM : Popen("/usr/local/bin/llama-server --model gemma-4... -c 4096 -t 3")
+    Runtime -> LLM : Polling GET /health
+    LLM -->> Runtime : 200 OK (Modelo cargado en memoria RAM)
+end
+
+== 3. Turno 1 ReAct: Razonamiento e Intención de Herramienta ==
+Agent -> Runtime : stream_chat(messages, tools_catalog, budget=64, temp=0.35)
+Runtime -> LLM : POST /v1/chat/completions {stream: true, max_tokens: 768}
+
+loop Lectura de Chunks SSE en tiempo real
+    LLM -->> Runtime : data: {"choices": [{"delta": {"reasoning_content": "Analizando código..."}}]}
+    Runtime -->> Agent : Token de razonamiento
+    Agent -> WS : emit({"type": "reasoning", "content": "Analizando código de vestimenta..."})
+    WS -->> User : {"type": "reasoning"} (Card de pensamiento interactivo)
+end
+
+LLM -->> Runtime : data: {"choices": [{"delta": {"content": "{\"type\": \"tool\", \"name\": \"search_products\", ...}"}}]}
+Runtime -->> Agent : Decisión JSON completa detectada
+Runtime -> Runtime : Cierra stream SSE (Evita esperar espacios o tokens extras)
+
+== 4. Ejecución Determinista de Herramienta (Aislamiento de BD) ==
+Agent -> WS : emit({"type": "tool_call", "tool": "search_products", "label": "Buscando vestidos de gala..."})
+WS -->> User : {"type": "tool_call"} (Badge: "Buscando vestidos de gala...")
+
+Agent -> Tools : execute_tool("search_products", args, ToolContext(user_id))
+Tools -> DB : SELECT * FROM products JOIN variants WHERE category='Vestidos' AND stock > 0
+DB -->> Tools : Resultados con precio, stock y tallas reales
+Tools -->> Agent : 4 productos encontrados (compact_observation)
+
+Agent -> WS : emit({"type": "tool_result", "tool": "search_products", "status": "success", "count": 4})
+WS -->> User : {"type": "tool_result"}
+
+== 5. Turno 2 ReAct: Generación de la Respuesta Final en Lenguaje Natural ==
+Agent -> Runtime : stream_chat(messages + tool_observation, stream=true)
+Runtime -> LLM : POST /v1/chat/completions {stream: true}
+
+loop Streaming incremental del texto final
+    LLM -->> Runtime : data: {"choices": [{"delta": {"content": "Para tu gala te recomiendo..."}}]}
+    Runtime -->> Agent : Token visible
+    Agent -> WS : emit({"type": "delta", "delta": "Para tu gala te recomiendo..."})
+    WS -->> User : {"type": "delta"} (Efecto máquina de escribir progresivo)
+end
+
+LLM -->> Runtime : data: [DONE]
+
+== 6. Persistencia y Finalización ==
+Agent -> DB : INSERT INTO ai_interactions, ai_recommendations (Guarda auditoría y métricas)
+Agent -> WS : emit({"type": "done", "buttons": [{"label": "Ver en 3D/AR", "prompt": "Pruébame el vestido"}]})
+WS -->> User : {"type": "done", "buttons": [...]} (Habilita botones interactivos para el usuario)
+
+@enduml
