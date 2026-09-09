@@ -39,4 +39,6 @@ def merge_ai_memory(
 
 def build_session_summary(conversation: str, memory: dict[str, Any]) -> str:
     payload = json.dumps(memory, ensure_ascii=False, separators=(",", ":"))
+    if memory.get("version") == 2:
+        return MEMORY_MARKER + payload
     return f"{conversation[:850]}\n{MEMORY_MARKER}{payload}"

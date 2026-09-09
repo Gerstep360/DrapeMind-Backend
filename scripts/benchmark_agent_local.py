@@ -1,6 +1,8 @@
 """Opt-in local-only model benchmark. Never connects to the configured remote host."""
 import asyncio
+import ast
 import json
+import re
 import subprocess
 import sys
 import time
@@ -37,8 +39,8 @@ async def main():
             else:
                 raise TimeoutError("Local model startup")
             for question in [
-                "Explícame brevemente cómo me puedes ayudar a elegir prendas.",
-                "¿Una camisa de lino suele resultar fresca en clima cálido? No busques productos."
+                "Explícame brevemente qué funciones tienes como asistente.",
+                "Escribe una función Python que sume dos cantidades de libros y un ejemplo de uso."
             ]:
                 start = time.monotonic()
                 first = None
@@ -47,8 +49,16 @@ async def main():
                     if first is None:
                         first = round(time.monotonic() - start, 2)
                 async def complete(messages, **kwargs):
-                    return await _completion(messages, **kwargs, on_text=on_text)
+                    response = await _completion(messages, **kwargs, on_text=on_text)
+                    if "--protocol" in sys.argv:
+                        print(json.dumps({"protocol": response}, ensure_ascii=True), flush=True)
+                    return response
                 result = await run_gemma_tool_agent(MagicMock(), SimpleNamespace(id=0), question, {}, complete)
+                if "función Python" in question:
+                    code = re.search(r"```python\s*\n(.*?)```", result["direct_response"], re.S)
+                    if not code:
+                        raise AssertionError("Code benchmark returned no Python implementation")
+                    ast.parse(code.group(1))
                 print(json.dumps({"seconds": round(time.monotonic()-start, 2), "first_content": first,
                                   "answer": result["direct_response"]}, ensure_ascii=True), flush=True)
             if "--database" in sys.argv:

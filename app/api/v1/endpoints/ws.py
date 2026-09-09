@@ -86,8 +86,8 @@ async def ai_socket(socket: WebSocket) -> None:
                 if message_type != "chat":
                     await safe_send({"type": "error", "message": "Evento no soportado"})
                     continue
-                message = str(data.get("message", "")).strip()
-                if not 2 <= len(message) <= 2000:
+                message = str(data.get("message", ""))
+                if not (2 <= len(message.strip()) and len(message) <= 2000):
                     await safe_send(
                         {"type": "error", "message": "El mensaje debe tener 2 a 2000 caracteres"}
                     )

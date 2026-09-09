@@ -22,6 +22,8 @@ from app.services.ai_tools import TOOLS
 from app.services.ai_agent import run_gemma_tool_agent
 from app.services.agent_stream import partial_answer
 from app.services.ai_memory import build_session_summary, load_ai_memory, merge_ai_memory
+from app.services.chat_sessions import owned_session
+from app.services.context_metrics import context_metrics
 from app.services.model_runtime import ModelRuntimeError, model_runtime
 
 logger = logging.getLogger("drapemind.ai")
@@ -160,7 +162,7 @@ def format_messages_for_gemma(messages: list[dict[str, Any]]) -> list[dict[str, 
     system_parts: list[str] = []
     for m in messages:
         role = str(m.get("role", "user")).lower()
-        content = str(m.get("content") or "").strip()
+        content = str(m.get("content") or "")
         if not content:
             continue
         if role == "system":
@@ -235,6 +237,7 @@ async def _completion(
     response_format: dict[str, Any] | None = None,
     temperature: float | None = None,
     on_text=None,
+    context_chat_id=None,
 ):
     clean_messages = format_messages_for_gemma(messages)
     payload = {
@@ -260,12 +263,15 @@ async def _completion(
     headers = {"Authorization": f"Bearer {settings.AI_API_KEY}"}
     client_timeout = max(settings.AI_AGENT_DEADLINE_SECONDS, settings.AI_FIRST_TOKEN_TIMEOUT_SECONDS, settings.AI_TIMEOUT_SECONDS) + 10.0
     client = httpx.AsyncClient(timeout=client_timeout)
+    metrics = await context_metrics(client, messages, context_chat_id)
     if on_text is not None:
         content = ""
         finish_reason = None
         started = time.monotonic()
         first_delta = None
         reasoning_chars = 0
+        usage = {}
+        timings = {}
         try:
             async with asyncio.timeout(settings.AI_AGENT_DEADLINE_SECONDS):
                 async with client.stream("POST", f"{settings.AI_BASE_URL.rstrip('/')}/chat/completions", json=payload, headers=headers) as response:
@@ -289,6 +295,8 @@ async def _completion(
                         if not data:
                             continue
                         event = json.loads(data)
+                        usage = event.get("usage") or usage
+                        timings = event.get("timings") or timings
                         if event.get("error"):
                             raise ModelRuntimeError("El servidor de inferencia devolvió un error durante la respuesta")
                         for choice in event.get("choices", []):
@@ -302,7 +310,7 @@ async def _completion(
                                 await on_text(content)
                             finish_reason = choice.get("finish_reason") or finish_reason
                         # A complete decision is sufficient; do not wait for extra whitespace/EOS.
-                        if response_format and content:
+                        if content.lstrip().startswith("{"):
                             try:
                                 decision = json.loads(content)
                             except ValueError:
@@ -318,7 +326,8 @@ async def _completion(
                 raise ModelRuntimeError("El modelo no devolvió contenido de respuesta")
             if finish_reason == "length":
                 raise ModelRuntimeError("Altair agotó su presupuesto de generación sin finalizar. Reintenta con una consulta más breve.")
-            return {"choices": [{"message": {"content": content}, "finish_reason": finish_reason}]}
+            return {"choices": [{"message": {"content": content}, "finish_reason": finish_reason}],
+                    "usage": usage, "timings": timings, "context_metrics": metrics}
         except (TimeoutError, httpx.TimeoutException) as exc:
             raise ModelRuntimeError(
                 "El modelo excedió el tiempo de respuesta. La generación fue cancelada; "
@@ -327,6 +336,10 @@ async def _completion(
         finally:
             logger.info("agent_inference elapsed=%.2fs first_delta=%s answer_chars=%d reasoning_chars=%d finish=%s",
                         time.monotonic() - started, first_delta, len(content), reasoning_chars, finish_reason)
+            logger.info("AI_INFERENCE %s", json.dumps({"chat": context_chat_id,
+                "ttft_seconds": first_delta, "total_seconds": time.monotonic() - started,
+                "prompt_tokens": usage.get("prompt_tokens"), "prefill_ms": timings.get("prompt_ms"),
+                "cached_tokens": (usage.get("prompt_tokens_details") or {}).get("cached_tokens")}))
             await client.aclose()
     if not stream:
         try:
@@ -386,12 +399,16 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
         async def on_agent_text(raw):
             nonlocal streamed_text
             answer = partial_answer(raw)
+            if raw.strip() and not raw.lstrip().startswith(("{", "`")):
+                answer = raw
+            elif raw.lstrip().startswith("```") and len(raw) > 12 and not raw.lstrip().startswith("```json"):
+                answer = raw
             if len(answer) > len(streamed_text) and (len(answer) - len(streamed_text) >= 24 or answer.endswith((".", "\n"))):
                 streamed_text = answer
                 await send({"type": "answer_snapshot", "content": answer})
 
         async def agent_complete(messages, **kwargs):
-            return await _completion(messages, **kwargs, on_text=on_agent_text)
+            return await _completion(messages, **kwargs, on_text=on_agent_text, context_chat_id=session.id)
 
         async with model_runtime.lease():
             skill_res = await run_gemma_tool_agent(
@@ -659,10 +676,8 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
             for item in action_items
             if item.get("accion") == "AGREGAR" and item.get("id")
         ]
-        memory = merge_ai_memory(
-            memory,
-            skill_res.get("memory_updates"),
-            recommended_product_ids,
+        memory = skill_res.get("chat_context") or merge_ai_memory(
+            memory, skill_res.get("memory_updates"), recommended_product_ids,
         )
         session.resumen_contexto = build_session_summary(
             (
@@ -697,13 +712,12 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
 def get_ai_session(db: Session, user_id: int, session_id: int | None) -> AISession:
     if session_id:
         try:
-            session = db.scalar(
-                select(AISession).where(AISession.id == int(session_id), AISession.usuario_id == user_id)
-            )
+            session = owned_session(db, user_id, int(session_id), lock=True)
             if session and session.estado == "ACTIVA":
                 return session
         except (ValueError, TypeError):
             pass
+        raise HTTPException(404, "Conversación no encontrada o cerrada")
     session = AISession(usuario_id=user_id, estado="ACTIVA")
     db.add(session)
     db.flush()
@@ -781,10 +795,18 @@ async def run_ai_action(
     recommendations: list[dict[str, Any]] = []
 
     if action == "chat":
-        cart = cart_payload(db, user.id)
-        products = _available_candidates(db, 12)
-        tool = "get_my_cart + search_products"
-        prompt = f"MENSAJE: {message}\nCARRITO: {json.dumps(cart, default=str)}\nCATALOGO: {json.dumps(products, default=str)}"
+        events = []
+        async def collect(event):
+            events.append(event)
+        await run_agent_socket(db, user, message, session.id, collect)
+        done = next(event for event in reversed(events) if event.get("type") == "done")
+        interaction = db.get(AIInteraction, done["interaction_id"])
+        from app.services.store import get_product_detail
+        products = [get_product_detail(db, item["id"]) for item in done.get("action_items", [])
+                    if item.get("accion") == "AGREGAR"]
+        return {"sesion_id": session.id, "interaccion_id": interaction.id,
+                "respuesta": interaction.respuesta, "productos": products,
+                "recomendaciones": [], "modelo": settings.AI_MODEL}
     elif action == "search":
         kind = "PRODUCT_SEARCH"
         extractor, _ = await call_gemma(

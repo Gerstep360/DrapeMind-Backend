@@ -22,6 +22,11 @@ def test_nested_protocol_recovery():
     assert decision["arguments"]["nested"]["id"] == 2
 
 
+def test_plain_markdown_preserves_complete_code_fence():
+    content = "Ejemplo:\n```python\nprint(1 + 2)\n```"
+    assert ai_agent._json_decision(content)["answer"] == content
+
+
 def test_stream_reads_real_deltas(monkeypatch):
     observed = []
     payloads = []
@@ -90,3 +95,36 @@ def test_valid_decision_does_not_wait_for_stream_end(monkeypatch):
     result = asyncio.run(ai._completion([{"role": "user", "content": "Prueba"}],
         response_format={"type": "json_object"}, on_text=on_text))
     assert result["choices"][0]["finish_reason"] == "stop"
+
+
+def test_model_can_finish_visual_listing_in_one_inference(monkeypatch):
+    calls = []
+    events = []
+    monkeypatch.setattr(ai_agent, "execute_tool", lambda *args: [{"id": 7}])
+    monkeypatch.setattr(ai_agent, "_cards_from_tool", lambda *args: [{"id": 7, "nombre": "Prenda de prueba"}])
+    async def complete(*args, **kwargs):
+        calls.append(1)
+        return {"choices": [{"message": {"content": json.dumps({
+            "type": "tool", "tool": "search_products", "arguments": {"query": "lino"},
+            "reason": "Consultar prendas", "display": "cards", "intro": "Puedes revisar las opciones aquí."
+        })}}]}
+    async def emit(event):
+        events.append(event)
+    result = asyncio.run(ai_agent.run_gemma_tool_agent(MagicMock(), SimpleNamespace(id=1),
+        "Opciones en lino", {}, complete, emit=emit))
+    assert len(calls) == 1
+    assert result["action_items"][0]["id"] == 7
+    assert any(event["type"] == "results" for event in events)
+
+
+def test_empty_listing_requires_observation_not_success_intro(monkeypatch):
+    monkeypatch.setattr(ai_agent, "execute_tool", lambda *args: [])
+    monkeypatch.setattr(ai_agent, "_cards_from_tool", lambda *args: [])
+    replies = iter([
+        {"type": "tool", "tool": "search_products", "arguments": {}, "display": "cards", "intro": "Opciones"},
+        {"type": "finish", "answer": "No encontré resultados."}
+    ])
+    async def complete(*args, **kwargs):
+        return {"choices": [{"message": {"content": json.dumps(next(replies))}}]}
+    result = asyncio.run(ai_agent.run_gemma_tool_agent(MagicMock(), SimpleNamespace(id=1), "Consulta", {}, complete))
+    assert result["direct_response"] == "No encontré resultados."

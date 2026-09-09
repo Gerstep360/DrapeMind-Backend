@@ -90,7 +90,7 @@ def update_status(
         raise HTTPException(404, "Pedido no encontrado")
     allowed = {
         "PENDIENTE_PAGO": {"CANCELADO"}, "PAGADO": {"PREPARANDO"},
-        "PREPARANDO": {"LISTO", "CANCELADO"}, "LISTO": {"ENVIADO", "ENTREGADO"},
+        "PREPARANDO": {"LISTO"}, "LISTO": {"ENVIADO", "ENTREGADO"},
         "ENVIADO": {"ENTREGADO"}, "ENTREGADO": set(), "CANCELADO": set(),
     }
     if not staff_can_access_branch(db, staff, order.sucursal_id):

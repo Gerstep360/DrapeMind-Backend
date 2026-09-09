@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
+from pydantic import BaseModel, Field
+from app.services.chat_sessions import delete_chat, select_product
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -11,6 +13,22 @@ from app.schemas.api import (
 from app.services.ai import apply_recommendation, run_ai_action
 
 router = APIRouter()
+
+
+class ChatSelection(BaseModel):
+    product_id: int = Field(gt=0)
+
+
+@router.delete("/sessions/{session_id}", status_code=204, summary="Eliminar chat, mensajes y contexto")
+def delete_session(session_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    delete_chat(db, user.id, session_id)
+    return Response(status_code=204)
+
+
+@router.post("/sessions/{session_id}/selection", summary="Seleccionar una prenda mostrada en el chat")
+def select_chat_product(session_id: int, payload: ChatSelection, user: User = Depends(get_current_user),
+                        db: Session = Depends(get_db)):
+    return select_product(db, user.id, session_id, payload.product_id)
 
 
 @router.post(

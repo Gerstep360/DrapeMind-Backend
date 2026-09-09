@@ -233,7 +233,10 @@ class ModelRuntime:
             runtime_env["LD_LIBRARY_PATH"] = ":".join(
                 p for p in [existing_ld] + lib_paths if p
             ).strip(":")
-            runtime_env["GGML_BACKEND_PATH"] = str(backend_dir)
+            # GGML_BACKEND_PATH is a library file, not its directory.
+            # The directory is already part of the loader search path above.
+            if runtime_env.get("GGML_BACKEND_PATH") and Path(runtime_env["GGML_BACKEND_PATH"]).is_dir():
+                runtime_env.pop("GGML_BACKEND_PATH", None)
 
             self.process = subprocess.Popen(
                 command,

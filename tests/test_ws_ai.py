@@ -134,7 +134,9 @@ def test_ws_ai_full_flow(auth_token_and_user, monkeypatch):
         pong = ws.receive_json()
         assert pong["type"] == "pong"
 
-        # 3. Test multiple prompts with stale session_id (e.g. 999999)
+        ws.send_json({"type": "chat", "message": "Continuar", "session_id": 999999})
+        assert ws.receive_json()["type"] == "error"
+        backend_session_id = None
         test_prompts = [
             "Hola Altair",
             "Mira mi carrito y dime que puedo quitar o que puedo combinar en mi eleccion",
@@ -148,7 +150,7 @@ def test_ws_ai_full_flow(auth_token_and_user, monkeypatch):
             ws.send_json({
                 "type": "chat",
                 "message": prompt,
-                "session_id": 999999,
+                "session_id": backend_session_id,
             })
 
             received_events = []
@@ -161,7 +163,7 @@ def test_ws_ai_full_flow(auth_token_and_user, monkeypatch):
                 if evt_type == "done":
                     assert "session_id" in evt
                     assert evt["session_id"] is not None
+                    backend_session_id = evt["session_id"]
                     break
 
             assert "done" in received_events
-

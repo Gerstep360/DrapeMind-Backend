@@ -15,6 +15,64 @@ from app.api.v1.endpoints import branches, orders
 from app.schemas.api import BranchStockInput
 
 
+def test_production_never_creates_mock_electronic_payment(monkeypatch):
+    from app.services import store
+    monkeypatch.setattr(store.settings, "ENVIRONMENT", "production")
+    monkeypatch.setattr(store.settings, "PAYMENT_PROVIDER", "mock")
+    db = MagicMock()
+    with pytest.raises(HTTPException) as exc:
+        store.create_payment(db, SimpleNamespace(estado="PENDIENTE_PAGO"), "QR")
+    assert exc.value.status_code == 503
+    db.add.assert_not_called()
+
+
+@pytest.mark.parametrize("state", ["CANCELADO", "PAGADO", "ENTREGADO"])
+def test_payment_cannot_reopen_order_or_double_charge(state):
+    from app.services import store
+    db = MagicMock()
+    payment = SimpleNamespace(estado="PENDIENTE", pedido_id=2)
+    db.scalar.side_effect = [payment, SimpleNamespace(estado=state)]
+    with pytest.raises(HTTPException) as exc:
+        store.confirm_payment(db, "reference", "APROBADO")
+    assert exc.value.status_code == 409
+    assert payment.estado == "PENDIENTE"
+    db.commit.assert_not_called()
+
+
+def test_expired_reservation_cannot_convert_to_order():
+    from datetime import datetime, timedelta, timezone
+    from app.services import store
+    db = MagicMock()
+    db.scalar.return_value = SimpleNamespace(vence_at=datetime.now(timezone.utc) - timedelta(seconds=1))
+    with pytest.raises(HTTPException) as exc:
+        store.convert_reservation_to_order(db, SimpleNamespace(id=5), 1)
+    assert exc.value.status_code == 410
+    assert "FOR UPDATE" in str(db.scalar.call_args.args[0])
+    db.add.assert_not_called()
+
+
+def test_expired_reservation_cannot_be_marked_ready(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from fastapi import BackgroundTasks
+    from app.api.v1.endpoints import reservations
+
+    db = MagicMock()
+    reservation = SimpleNamespace(estado="EN_PREPARACION", sucursal_id=2,
+                                  vence_at=datetime.now(timezone.utc) - timedelta(seconds=1))
+    db.scalar.return_value = reservation
+    monkeypatch.setattr(reservations, "staff_can_access_branch", lambda *_: True)
+    expire = MagicMock()
+    monkeypatch.setattr(reservations, "expire_due_reservations", expire)
+    tasks = BackgroundTasks()
+    with pytest.raises(HTTPException) as exc:
+        reservations.mark_ready(3, tasks, SimpleNamespace(id=1), db)
+    assert exc.value.status_code == 410
+    expire.assert_called_once_with(db)
+    assert reservation.estado == "EN_PREPARACION"
+    db.commit.assert_not_called()
+    assert not tasks.tasks
+
+
 def test_branch_adjustment_flushes_before_total_and_records_actor(monkeypatch):
     db = MagicMock()
     row = SimpleNamespace(stock_total=5, stock_reservado=2, stock_minimo=0, activo=True)

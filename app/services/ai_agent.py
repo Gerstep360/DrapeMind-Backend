@@ -12,10 +12,22 @@ from app.services.agent_stream import compact_observation
 from app.services.model_runtime import ModelRuntimeError
 from app.services.ai_tools import ToolContext, execute_tool, tool_catalog
 from app.services.store import get_product_detail
+from app.services.chat_context import read_context, update_context, observe_cards, serialize_observation
+from app.services.context_prompt import build_messages, prompt_sections
 
 
 CompleteFn = Callable[..., Awaitable[dict[str, Any]]]
 EventFn = Callable[[dict[str, Any]], Awaitable[None]]
+
+
+def _argument_hint(schema: dict) -> str:
+    if schema.get("enum"):
+        return "|".join(map(str, schema["enum"]))
+    if schema.get("anyOf"):
+        return "|".join(_argument_hint(item) for item in schema["anyOf"] if item.get("type") != "null")
+    if schema.get("type") == "array":
+        return f"list[{_argument_hint(schema.get('items', {}))}]"
+    return schema.get("type", "object")
 
 
 async def _with_keepalive(coro: Awaitable[Any], emit: EventFn | None, thoughts: list[str], interval: float = 6.0) -> Any:
@@ -42,7 +54,9 @@ async def _with_keepalive(coro: Awaitable[Any], emit: EventFn | None, thoughts: 
 
 
 def _json_decision(raw: str) -> dict[str, Any] | None:
-    raw = raw.strip().removeprefix("```json").removesuffix("```").strip()
+    raw = raw.strip()
+    if raw.startswith("```json") and raw.endswith("```"):
+        raw = raw[len("```json"):-3].strip()
     try:
         value = json.loads(raw)
         return value if isinstance(value, dict) else None
@@ -55,7 +69,7 @@ def _json_decision(raw: str) -> dict[str, Any] | None:
             except json.JSONDecodeError:
                 continue
     # Si Gemma respondió en prosa natural sin envolver en JSON:
-    if len(raw) > 10 and not raw.startswith("{"):
+    if raw and not raw.startswith("{"):
         return {
             "type": "finish",
             "answer": raw,
@@ -209,55 +223,9 @@ async def run_gemma_tool_agent(
     max_steps: int = 4,
 ) -> dict[str, Any]:
     """Bounded Observe/Think/Act loop. Gemma chooses every tool; FastAPI only validates it."""
-    compact_tools = []
-    for tool in tool_catalog():
-        schema = tool["parameters"]
-        compact_tools.append(
-            {
-                "name": tool["name"],
-                "use": tool["description"],
-                "arguments": {
-                    name: {
-                        key: value[key]
-                        for key in ("type", "anyOf", "items", "enum")
-                        if key in value
-                    }
-                    for name, value in (schema.get("properties") or {}).items()
-                },
-                "required": schema.get("required") or [],
-            }
-        )
-    system = (
-        "Eres Altair en modo AGENTE. Tú decides qué herramientas usar y en qué orden. "
-        "FastAPI sólo valida permisos, argumentos, stock, precios y cálculos. Interpreta significado, "
-        "hipérbole, ironía y contexto; no clasifiques por palabras aisladas. Distingue con precisión "
-        "entre una prenda individual, varias opciones, un outfit y datos de la cuenta. "
-        "Responde directamente, sin saludos repetitivos. Nunca inventes productos, tallas, "
-        "precios ni resultados. Respeta tallas exactas y alternativas explícitas.\n"
-        "Personaliza usando preferencias explícitas y memoria verificada; no deduzcas gustos de datos inexistentes. "
-        "El registro TOOLS de este turno es la fuente actual de tus capacidades. Si preguntan qué puedes hacer, "
-        "explícalo a partir de ese registro; no necesitas consultar datos privados para describir tus capacidades. "
-        "Ofrece hasta tres suggested_actions con label y prompt útiles, elegidos por ti y realizables con estas herramientas. "
-        "Elige el formato de answer según la pregunta: texto breve, listas, tabla Markdown para comparar, "
-        "o diagrama ASCII dentro de un bloque ```text para explicar combinaciones. Conserva espacios y saltos. "
-        "Usa negritas con moderación. No uses HTML. No incluyas dibujos si no ayudan. "
-        "Adapta el tono al cliente y evita saludos repetidos. Las acciones describen consultas reales, no pensamientos privados. "
-        "Ver el estado de un pago no significa verificar un banco ni aprobarlo; no afirmes que cobraste. "
-        "Responde EXCLUSIVAMENTE JSON con uno de estos formatos:\n"
-        "{\"type\":\"tool\",\"tool\":\"nombre\",\"arguments\":{},\"reason\":\"acción breve\"}\n"
-        "{\"type\":\"finish\",\"answer\":\"respuesta breve y concreta basada en datos consultados o capacidades del registro\",\"title\":\"título\",\"presentation\":\"text|cards|mixed\",\"suggested_actions\":[{\"label\":\"acción\",\"prompt\":\"consulta para continuar\"}]}"
-    )
-    messages: list[dict[str, str]] = [
-        {"role": "system", "content": system},
-        {
-            "role": "user",
-            "content": (
-                f"TOOLS: {json.dumps(compact_tools, ensure_ascii=False, separators=(',', ':'))}\n"
-                f"MEMORIA VERIFICADA: {json.dumps(memory, ensure_ascii=False)}\n"
-                f"CONSULTA: {message}"
-            ),
-        },
-    ]
+    state = read_context(memory)
+    catalog = tool_catalog()
+    messages = build_messages(prompt_sections(message, state, catalog, []))
     steps: list[dict[str, Any]] = []
     cards: list[dict[str, Any]] = []
     final: dict[str, Any] | None = None
@@ -284,7 +252,7 @@ async def run_gemma_tool_agent(
                 {
                     "role": "user",
                     "content": (
-                        "ÚLTIMO PASO: no llames más tools. Responde type=finish usando sólo "
+                        "ÚLTIMO PASO: no llames más tools. Responde en Markdown usando sólo "
                         "las observaciones verificadas, incluso si el resultado está vacío."
                     ),
                 }
@@ -298,7 +266,7 @@ async def run_gemma_tool_agent(
                     messages,
                     max_tokens=settings.AI_AGENT_MAX_TOKENS,
                     stream=False,
-                    response_format={"type": "json_object"},
+                    response_format=None,
                 ),
                 emit=emit,
                 thoughts=agent_thoughts,
@@ -325,6 +293,7 @@ async def run_gemma_tool_agent(
             )
             continue
         if decision.get("type") == "finish":
+            state = update_context(state, decision.get("context"))
             final = decision
             await send_event(
                 {
@@ -335,6 +304,7 @@ async def run_gemma_tool_agent(
             break
 
         tool_name = str(decision.get("tool") or "")
+        state = update_context(state, decision.get("context"))
         arguments = decision.get("arguments") if isinstance(decision.get("arguments"), dict) else {}
         reason = str(decision.get("reason") or f"Consultando {tool_name}")
         call_key = (
@@ -358,7 +328,7 @@ async def run_gemma_tool_agent(
                         "role": "user",
                         "content": (
                             "Esa tool con esos argumentos ya fue ejecutada. No la repitas. "
-                            "Responde type=finish con la observación existente."
+                            "Responde en Markdown con la observación existente, sin más llamadas."
                         ),
                     },
                 ]
@@ -379,7 +349,11 @@ async def run_gemma_tool_agent(
         except (ValidationError, ValueError) as exc:
             result = {"error": f"Argumentos rechazados: {exc}"}
         steps.append({"name": tool_name, "args": arguments, "result": result, "reason": reason})
-        cards.extend(_cards_from_tool(db, tool_name, arguments, result))
+        new_cards = _cards_from_tool(db, tool_name, arguments, result)
+        cards.extend(new_cards)
+        state = observe_cards(state, cards[:6])
+        if new_cards:
+            await send_event({"type": "results", "action_items": cards[:8]})
         safe_result = json.loads(json.dumps(result, ensure_ascii=False, default=str))
         await send_event(
             {
@@ -390,6 +364,14 @@ async def run_gemma_tool_agent(
             }
         )
         result_count = len(result) if isinstance(result, list) else 1
+        if (decision.get("display") == "cards" and new_cards
+                and tool_name in {"search_products", "get_new_arrivals", "get_trending_pieces",
+                                  "get_most_expensive_product", "get_my_favorites", "find_alternatives"}
+                and isinstance(decision.get("intro"), str) and decision["intro"].strip()):
+            # Gemma chose a visual answer. Data is rendered from the actual tool result.
+            final = {"type": "finish", "answer": decision["intro"].strip()[:350],
+                     "presentation": "mixed"}
+            break
         await send_event(
             {
                 "type": "thought",
@@ -398,20 +380,8 @@ async def run_gemma_tool_agent(
                             else f"Se recibieron {result_count} resultado(s); Altair los está revisando."),
             }
         )
-        observation = json.dumps(compact_observation(result), ensure_ascii=False, default=str, separators=(',', ':'))
-        messages.extend(
-            [
-                {"role": "assistant", "content": json.dumps(decision, ensure_ascii=False)},
-                {
-                    "role": "user",
-                    "content": (
-                        f"OBSERVACIÓN DE {tool_name} (resumen limitado; no es el catálogo completo): {observation}\n"
-                        "Un resultado vacío también es una respuesta válida. Si esto responde "
-                        "la consulta, finaliza ahora; no repitas la misma tool."
-                    ),
-                },
-            ]
-        )
+        observations = [{"tool": step["name"], "args": step["args"], "result": step["result"]} for step in steps]
+        messages = build_messages(prompt_sections(message, state, catalog, observations))
 
     protocol_valid = final is not None
     if final is None:
@@ -455,6 +425,11 @@ async def run_gemma_tool_agent(
         }
 
     presentation = str(final.get("presentation") or ("mixed" if unique_cards else "text"))
+    state = observe_cards(state, unique_cards[:6])
+    if final.get("ui") == "product_picker":
+        response_meta["product_picker"] = [
+            item.model_dump() for item in state.recent if item.type == "product"
+        ]
     return {
         "tool_name": None,
         "tool_args": {"steps": len(steps)},
@@ -474,6 +449,7 @@ async def run_gemma_tool_agent(
             if isinstance(item, dict) and isinstance(item.get("label"), str)
             and isinstance(item.get("prompt"), str) and item["label"].strip() and item["prompt"].strip()
         ] if isinstance(final.get("suggested_actions", []), list) else [],
+        "chat_context": state.model_dump(),
         "memory_updates": {},
         "events_emitted": emit is not None,
     }

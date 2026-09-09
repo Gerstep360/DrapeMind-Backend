@@ -16,7 +16,8 @@ def capabilities() -> dict:
     return {
         "mode": "2d-overlay",
         "backend": ["asset-validation", "size-recommendation", "fabric-parameters"],
-        "mobile": ["camera", "pose-tracking", "rendering"],
+        "mobile": ["camera", "manual-alignment", "rendering"],
+        "supports_pose_tracking": False,
         "requires": ["camera_permission", "person_in_frame", "ar_asset"],
         "supports_3d": False,
     }
@@ -189,6 +190,6 @@ def try_on_config(
         },
         limitations=[
             "La superposición 2D orienta sobre color y silueta; no sustituye una prueba física.",
-            "La precisión depende de iluminación, encuadre y medidas ingresadas.",
+            "Alineación manual, sin seguimiento corporal automático. Las medidas por talla son orientativas, no una medición de esta prenda.",
         ],
     )

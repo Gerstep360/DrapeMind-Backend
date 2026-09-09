@@ -16,17 +16,15 @@ from app.modules.sucursales_inventario_y_proveedores.cu33_registrar_productos_y_
 from app.modules.sucursales_inventario_y_proveedores.cu34_gestionar_inventario_por_sucursal import router as cu34_router
 from app.modules.sucursales_inventario_y_proveedores.cu35_registrar_movimientos_recepcion_y_ajustes_de_inventario import router as cu35_router
 
+# Montar las rutas de inventario por sede y disponibilidad en branches_router
 branches_router = cu28_router
-branches_router.include_router(cu07_router)
 branches_router.include_router(cu34_router)
+branches_router.include_router(cu07_router)
 
-
-
+# Endpoints administrativos consolidados para administración global
 admin_branches_inventory_router = APIRouter()
 admin_branches_inventory_router.include_router(cu32_router)
 admin_branches_inventory_router.include_router(cu33_router)
 admin_branches_inventory_router.include_router(cu35_router)
-
-
 
 __all__ = ["branches_router", "admin_branches_inventory_router"]

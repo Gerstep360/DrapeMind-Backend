@@ -97,6 +97,8 @@ def reservation_qr(
     reservation_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ) -> Response:
     reservation = _own_reservation(db, reservation_id, current_user.id)
+    if reservation.vence_at <= datetime.now(timezone.utc):
+        raise HTTPException(410, "La reserva venció")
     if reservation.estado not in {"PENDIENTE", "CONFIRMADA", "EN_PREPARACION", "LISTA"}:
         raise HTTPException(409, "La reserva no tiene un QR activo")
     image = qrcode.make(str(reservation.qr_token))
@@ -221,6 +223,9 @@ def mark_ready(
         raise HTTPException(403, "No está asignado a la sucursal de esta reserva")
     if reservation.estado != "EN_PREPARACION":
         raise HTTPException(409, "La reserva debe estar EN_PREPARACION")
+    if reservation.vence_at <= datetime.now(timezone.utc):
+        expire_due_reservations(db)
+        raise HTTPException(410, "La reserva venció")
     reservation.estado = "LISTA"
     db.commit()
     db.refresh(reservation)

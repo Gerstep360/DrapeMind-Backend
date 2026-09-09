@@ -120,10 +120,18 @@ def test_payment_creation_accepts_idempotency_key():
 
 
 def test_forgot_password_contract():
+    from unittest.mock import MagicMock
+    from app.db.session import get_db
+    db = MagicMock()
+    db.scalar.return_value = None
     client = TestClient(app)
-    res = client.post(
-        "/api/v1/auth/forgot-password",
-        json={"email": "inexistente@drapemind.com", "new_password": "NewPassword123!"},
-    )
+    app.dependency_overrides[get_db] = lambda: db
+    try:
+        res = client.post(
+            "/api/v1/auth/forgot-password",
+            json={"email": "inexistente@drapemind.com", "new_password": "NewPassword123!"},
+        )
+    finally:
+        app.dependency_overrides.pop(get_db, None)
     assert res.status_code == 404
     assert "No existe una cuenta" in res.json()["detail"]

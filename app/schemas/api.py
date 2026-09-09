@@ -339,6 +339,8 @@ class InventoryAdjustment(BaseModel):
     variante_id: int
     nuevo_stock_total: int = Field(ge=0)
     observacion: str = Field(min_length=3, max_length=300)
+    sucursal_id: int | None = None
+    tipo: Literal["ENTRADA", "AJUSTE"] | None = None
 
 
 class AIRequest(BaseModel):

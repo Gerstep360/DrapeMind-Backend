@@ -11,6 +11,7 @@ Casos de uso:
 - CU-26: Generar reportes empresariales mediante IA
 """
 from fastapi import APIRouter
+from app.api.v1.endpoints.ai import delete_session, select_chat_product
 
 from app.modules.inteligencia_artificial_y_asistencia_de_moda.cu18_consultar_al_asistente_inteligente_altair import (
     router as cu18_router,
@@ -26,6 +27,8 @@ from app.modules.inteligencia_artificial_y_asistencia_de_moda.cu25_registrar_pro
 from app.modules.inteligencia_artificial_y_asistencia_de_moda.cu26_generar_reportes_empresariales_mediante_ia import router as cu26_router
 
 ai_router = cu18_router
+ai_router.add_api_route("/sessions/{session_id}", delete_session, methods=["DELETE"], status_code=204, response_model=None)
+ai_router.add_api_route("/sessions/{session_id}/selection", select_chat_product, methods=["POST"])
 ai_router.include_router(cu19_router)
 ai_router.include_router(cu20_router)
 ai_router.include_router(cu21_router)

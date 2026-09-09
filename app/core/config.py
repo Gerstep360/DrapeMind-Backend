@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     AI_AGENT_DEADLINE_SECONDS: float = Field(default=180, ge=30, le=600)
     AI_REASONING_MODE: Literal["auto", "on", "off"] = "auto"
     AI_REASONING_BUDGET: int = Field(default=64, ge=0, le=512)
+    AI_CONTEXT_TOKEN_METRICS: bool = False
     AI_FIRST_TOKEN_TIMEOUT_SECONDS: float = Field(default=120.0, ge=10, le=600)
     AI_TEMPERATURE: float = 0.35
     RESERVATION_TTL_MINUTES: int = 2880

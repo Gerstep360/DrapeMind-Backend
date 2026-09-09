@@ -1,5 +1,34 @@
 # Altair: streaming y perfil CPU
 
+## Diagnóstico con estadísticas del VPS proporcionadas por el usuario
+
+Los logs muestran 1981 tokens de entrada procesados en 78,45 s (25,25 tokens/s).
+La siguiente llamada agrega 857 tokens y tarda otros 35,68 s en procesarlos.
+La generación ronda 7–8 tokens/s. El modelo carga en aproximadamente 6,5 s.
+Por tanto, en esas consultas domina el procesamiento de contexto y repetir una inferencia,
+no solamente la longitud del texto visible. Estos datos no demuestran swap ni CPU steal.
+
+Cambios de esta revisión:
+
+- Índice compacto de firmas de herramientas, conservando nombres de argumentos y tipos;
+  validación completa en Pydantic, como antes.
+- Respuesta Markdown libre y JSON para solicitar herramientas. Los nombres y argumentos se
+  validan contra el registro, sin forzar toda la redacción a una gramática JSON.
+- El modelo puede elegir display=cards para un listado y concluir tras recibir tarjetas reales,
+  sin una segunda generación. Si el resultado está vacío continúa para explicarlo.
+- Evento results: web y móvil muestran las tarjetas antes de la explicación final.
+- Instrucciones distinguen capacidades generales, funciones integradas y novedades del catálogo.
+  No se agregaron reglas por palabras del usuario ni respuestas especiales a sus preguntas.
+- Se elimina la asignación incorrecta de un directorio a GGML_BACKEND_PATH.
+  Los logs mostraban que ese aviso no impedía cargar el modelo.
+
+Las pruebas con transporte simulado verifican el protocolo, no inteligencia. El benchmark local
+usa preguntas independientes, base de datos READ ONLY y comprueba sintaxis de la muestra de Python
+sin ejecutar código generado. No garantiza corrección de todas las respuestas.
+
+No se contactó el VPS. Para medir la mejora allí es necesario comparar nuevos logs después de
+actualizar. Reducir contexto y llamadas ayuda, pero no convierte un VPS CPU en un servidor GPU.
+
 ## Revisión posterior: timeout real y mediciones locales
 
 El debug recibido muestra TimeoutError al agotarse el límite absoluto de 180 s durante la lectura SSE.

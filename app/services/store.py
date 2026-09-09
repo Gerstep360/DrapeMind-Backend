@@ -642,6 +642,14 @@ def checkout_cart(db: Session, user: User, delivery_type: str, address_id: int |
 
 
 def convert_reservation_to_order(db: Session, reservation: Reservation, actor_id: int) -> Order:
+    reservation = db.scalar(
+        select(Reservation).where(Reservation.id == reservation.id)
+        .with_for_update().execution_options(populate_existing=True)
+    )
+    if not reservation:
+        raise HTTPException(404, "Reserva no encontrada")
+    if reservation.vence_at <= datetime.now(timezone.utc):
+        raise HTTPException(410, "La reserva venció")
     if reservation.estado not in {"CONFIRMADA", "EN_PREPARACION", "LISTA", "RETIRADA"}:
         raise HTTPException(409, "La reserva no se puede convertir")
     items = db.scalars(select(ReservationItem).where(ReservationItem.reserva_id == reservation.id)).all()
@@ -701,6 +709,8 @@ def convert_reservation_to_order(db: Session, reservation: Reservation, actor_id
 def create_payment(
     db: Session, order: Order, method: str, idempotency_key: str | None = None
 ) -> Payment:
+    if method != "EFECTIVO" and (settings.PAYMENT_PROVIDER != "mock" or settings.ENVIRONMENT == "production"):
+        raise HTTPException(503, "El pago electrónico no está habilitado: falta integrar una pasarela real")
     if order.estado != "PENDIENTE_PAGO":
         raise HTTPException(409, "El pedido no esta pendiente de pago")
     if idempotency_key:
@@ -732,13 +742,15 @@ def confirm_payment(db: Session, reference: str, new_status: str) -> Payment:
         raise HTTPException(404, "Pago no encontrado")
     if payment.estado in {"APROBADO", "RECHAZADO"}:
         return payment
-    payment.estado = new_status
     order = db.scalar(select(Order).where(Order.id == payment.pedido_id).with_for_update())
     if new_status == "APROBADO":
+        if not order or order.estado != "PENDIENTE_PAGO":
+            raise HTTPException(409, "El pedido no admite un nuevo pago; requiere conciliación")
         now = datetime.now(timezone.utc)
         payment.paid_at = now
         order.estado = "PAGADO"
         order.paid_at = now
+    payment.estado = new_status
     db.commit()
     db.refresh(payment)
     return payment

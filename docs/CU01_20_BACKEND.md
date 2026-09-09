@@ -17,13 +17,13 @@ FastAPI/PostgreSQL; Web y Móvil son consumidores. Base REST: `/api/v1`. Swagger
 | 08 | Favoritos | Web + Móvil | `GET/POST/DELETE /catalog/favorites` | Completo |
 | 09 | Carrito/perchero | Web + Móvil | CRUD `/cart` y `/cart/items` | Completo |
 | 10 | Checkout, entrega o recojo | Web + Móvil | `POST /orders/checkout` | Completo |
-| 11 | Pago electrónico | Web + Móvil + pasarela | `POST /payments`, consultas de pago, webhook HMAC | Completo |
+| 11 | Pago electrónico | Web + Móvil + pasarela | `POST /payments`, consultas de pago, webhook HMAC | Desarrollo/mock; integración bancaria pendiente |
 | 12 | Pedidos e historial | Web + Móvil | `GET /orders`, `GET /orders/{id}` | Completo |
 | 13 | Reserva multíprenda en sucursal | Web + Móvil | `POST /reservations` | Completo |
 | 14 | Consultar, QR y cancelar reserva | Web + Móvil | `GET /reservations`, `GET /{id}/qr`, `POST /{id}/cancel` | Completo |
 | 15 | Recibir y preparar reserva | Web operativo | `POST /reservations/{id}/prepare`, `POST /{id}/ready` | Completo |
 | 16 | Atender llegada y convertir a venta | Web operativo | `POST /reservations/validate-qr`, `POST /{id}/convert-to-order` | Completo |
-| 17 | Vestidor virtual AR | Móvil | `GET /ar/capabilities`, `GET /ar/products/{id}/try-on-config` | Backend completo |
+| 17 | Vestidor virtual AR | Móvil | `GET /ar/capabilities`, `GET /ar/products/{id}/try-on-config` | Superposición 2D manual; tracking corporal pendiente |
 | 18 | Asistente Altair | Web + Móvil | `POST /ai/chat`, `WS /ws/ai` | Completo |
 | 19 | Búsqueda en lenguaje natural | Web + Móvil | `POST /ai/search`, tools de catálogo | Completo |
 | 20 | Generar outfit | Web + Móvil | `POST /ai/outfits/generate`, tools de outfit | Completo |
