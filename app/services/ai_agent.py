@@ -7,6 +7,9 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.models import User
+from app.core.config import settings
+from app.services.agent_stream import compact_observation
+from app.services.model_runtime import ModelRuntimeError
 from app.services.ai_tools import ToolContext, execute_tool, tool_catalog
 from app.services.store import get_product_detail
 
@@ -22,7 +25,7 @@ async def _with_keepalive(coro: Awaitable[Any], emit: EventFn | None, thoughts: 
             await asyncio.sleep(interval)
             if emit:
                 try:
-                    await emit({"type": "thought", "content": thoughts[idx % len(thoughts)]})
+                    await emit({"type": "progress", "content": thoughts[idx % len(thoughts)]})
                 except Exception:
                     pass
             idx += 1
@@ -44,11 +47,10 @@ def _json_decision(raw: str) -> dict[str, Any] | None:
         value = json.loads(raw)
         return value if isinstance(value, dict) else None
     except json.JSONDecodeError:
-        matches = re.findall(r"\{.*?\}", raw, re.DOTALL)
-        for candidate in reversed(matches):
+        for match in re.finditer(r"\{", raw):
             try:
-                value = json.loads(candidate)
-                if isinstance(value, dict):
+                value, _ = json.JSONDecoder().raw_decode(raw[match.start():])
+                if isinstance(value, dict) and value.get("type") in {"tool", "finish"}:
                     return value
             except json.JSONDecodeError:
                 continue
@@ -217,7 +219,7 @@ async def run_gemma_tool_agent(
                 "arguments": {
                     name: {
                         key: value[key]
-                        for key in ("type", "default", "minimum", "maximum", "anyOf", "items", "enum", "minItems", "maxItems", "description")
+                        for key in ("type", "anyOf", "items", "enum")
                         if key in value
                     }
                     for name, value in (schema.get("properties") or {}).items()
@@ -233,7 +235,9 @@ async def run_gemma_tool_agent(
         "No saludes: la interfaz ya dio la bienvenida al abrir el chat. Nunca inventes productos, tallas, "
         "precios ni resultados. Respeta tallas exactas y alternativas explícitas.\n"
         "Personaliza usando preferencias explícitas y memoria verificada; no deduzcas gustos de datos inexistentes. "
-        "Puedes consultar favoritos, disponibilidad por showroom, pagos propios y presupuesto exacto de una selección. "
+        "El registro TOOLS de este turno es la fuente actual de tus capacidades. Si preguntan qué puedes hacer, "
+        "explícalo a partir de ese registro; no necesitas consultar datos privados para describir tus capacidades. "
+        "Ofrece hasta tres suggested_actions con label y prompt útiles, elegidos por ti y realizables con estas herramientas. "
         "Elige el formato de answer según la pregunta: texto breve, listas, tabla Markdown para comparar, "
         "o diagrama ASCII dentro de un bloque ```text para explicar combinaciones. Conserva espacios y saltos. "
         "Usa negritas con moderación. No uses HTML. No incluyas dibujos si no ayudan. "
@@ -241,7 +245,7 @@ async def run_gemma_tool_agent(
         "Ver el estado de un pago no significa verificar un banco ni aprobarlo; no afirmes que cobraste. "
         "Responde EXCLUSIVAMENTE JSON con uno de estos formatos:\n"
         "{\"type\":\"tool\",\"tool\":\"nombre\",\"arguments\":{},\"reason\":\"acción breve\"}\n"
-        "{\"type\":\"finish\",\"answer\":\"asesoría elocuente, argumentada y personalizada basada en los resultados verificados del atelier\",\"title\":\"título elegante\",\"presentation\":\"text|cards|mixed\"}"
+        "{\"type\":\"finish\",\"answer\":\"respuesta breve y concreta basada en datos consultados o capacidades del registro\",\"title\":\"título\",\"presentation\":\"text|cards|mixed\",\"suggested_actions\":[{\"label\":\"acción\",\"prompt\":\"consulta para continuar\"}]}"
     )
     messages: list[dict[str, str]] = [
         {"role": "system", "content": system},
@@ -250,7 +254,7 @@ async def run_gemma_tool_agent(
             "content": (
                 f"CONSULTA: {message}\n"
                 f"MEMORIA VERIFICADA: {json.dumps(memory, ensure_ascii=False)}\n"
-                f"TOOLS: {json.dumps(compact_tools, ensure_ascii=False)}"
+                f"TOOLS: {json.dumps(compact_tools, ensure_ascii=False, separators=(',', ':'))}"
             ),
         },
     ]
@@ -292,7 +296,7 @@ async def run_gemma_tool_agent(
             response = await _with_keepalive(
                 complete(
                     messages,
-                    max_tokens=1024,
+                    max_tokens=settings.AI_AGENT_MAX_TOKENS,
                     stream=False,
                     response_format={"type": "json_object"},
                 ),
@@ -302,13 +306,8 @@ async def run_gemma_tool_agent(
             )
             raw = response["choices"][0]["message"].get("content") or ""
         except Exception:
-            await send_event(
-                {
-                    "type": "thought",
-                    "content": "No se pudo completar la respuesta del modelo. Conservamos las consultas realizadas.",
-                }
-            )
-            break
+            # Propagate to the WebSocket error handler, never report a failed inference as success.
+            raise
         decision = _json_decision(raw)
         if not decision:
             protocol_errors += 1
@@ -371,6 +370,7 @@ async def run_gemma_tool_agent(
             {
                 "type": "tool_start",
                 "name": tool_name,
+                "label": reason[:180],
                 "arguments": arguments,
             }
         )
@@ -385,6 +385,7 @@ async def run_gemma_tool_agent(
             {
                 "type": "tool_result",
                 "name": tool_name,
+                "label": reason[:180],
                 "result": safe_result,
             }
         )
@@ -397,14 +398,14 @@ async def run_gemma_tool_agent(
                             else f"Se recibieron {result_count} resultado(s); Altair los está revisando."),
             }
         )
-        observation = json.dumps(result, ensure_ascii=False, default=str)
+        observation = json.dumps(compact_observation(result), ensure_ascii=False, default=str, separators=(',', ':'))
         messages.extend(
             [
                 {"role": "assistant", "content": json.dumps(decision, ensure_ascii=False)},
                 {
                     "role": "user",
                     "content": (
-                        f"OBSERVACIÓN VERIFICADA DE {tool_name}: {observation[:6500]}\n"
+                        f"OBSERVACIÓN DE {tool_name} (resumen limitado; no es el catálogo completo): {observation}\n"
                         "Un resultado vacío también es una respuesta válida. Si esto responde "
                         "la consulta, finaliza ahora; no repitas la misma tool."
                     ),
@@ -414,24 +415,10 @@ async def run_gemma_tool_agent(
 
     protocol_valid = final is not None
     if final is None:
-        if cards:
-            names = ", ".join(str(card.get("nombre") or "prenda") for card in cards[:3])
-            fallback_answer = (
-                f"Encontré estas prendas: {names}. El modelo no pudo terminar la explicación; puedes revisar los resultados y reintentar."
-            )
-        elif steps and isinstance(steps[-1].get("result"), list) and not steps[-1]["result"]:
-            fallback_answer = (
-                "He consultado el catálogo del atelier, pero no encontré piezas disponibles con esos filtros exactos."
-            )
-        else:
-            fallback_answer = (
-                "No pude completar la respuesta. Puedes reintentar tu consulta; no realicé cambios en tu cuenta."
-            )
-        final = {
-            "answer": fallback_answer,
-            "title": "Asesoría DrapeMind Atelier",
-            "presentation": "mixed" if cards else "text",
-        }
+        raise ModelRuntimeError(
+            "Altair alcanzó el límite de pasos sin completar una respuesta válida. "
+            "Las consultas ejecutadas aparecen en Acciones; puedes reintentar."
+        )
 
     unique_cards: list[dict[str, Any]] = []
     seen: set[tuple[Any, Any, Any]] = set()
@@ -481,7 +468,12 @@ async def run_gemma_tool_agent(
         "response_title": str(final.get("title") or "Resultado verificado"),
         "notices": notices,
         "response_meta": response_meta,
-        "suggested_actions": [],
+        "suggested_actions": [
+            {"label": item["label"].strip()[:60], "prompt": item["prompt"].strip()[:300]}
+            for item in (final.get("suggested_actions") or [])[:3]
+            if isinstance(item, dict) and isinstance(item.get("label"), str)
+            and isinstance(item.get("prompt"), str) and item["label"].strip() and item["prompt"].strip()
+        ] if isinstance(final.get("suggested_actions", []), list) else [],
         "memory_updates": {},
         "events_emitted": emit is not None,
     }

@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import quote_plus
 
-from pydantic import field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
@@ -55,6 +55,9 @@ class Settings(BaseSettings):
     AI_MAX_AGENT_STEPS: int = 4
     AI_TIMEOUT_SECONDS: float = 90.0
     AI_MAX_TOKENS: int = 1024
+    AI_AGENT_MAX_TOKENS: int = Field(default=768, ge=128, le=4096)
+    AI_AGENT_DEADLINE_SECONDS: float = Field(default=180, ge=30, le=600)
+    AI_REASONING_MODE: Literal["auto", "on", "off"] = "auto"
     AI_TEMPERATURE: float = 0.35
     RESERVATION_TTL_MINUTES: int = 2880
     PAYMENT_PROVIDER: Literal["mock", "external"] = "mock"

@@ -20,6 +20,7 @@ from app.models import (
 from app.services.store import cart_payload, replace_cart_item, search_products
 from app.services.ai_tools import TOOLS
 from app.services.ai_agent import run_gemma_tool_agent
+from app.services.agent_stream import partial_answer
 from app.services.ai_memory import build_session_summary, load_ai_memory, merge_ai_memory
 from app.services.model_runtime import ModelRuntimeError, model_runtime
 
@@ -233,14 +234,16 @@ async def _completion(
     stream: bool = False,
     response_format: dict[str, Any] | None = None,
     temperature: float | None = None,
+    on_text=None,
 ):
     clean_messages = format_messages_for_gemma(messages)
     payload = {
         "model": settings.AI_MODEL,
         "messages": clean_messages,
         "temperature": temperature if temperature is not None else settings.AI_TEMPERATURE,
-        "max_tokens": max_tokens or 160,
-        "stream": stream,
+        "max_tokens": max_tokens or settings.AI_AGENT_MAX_TOKENS,
+        "stream": stream or on_text is not None,
+        "cache_prompt": True,
         "stop": [
             "<end_of_turn>",
             "<eos>",
@@ -255,6 +258,38 @@ async def _completion(
         payload["response_format"] = response_format
     headers = {"Authorization": f"Bearer {settings.AI_API_KEY}"}
     client = httpx.AsyncClient(timeout=settings.AI_TIMEOUT_SECONDS)
+    if on_text is not None:
+        content = ""
+        finish_reason = None
+        try:
+            async with asyncio.timeout(settings.AI_AGENT_DEADLINE_SECONDS):
+                async with client.stream("POST", f"{settings.AI_BASE_URL.rstrip('/')}/chat/completions", json=payload, headers=headers) as response:
+                    if response.status_code >= 400:
+                        await response.aread()
+                        logger.error("Agent inference HTTP %s: %s", response.status_code, response.text[:500])
+                    response.raise_for_status()
+                    async for line in response.aiter_lines():
+                        if not line.startswith("data:"):
+                            continue
+                        data = line[5:].strip()
+                        if data == "[DONE]":
+                            break
+                        if not data:
+                            continue
+                        event = json.loads(data)
+                        if event.get("error"):
+                            raise ModelRuntimeError("El servidor de inferencia devolvió un error durante la respuesta")
+                        for choice in event.get("choices", []):
+                            delta = choice.get("delta", {}).get("content") or ""
+                            if delta:
+                                content += delta
+                                await on_text(content)
+                            finish_reason = choice.get("finish_reason") or finish_reason
+            if not content:
+                raise ModelRuntimeError("El modelo no devolvió contenido de respuesta")
+            return {"choices": [{"message": {"content": content}, "finish_reason": finish_reason}]}
+        finally:
+            await client.aclose()
     if not stream:
         try:
             response = await client.post(
@@ -309,9 +344,21 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
                 "session_id": session.id,
             }
         )
+        streamed_text = ""
+        async def on_agent_text(raw):
+            nonlocal streamed_text
+            answer = partial_answer(raw)
+            if len(answer) > len(streamed_text) and (len(answer) - len(streamed_text) >= 24 or answer.endswith((".", "\n"))):
+                streamed_text = answer
+                await send({"type": "answer_snapshot", "content": answer})
+
+        async def agent_complete(messages, **kwargs):
+            return await _completion(messages, **kwargs, on_text=on_agent_text)
+
         async with model_runtime.lease():
             skill_res = await run_gemma_tool_agent(
-                db, user, message, memory, _completion, emit=send,
+                db, user, message, memory, agent_complete, emit=send,
+                max_steps=settings.AI_MAX_AGENT_STEPS,
             )
 
         skill = SimpleNamespace(name="gemma_tool_agent")
@@ -411,11 +458,8 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
                     )
                 else:
                     direct_text = "He consultado la información del atelier para tu solicitud."
-            for index in range(0, len(direct_text), 36):
-                chunk = direct_text[index:index + 36]
-                answer_parts.append(chunk)
-                await send({"type": "token", "content": chunk})
-                await asyncio.sleep(0.015)
+            answer_parts.append(direct_text)
+            await send({"type": "answer_snapshot" if streamed_text else "token", "content": direct_text})
         else:
             was_ready = await model_runtime.is_healthy()
             await send(
