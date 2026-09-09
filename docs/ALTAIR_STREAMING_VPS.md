@@ -5,7 +5,7 @@
 El debug recibido muestra TimeoutError al agotarse el límite absoluto de 180 s durante la lectura SSE.
 Eso confirma el punto de fallo, no permite medir la velocidad del VPS ni demostrar por sí solo la causa interna del modelo.
 
-Se añadió AI_REASONING_BUDGET=64 (CLI y petición), AI_FIRST_TOKEN_TIMEOUT_SECONDS=45 y un error público legible.
+Se añadió AI_REASONING_BUDGET=64 (CLI y petición), AI_FIRST_TOKEN_TIMEOUT_SECONDS=120 (en VPS de 4 vCPUs sin GPU el prefill del catálogo requiere hasta 60-90s antes del primer delta) y un error público legible.
 La lectura termina cuando llega una decisión JSON completa; no espera espacios o generación posterior al objeto.
 El catálogo estable precede al mensaje variable para reutilizar el prefijo cacheado.
 Los logs contienen tiempo hasta primer delta, duración, caracteres públicos/de razonamiento y motivo de finalización, sin volcar pensamientos.
@@ -47,8 +47,10 @@ AI_GPU_LAYERS=0
 AI_AGENT_MAX_TOKENS=768
 AI_AGENT_DEADLINE_SECONDS=180
 AI_TIMEOUT_SECONDS=90
+AI_FIRST_TOKEN_TIMEOUT_SECONDS=120
 AI_MAX_AGENT_STEPS=4
 AI_REASONING_MODE=auto
+AI_REASONING_BUDGET=64
 AI_IDLE_TIMEOUT_SECONDS=600
 ```
 

@@ -258,7 +258,8 @@ async def _completion(
     if response_format:
         payload["response_format"] = response_format
     headers = {"Authorization": f"Bearer {settings.AI_API_KEY}"}
-    client = httpx.AsyncClient(timeout=settings.AI_TIMEOUT_SECONDS)
+    client_timeout = max(settings.AI_AGENT_DEADLINE_SECONDS, settings.AI_FIRST_TOKEN_TIMEOUT_SECONDS, settings.AI_TIMEOUT_SECONDS) + 10.0
+    client = httpx.AsyncClient(timeout=client_timeout)
     if on_text is not None:
         content = ""
         finish_reason = None
