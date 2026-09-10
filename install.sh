@@ -93,11 +93,12 @@ show_menu() {
     echo -e "${COLOR_PRIMARY}│${BOLD}  2 ${NC}${COLOR_PRIMARY}│${NC}  🔄 ${BOLD}Actualizar desde Git${NC} (Pull + Migrar .env + Restart)                ${COLOR_PRIMARY}│${NC}"
     echo -e "${COLOR_PRIMARY}│${BOLD}  3 ${NC}${COLOR_PRIMARY}│${NC}  ${ICON_SHIELD} ${BOLD}Sincronizar y Proteger .env${NC} (Agregar nuevas variables sin daño)    ${COLOR_PRIMARY}│${NC}"
     echo -e "${COLOR_PRIMARY}│${BOLD}  4 ${NC}${COLOR_PRIMARY}│${NC}  ${ICON_GEAR} ${BOLD}Iniciar / Reiniciar Servicio${NC} (drapemind-backend en puerto 8045)    ${COLOR_PRIMARY}│${NC}"
-    echo -e "${COLOR_PRIMARY}│${BOLD}  5 ${NC}${COLOR_PRIMARY}│${NC}  📜 ${BOLD}Ver Logs en Vivo${NC} (Journalctl en tiempo real)                       ${COLOR_PRIMARY}│${NC}"
-    echo -e "${COLOR_PRIMARY}│${BOLD}  6 ${NC}${COLOR_PRIMARY}│${NC}  ${ICON_DATABASE} ${BOLD}Configurar PostgreSQL${NC} (Usuario, base de datos y migraciones)        ${COLOR_PRIMARY}│${NC}"
-    echo -e "${COLOR_PRIMARY}│${BOLD}  7 ${NC}${COLOR_PRIMARY}│${NC}  ⚡ ${BOLD}Instalar llama-server${NC} (Binarios GGML con soporte Gemma 4)           ${COLOR_PRIMARY}│${NC}"
-    echo -e "${COLOR_PRIMARY}│${BOLD}  8 ${NC}${COLOR_PRIMARY}│${NC}  ${ICON_BRAIN} ${BOLD}Descargar Modelos Gemma 4${NC} (Pesos E2B desde Hugging Face)            ${COLOR_PRIMARY}│${NC}"
-    echo -e "${COLOR_PRIMARY}│${BOLD}  9 ${NC}${COLOR_PRIMARY}│${NC}  🩺 ${BOLD}Verificar Diagnóstico y Salud${NC} (/health/ready y /health/ai)          ${COLOR_PRIMARY}│${NC}"
+    echo -e "${COLOR_PRIMARY}│${BOLD}  5 ${NC}${COLOR_PRIMARY}│${NC}  📜 ${BOLD}Ver Logs del Backend${NC} (Journalctl FastAPI / Uvicorn)            ${COLOR_PRIMARY}│${NC}"
+    echo -e "${COLOR_PRIMARY}│${BOLD}  6 ${NC}${COLOR_PRIMARY}│${NC}  ${ICON_BRAIN} ${BOLD}Ver Logs de Llama / IA${NC} (Tokens, Velocidad y Generación en vivo)  ${COLOR_PRIMARY}│${NC}"
+    echo -e "${COLOR_PRIMARY}│${BOLD}  7 ${NC}${COLOR_PRIMARY}│${NC}  ${ICON_DATABASE} ${BOLD}Configurar PostgreSQL${NC} (Usuario, base de datos y migraciones)        ${COLOR_PRIMARY}│${NC}"
+    echo -e "${COLOR_PRIMARY}│${BOLD}  8 ${NC}${COLOR_PRIMARY}│${NC}  ⚡ ${BOLD}Instalar llama-server${NC} (Binarios GGML con soporte Gemma 4)           ${COLOR_PRIMARY}│${NC}"
+    echo -e "${COLOR_PRIMARY}│${BOLD}  9 ${NC}${COLOR_PRIMARY}│${NC}  ${ICON_BRAIN} ${BOLD}Descargar Modelos Gemma 4${NC} (Pesos E2B desde Hugging Face)            ${COLOR_PRIMARY}│${NC}"
+    echo -e "${COLOR_PRIMARY}│${BOLD} 10 ${NC}${COLOR_PRIMARY}│${NC}  🩺 ${BOLD}Verificar Diagnóstico y Salud${NC} (/health/ready y /health/ai)          ${COLOR_PRIMARY}│${NC}"
     echo -e "${COLOR_PRIMARY}│${BOLD}  0 ${NC}${COLOR_PRIMARY}│${NC}  🚪 ${BOLD}Salir del Instalador${NC}                                                ${COLOR_PRIMARY}│${NC}"
     echo -e "${COLOR_PRIMARY}╰────┴──────────────────────────────────────────────────────────────────────╯${NC}"
     echo ""
@@ -116,11 +117,17 @@ show_help() {
     echo "  --models      Descarga modelos Gemma 4 de Hugging Face"
     echo "  --service     Reconfigura y reinicia el servicio systemd"
     echo "  --restart     Solo reinicia el servicio systemd actual"
-    echo "  --logs        Muestra logs de journalctl en tiempo real"
+    echo "  --logs        Muestra logs de journalctl del backend en tiempo real"
+    echo "  --logs-llama  Muestra logs de llama-server en tiempo real (tokens, velocidad y generación)"
     echo "  --check       Verifica endpoints de salud (/health/ready y /health/ai)"
     echo "  --help        Muestra esta ayuda"
     echo ""
 }
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    show_help
+    exit 0
+fi
 
 # Verificación de privilegios
 check_root
@@ -154,8 +161,11 @@ case "${1:-}" in
         restart_service
         verify_backend
         ;;
-    --logs)
+    --logs|--logs-backend)
         view_logs
+        ;;
+    --logs-llama|--llama-logs|--ai-logs)
+        view_llama_logs
         ;;
     --check)
         verify_backend
@@ -165,7 +175,7 @@ case "${1:-}" in
         ;;
     *)
         show_menu
-        read -rp "  ${COLOR_ACCENT}${ICON_CHEVRON}${NC} ${BOLD}Selecciona una opción [0-9]:${NC} " opt
+        read -rp "  ${COLOR_ACCENT}${ICON_CHEVRON}${NC} ${BOLD}Selecciona una opción [0-10]:${NC} " opt
         case $opt in
             1)
                 install_full
@@ -184,17 +194,20 @@ case "${1:-}" in
                 view_logs
                 ;;
             6)
+                view_llama_logs
+                ;;
+            7)
                 setup_postgresql
                 sync_env_production
                 run_migrations_and_seed
                 ;;
-            7)
+            8)
                 install_llama_server true
                 ;;
-            8)
+            9)
                 download_ai_models
                 ;;
-            9)
+            10)
                 verify_backend
                 ;;
             0)

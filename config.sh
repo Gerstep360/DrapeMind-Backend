@@ -216,7 +216,8 @@ show_menu() {
     echo -e "${COLOR_PRIMARY}│${BOLD}  4 ${NC}${COLOR_PRIMARY}│${NC}  🔄  ${BOLD}Actualizar Todo desde Git${NC} (Git pull en ambos + Build + Restart)  ${COLOR_PRIMARY}│${NC}"
     echo -e "${COLOR_PRIMARY}│${BOLD}  5 ${NC}${COLOR_PRIMARY}│${NC}  🩺  ${BOLD}Diagnóstico Integral de Salud${NC} (Verificar HTTP y WebSockets)    ${COLOR_PRIMARY}│${NC}"
     echo -e "${COLOR_PRIMARY}│${BOLD}  6 ${NC}${COLOR_PRIMARY}│${NC}  📜  ${BOLD}Ver Logs en Vivo de Backend${NC} (Journalctl drapemind-backend)       ${COLOR_PRIMARY}│${NC}"
-    echo -e "${COLOR_PRIMARY}│${BOLD}  7 ${NC}${COLOR_PRIMARY}│${NC}  🛡️   ${BOLD}Sincronizar y Proteger .env${NC} (Actualizar variables de IA)         ${COLOR_PRIMARY}│${NC}"
+    echo -e "${COLOR_PRIMARY}│${BOLD}  7 ${NC}${COLOR_PRIMARY}│${NC}  🧠  ${BOLD}Ver Logs de Llama / IA en Vivo${NC} (Tokens y Generación en vivo)     ${COLOR_PRIMARY}│${NC}"
+    echo -e "${COLOR_PRIMARY}│${BOLD}  8 ${NC}${COLOR_PRIMARY}│${NC}  🛡️   ${BOLD}Sincronizar y Proteger .env${NC} (Actualizar variables de IA)         ${COLOR_PRIMARY}│${NC}"
     echo -e "${COLOR_PRIMARY}│${BOLD}  0 ${NC}${COLOR_PRIMARY}│${NC}  🚪  ${BOLD}Salir${NC}                                                               ${COLOR_PRIMARY}│${NC}"
     echo -e "${COLOR_PRIMARY}╰────┴─────────────────────────────────────────────────────────────────────╯${NC}"
     echo ""
@@ -250,6 +251,13 @@ case "${1:-}" in
             journalctl -u drapemind-backend -f -n 50
         fi
         ;;
+    --logs-llama|--llama-logs|-ll)
+        if [[ -n "${BACKEND_DIR}" ]]; then
+            (cd "${BACKEND_DIR}" && bash "${BACKEND_DIR}/install.sh" --logs-llama)
+        else
+            tail -f -n 50 /root/drapemind/backend/logs/llama-server.log 2>/dev/null || true
+        fi
+        ;;
     --help|-h)
         banner
         echo "Uso: sudo bash config.sh [OPCION]"
@@ -261,6 +269,7 @@ case "${1:-}" in
         echo "  --update,   -u    Actualiza ambos con Git, migra .env, compila y reinicia"
         echo "  --check,    -c    Diagnóstico de salud y puertos del servidor"
         echo "  --logs,     -l    Muestra logs en tiempo real del backend"
+        echo "  --logs-llama, -ll Muestra logs en tiempo real de llama-server (tokens y generación)"
         echo "  --help,     -h    Muestra esta ayuda"
         echo ""
         exit 0
@@ -268,7 +277,7 @@ case "${1:-}" in
     *)
         while true; do
             show_menu
-            read -rp "  ${COLOR_ACCENT}➜${NC} ${BOLD}Selecciona una opción [0-7]:${NC} " opt
+            read -rp "  ${COLOR_ACCENT}➜${NC} ${BOLD}Selecciona una opción [0-8]:${NC} " opt
             case $opt in
                 1)
                     run_backend
@@ -296,6 +305,13 @@ case "${1:-}" in
                     fi
                     ;;
                 7)
+                    if [[ -n "${BACKEND_DIR}" ]]; then
+                        (cd "${BACKEND_DIR}" && bash "${BACKEND_DIR}/install.sh" --logs-llama)
+                    else
+                        tail -f -n 50 /root/drapemind/backend/logs/llama-server.log 2>/dev/null || true
+                    fi
+                    ;;
+                8)
                     if [[ -n "${BACKEND_DIR}" ]]; then
                         (cd "${BACKEND_DIR}" && bash "${BACKEND_DIR}/install.sh" --env)
                         echo -e "${COLOR_MUTED}Presiona Enter para regresar al menú principal...${NC}"
