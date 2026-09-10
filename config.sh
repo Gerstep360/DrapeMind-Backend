@@ -95,6 +95,18 @@ banner() {
     echo -e "${NC}"
 }
 
+sync_config_files() {
+    if [[ -n "${BACKEND_DIR}" && -f "${BACKEND_DIR}/config.sh" ]]; then
+        local TARGET_DIRS=("${ROOT_DIR}" "/root/app/DrapeMind" "/root/DrapeMind")
+        for tdir in "${TARGET_DIRS[@]}"; do
+            if [[ -d "${tdir}" && "${tdir}" != "${BACKEND_DIR}" ]]; then
+                cp -f "${BACKEND_DIR}/config.sh" "${tdir}/config.sh" 2>/dev/null || true
+                chmod +x "${tdir}/config.sh" 2>/dev/null || true
+            fi
+        done
+    fi
+}
+
 run_backend() {
     if [[ -z "${BACKEND_DIR}" || ! -f "${BACKEND_DIR}/install.sh" ]]; then
         echo -e "${COLOR_DANGER}ERROR: No se encontró install.sh en el directorio de Backend.${NC}"
@@ -103,6 +115,7 @@ run_backend() {
     fi
     chmod +x "${BACKEND_DIR}/install.sh"
     (cd "${BACKEND_DIR}" && bash "${BACKEND_DIR}/install.sh" "$@")
+    sync_config_files
     echo ""
     echo -e "${COLOR_MUTED}Presiona Enter para regresar al menú principal...${NC}"
     read -r
@@ -139,6 +152,7 @@ run_install_all() {
         (cd "${WEB_DIR}" && bash "${WEB_DIR}/install.sh" --all)
     fi
 
+    sync_config_files
     verify_all
     echo -e "${COLOR_MUTED}Presiona Enter para regresar al menú principal...${NC}"
     read -r
@@ -160,6 +174,7 @@ run_update_all() {
         (cd "${WEB_DIR}" && bash "${WEB_DIR}/install.sh" --update)
     fi
 
+    sync_config_files
     verify_all
     echo -e "${COLOR_MUTED}Presiona Enter para regresar al menú principal...${NC}"
     read -r

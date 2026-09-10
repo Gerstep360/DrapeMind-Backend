@@ -22,9 +22,11 @@ install_system_packages() {
     check_root
     detect_python
 
-    echo -e "${COLOR_PRIMARY}╭── [PAQUETES DEL SISTEMA] ─────────────────────────────────────────────────╮${NC}"
-    echo -e "${COLOR_PRIMARY}│${NC}  ${BOLD}${ICON_PACKAGE} Preparando dependencias del sistema operativo (Ubuntu Linux)${NC}"
-    echo -e "${COLOR_PRIMARY}╰───────────────────────────────────────────────────────────────────────────╯${NC}"
+    if [[ "${INSTALL_FLOW:-false}" != "true" ]]; then
+        echo -e "${COLOR_PRIMARY}╭── [PAQUETES DEL SISTEMA] ─────────────────────────────────────────────────╮${NC}"
+        echo -e "${COLOR_PRIMARY}│${NC}  ${BOLD}${ICON_PACKAGE} Preparando dependencias del sistema operativo (Ubuntu Linux)${NC}"
+        echo -e "${COLOR_PRIMARY}╰───────────────────────────────────────────────────────────────────────────╯${NC}"
+    fi
 
     export DEBIAN_FRONTEND=noninteractive
 

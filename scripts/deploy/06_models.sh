@@ -13,9 +13,11 @@ download_ai_models() {
     install_llama_server false
     cd "${BACKEND_DIR}"
 
-    echo -e "${COLOR_PRIMARY}╭── [MODELOS DE INTELIGENCIA ARTIFICIAL] ───────────────────────────────────╮${NC}"
-    echo -e "${COLOR_PRIMARY}│${NC}  ${BOLD}${ICON_BRAIN} Comprobación y Descarga de Gemma 4 E2B + Proyector Multimodal${NC}"
-    echo -e "${COLOR_PRIMARY}╰───────────────────────────────────────────────────────────────────────────╯${NC}"
+    if [[ "${INSTALL_FLOW:-false}" != "true" ]]; then
+        echo -e "${COLOR_PRIMARY}╭── [MODELOS DE INTELIGENCIA ARTIFICIAL] ───────────────────────────────────╮${NC}"
+        echo -e "${COLOR_PRIMARY}│${NC}  ${BOLD}${ICON_BRAIN} Comprobación y Descarga de Gemma 4 E2B + Proyector Multimodal${NC}"
+        echo -e "${COLOR_PRIMARY}╰───────────────────────────────────────────────────────────────────────────╯${NC}"
+    fi
 
     local PYTHON_BIN="python3"
     [[ -x "${BACKEND_DIR}/.venv/bin/python" ]] && PYTHON_BIN="${BACKEND_DIR}/.venv/bin/python"

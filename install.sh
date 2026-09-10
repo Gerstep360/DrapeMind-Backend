@@ -29,8 +29,11 @@ source "${DEPLOY_DIR}/07_systemd.sh"
 source "${DEPLOY_DIR}/08_health.sh"
 
 install_full() {
+    export INSTALL_FLOW=true
     tui_banner
-    tui_pulse_delay "Iniciando proceso de instalación integral de DrapeMind..." 1
+    echo -e "${COLOR_PRIMARY}╭── [PROCESO DE INSTALACIÓN INTEGRAL] ──────────────────────────────────────╮${NC}"
+    echo -e "${COLOR_PRIMARY}│${NC}  ${BOLD}${ICON_ROCKET} Despliegue completo: Paquetes, BD, Python, .env, Gemma 4 y Systemd... ${COLOR_PRIMARY}│${NC}"
+    echo -e "${COLOR_PRIMARY}╰───────────────────────────────────────────────────────────────────────────╯${NC}"
 
     tui_step 1 8 "Instalación de Paquetes Base del Sistema (Ubuntu Linux)"
     install_system_packages
@@ -56,18 +59,30 @@ install_full() {
     tui_step 8 8 "Configuración e Inicio del Servicio Systemd"
     setup_systemd
 
+    sync_parent_config
     verify_backend
 }
 
 update_backend_code() {
+    export INSTALL_FLOW=true
     tui_banner
-    tui_pulse_delay "Iniciando actualización segura del backend con cambios de Git..." 1
+    echo -e "${COLOR_PRIMARY}╭── [ACTUALIZACIÓN SEGURA DE DRAPEMIND BACKEND] ────────────────────────────╮${NC}"
+    echo -e "${COLOR_PRIMARY}│${NC}  ${BOLD}🔄 Sincronizando repositorio, dependencias, entorno, BD y servicios...   ${COLOR_PRIMARY}│${NC}"
+    echo -e "${COLOR_PRIMARY}╰───────────────────────────────────────────────────────────────────────────╯${NC}"
 
     tui_step 1 5 "Sincronizando Código Fuente desde el Repositorio Git"
-    cd "${BACKEND_DIR}"
-    if ! tui_spin_cmd "Descargando commits recientes con git pull" git pull; then
-        log_warn "Git pull reportó cambios locales o conflictos. Continuando con la migración..."
-    fi
+    _sync_git_repo() {
+        cd "${BACKEND_DIR}"
+        if ! git diff --quiet || ! git diff --cached --quiet 2>/dev/null; then
+            git stash push -u -m "autostash_deploy_$(date +%s)" >/dev/null 2>&1 || true
+        fi
+        git fetch origin Main --quiet 2>&1
+        if ! git pull origin Main --quiet 2>&1; then
+            git reset --hard origin/Main >/dev/null 2>&1
+        fi
+        chmod +x "${BACKEND_DIR}"/*.sh "${BACKEND_DIR}"/scripts/deploy/*.sh 2>/dev/null || true
+    }
+    tui_spin_cmd "Descargando commits recientes desde origin/Main" _sync_git_repo
 
     tui_step 2 5 "Verificando Entorno Virtual y Nuevas Dependencias PIP"
     setup_python_venv
@@ -81,6 +96,7 @@ update_backend_code() {
     tui_step 5 5 "Reiniciando Servicio Systemd drapemind-backend"
     restart_service
 
+    sync_parent_config
     verify_backend
 }
 

@@ -25,10 +25,12 @@ sync_env_production() {
     local PROD_REF_FILE="${BACKEND_DIR}/.env_produccion"
     [[ ! -f "${PROD_REF_FILE}" && -f "${BACKEND_DIR}/../.env_produccion" ]] && PROD_REF_FILE="${BACKEND_DIR}/../.env_produccion"
 
-    echo ""
-    echo -e "${COLOR_PRIMARY}╭── [CONFIGURACIÓN DE ENTORNO] ─────────────────────────────────────────────╮${NC}"
-    echo -e "${COLOR_PRIMARY}│${NC}  ${BOLD}${ICON_SHIELD} Sincronización y Protección de Variables de Producción (.env)${NC}"
-    echo -e "${COLOR_PRIMARY}╰───────────────────────────────────────────────────────────────────────────╯${NC}"
+    if [[ "${INSTALL_FLOW:-false}" != "true" ]]; then
+        echo ""
+        echo -e "${COLOR_PRIMARY}╭── [CONFIGURACIÓN DE ENTORNO] ─────────────────────────────────────────────╮${NC}"
+        echo -e "${COLOR_PRIMARY}│${NC}  ${BOLD}${ICON_SHIELD} Sincronización y Protección de Variables de Producción (.env)${NC}"
+        echo -e "${COLOR_PRIMARY}╰───────────────────────────────────────────────────────────────────────────╯${NC}"
+    fi
 
     # Paso 1: Si ya existe un .env en producción, crear copia de seguridad inmediata
     if [[ -f "${ENV_FILE}" ]]; then

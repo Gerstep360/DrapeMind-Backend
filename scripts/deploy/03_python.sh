@@ -11,9 +11,11 @@ source "${SCRIPT_DIR}/00_common.sh"
 setup_python_venv() {
     cd "${BACKEND_DIR}"
 
-    echo -e "${COLOR_PRIMARY}╭── [ENTORNO PYTHON] ───────────────────────────────────────────────────────╮${NC}"
-    echo -e "${COLOR_PRIMARY}│${NC}  ${BOLD}${ICON_GEAR} Configuración de Entorno Virtual y Paquetes de Backend (.venv)${NC}"
-    echo -e "${COLOR_PRIMARY}╰───────────────────────────────────────────────────────────────────────────╯${NC}"
+    if [[ "${INSTALL_FLOW:-false}" != "true" ]]; then
+        echo -e "${COLOR_PRIMARY}╭── [ENTORNO PYTHON] ───────────────────────────────────────────────────────╮${NC}"
+        echo -e "${COLOR_PRIMARY}│${NC}  ${BOLD}${ICON_GEAR} Configuración de Entorno Virtual y Paquetes de Backend (.venv)${NC}"
+        echo -e "${COLOR_PRIMARY}╰───────────────────────────────────────────────────────────────────────────╯${NC}"
+    fi
 
     local PYTHON_BIN="python3"
     if command -v python3.11 >/dev/null 2>&1; then

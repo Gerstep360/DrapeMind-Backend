@@ -12,9 +12,11 @@ install_llama_server() {
     check_root
     local FORCE="${1:-false}"
 
-    echo -e "${COLOR_PRIMARY}╭── [MOTOR DE INFERENCIA IA] ───────────────────────────────────────────────╮${NC}"
-    echo -e "${COLOR_PRIMARY}│${NC}  ${BOLD}${ICON_BRAIN} Verificación y Despliegue de llama-server con soporte Gemma 4${NC}"
-    echo -e "${COLOR_PRIMARY}╰───────────────────────────────────────────────────────────────────────────╯${NC}"
+    if [[ "${INSTALL_FLOW:-false}" != "true" ]]; then
+        echo -e "${COLOR_PRIMARY}╭── [MOTOR DE INFERENCIA IA] ───────────────────────────────────────────────╮${NC}"
+        echo -e "${COLOR_PRIMARY}│${NC}  ${BOLD}${ICON_BRAIN} Verificación y Despliegue de llama-server con soporte Gemma 4${NC}"
+        echo -e "${COLOR_PRIMARY}╰───────────────────────────────────────────────────────────────────────────╯${NC}"
+    fi
 
     local NEED_INSTALL=false
 

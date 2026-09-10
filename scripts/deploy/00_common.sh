@@ -78,26 +78,40 @@ banner() {
     tui_banner
 }
 
-# Indicador de Progreso Visual por Pasos (Stepper con Barra de Progreso)
+# Indicador de Progreso Visual Limpio por Pasos
 tui_step() {
     local current="$1"
     local total="$2"
     local title="$3"
 
-    local percent=$(( current * 100 / total ))
-    local bar_width=24
-    local filled_len=$(( percent * bar_width / 100 ))
-    local empty_len=$(( bar_width - filled_len ))
-
-    local bar=""
-    for ((i=0; i<filled_len; i++)); do bar+="█"; done
-    for ((i=0; i<empty_len; i++)); do bar+="░"; done
-
     echo ""
-    echo -e "${COLOR_ACCENT}╭── [PASO ${current}/${total}] ──────────────────────────────────────────────────────────╮${NC}"
-    echo -e "${COLOR_ACCENT}│${NC}  ${COLOR_PRIMARY}[${bar}] ${percent}%${NC}  ${BOLD}${title}${NC}"
-    echo -e "${COLOR_ACCENT}╰──────────────────────────────────────────────────────────────────────────╯${NC}"
-    echo ""
+    echo -e "  ${COLOR_PRIMARY}${BOLD}▶ [Paso ${current}/${total}]${NC} ${BOLD}${title}${NC}"
+}
+
+# Sincroniza automáticamente config.sh hacia el directorio padre app/DrapeMind
+sync_parent_config() {
+    local SRC_CONFIG="${BACKEND_DIR}/config.sh"
+    if [[ ! -f "${SRC_CONFIG}" ]]; then
+        return 0
+    fi
+
+    local CANDIDATE_DIRS=(
+        "${BACKEND_DIR}/.."
+        "/root/app/DrapeMind"
+        "/root/DrapeMind"
+        "${ROOT_DIR:-}"
+    )
+
+    for dir in "${CANDIDATE_DIRS[@]}"; do
+        if [[ -n "${dir}" && -d "${dir}" && "${dir}" != "${BACKEND_DIR}" ]]; then
+            local dest="${dir}/config.sh"
+            if [[ -f "${dest}" || "${dir}" == *"/DrapeMind" || "${dir}" == *"/app/DrapeMind" ]]; then
+                cp -f "${SRC_CONFIG}" "${dest}" 2>/dev/null || true
+                chmod +x "${dest}" 2>/dev/null || true
+                log_success "Archivo config.sh sincronizado en ${dest}"
+            fi
+        fi
+    done
 }
 
 # Spinner de Animación para Comandos en Terminal

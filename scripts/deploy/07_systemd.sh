@@ -11,9 +11,11 @@ source "${SCRIPT_DIR}/00_common.sh"
 setup_systemd() {
     check_root
 
-    echo -e "${COLOR_PRIMARY}╭── [SERVICIO DEL SISTEMA SYSTEMD] ─────────────────────────────────────────╮${NC}"
-    echo -e "${COLOR_PRIMARY}│${NC}  ${BOLD}${ICON_GEAR} Registro y Configuración de drapemind-backend.service${NC}"
-    echo -e "${COLOR_PRIMARY}╰───────────────────────────────────────────────────────────────────────────╯${NC}"
+    if [[ "${INSTALL_FLOW:-false}" != "true" ]]; then
+        echo -e "${COLOR_PRIMARY}╭── [SERVICIO DEL SISTEMA SYSTEMD] ─────────────────────────────────────────╮${NC}"
+        echo -e "${COLOR_PRIMARY}│${NC}  ${BOLD}${ICON_GEAR} Registro y Configuración de drapemind-backend.service${NC}"
+        echo -e "${COLOR_PRIMARY}╰───────────────────────────────────────────────────────────────────────────╯${NC}"
+    fi
 
     local SERVICE_USER="drapemind"
     local SERVICE_GROUP="drapemind"
@@ -86,9 +88,11 @@ EOF
 restart_service() {
     check_root
 
-    echo -e "${COLOR_PRIMARY}╭── [REINICIAR SERVICIO] ───────────────────────────────────────────────────╮${NC}"
-    echo -e "${COLOR_PRIMARY}│${NC}  ${BOLD}${ICON_GEAR} Reiniciando servicio drapemind-backend${NC}"
-    echo -e "${COLOR_PRIMARY}╰───────────────────────────────────────────────────────────────────────────╯${NC}"
+    if [[ "${INSTALL_FLOW:-false}" != "true" ]]; then
+        echo -e "${COLOR_PRIMARY}╭── [REINICIAR SERVICIO] ───────────────────────────────────────────────────╮${NC}"
+        echo -e "${COLOR_PRIMARY}│${NC}  ${BOLD}${ICON_GEAR} Reiniciando servicio drapemind-backend${NC}"
+        echo -e "${COLOR_PRIMARY}╰───────────────────────────────────────────────────────────────────────────╯${NC}"
+    fi
 
     tui_spin_cmd "Reiniciando proceso drapemind-backend en systemd" systemctl restart drapemind-backend.service
 

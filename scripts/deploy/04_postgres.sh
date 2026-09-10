@@ -11,9 +11,11 @@ source "${SCRIPT_DIR}/00_common.sh"
 setup_postgresql() {
     check_root
 
-    echo -e "${COLOR_PRIMARY}╭── [BASE DE DATOS] ────────────────────────────────────────────────────────╮${NC}"
-    echo -e "${COLOR_PRIMARY}│${NC}  ${BOLD}${ICON_DATABASE} Configuración de PostgreSQL Aislada para DrapeMind${NC}"
-    echo -e "${COLOR_PRIMARY}╰───────────────────────────────────────────────────────────────────────────╯${NC}"
+    if [[ "${INSTALL_FLOW:-false}" != "true" ]]; then
+        echo -e "${COLOR_PRIMARY}╭── [BASE DE DATOS] ────────────────────────────────────────────────────────╮${NC}"
+        echo -e "${COLOR_PRIMARY}│${NC}  ${BOLD}${ICON_DATABASE} Configuración de PostgreSQL Aislada para DrapeMind${NC}"
+        echo -e "${COLOR_PRIMARY}╰───────────────────────────────────────────────────────────────────────────╯${NC}"
+    fi
 
     if command -v psql >/dev/null 2>&1 || systemctl is-active --quiet postgresql 2>/dev/null; then
         log_success "Servicio PostgreSQL activo y disponible en el servidor."
@@ -70,9 +72,11 @@ setup_postgresql() {
 run_migrations_and_seed() {
     cd "${BACKEND_DIR}"
 
-    echo -e "${COLOR_PRIMARY}╭── [MIGRACIONES Y DATOS] ──────────────────────────────────────────────────╮${NC}"
-    echo -e "${COLOR_PRIMARY}│${NC}  ${BOLD}${ICON_DATABASE} Aplicando Esquemas de Base de Datos y Catálogo Inicial${NC}"
-    echo -e "${COLOR_PRIMARY}╰───────────────────────────────────────────────────────────────────────────╯${NC}"
+    if [[ "${INSTALL_FLOW:-false}" != "true" ]]; then
+        echo -e "${COLOR_PRIMARY}╭── [MIGRACIONES Y DATOS] ──────────────────────────────────────────────────╮${NC}"
+        echo -e "${COLOR_PRIMARY}│${NC}  ${BOLD}${ICON_DATABASE} Aplicando Esquemas de Base de Datos y Catálogo Inicial${NC}"
+        echo -e "${COLOR_PRIMARY}╰───────────────────────────────────────────────────────────────────────────╯${NC}"
+    fi
 
     if [[ -x "${BACKEND_DIR}/.venv/bin/python" ]]; then
         tui_spin_cmd "Ejecutando migraciones de base de datos Alembic (upgrade head)" \
