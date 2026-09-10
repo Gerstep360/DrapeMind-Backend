@@ -138,27 +138,14 @@ sync_env_production() {
     set_default_var "AI_MODEL_PATH" "\"ai_models/gemma-4-e2b/gemma-4-E2B_q4_0-it.gguf\"" "${ENV_FILE}"
     set_default_var "AI_MMPROJ_PATH" "\"ai_models/gemma-4-e2b/gemma-4-E2B-it-mmproj.gguf\"" "${ENV_FILE}"
     set_default_var "LLAMA_SERVER_PATH" "\"/usr/local/bin/llama-server\"" "${ENV_FILE}"
-    set_default_var "AI_IDLE_TIMEOUT_SECONDS" "600" "${ENV_FILE}"
-    set_default_var "AI_STARTUP_TIMEOUT_SECONDS" "240" "${ENV_FILE}"
-    set_default_var "AI_CONTEXT_SIZE" "4096" "${ENV_FILE}"
-    set_default_var "AI_PARALLEL_SLOTS" "1" "${ENV_FILE}"
-    set_default_var "AI_THREADS" "3" "${ENV_FILE}"
     set_default_var "AI_GPU_LAYERS" "\"0\"" "${ENV_FILE}"
     set_default_var "AI_SERVER_EXTRA_ARGS" "\"\"" "${ENV_FILE}"
 
     # =====================================================================
     # NUEVAS VARIABLES DE IA Y STREAMING ALTAIR SOLICITADAS
     # =====================================================================
-    set_default_var "AI_MAX_AGENT_STEPS" "4" "${ENV_FILE}"
-    set_default_var "AI_TURN_TIMEOUT_SECONDS" "150" "${ENV_FILE}"
-    set_default_var "AI_TIMEOUT_SECONDS" "90" "${ENV_FILE}"
-    set_default_var "AI_MAX_TOKENS" "1024" "${ENV_FILE}"
-    set_default_var "AI_AGENT_MAX_TOKENS" "768" "${ENV_FILE}"
-    set_default_var "AI_AGENT_DEADLINE_SECONDS" "180" "${ENV_FILE}"
     set_default_var "AI_REASONING_MODE" "auto" "${ENV_FILE}"
     set_default_var "AI_REASONING_BUDGET" "64" "${ENV_FILE}"
-    set_default_var "AI_FIRST_TOKEN_TIMEOUT_SECONDS" "120" "${ENV_FILE}"
-    set_default_var "AI_TEMPERATURE" "0.35" "${ENV_FILE}"
 
     local SCOUT_FILE="${BACKEND_DIR}/ai_models/qwen3-0.6B/Qwen3-0.6B-Q8_0.gguf"
     if [[ -f "${SCOUT_FILE}" ]]; then
@@ -172,18 +159,11 @@ sync_env_production() {
     set_default_var "SCOUT_API_KEY" "\"local-no-key\"" "${ENV_FILE}"
     set_default_var "SCOUT_MANAGED_SERVER" "true" "${ENV_FILE}"
     set_default_var "SCOUT_SERVER_PORT" "${SCOUT_SERVER_PORT:-8089}" "${ENV_FILE}"
-    set_default_var "SCOUT_THREADS" "1" "${ENV_FILE}"
-    set_default_var "SCOUT_CONTEXT_SIZE" "4096" "${ENV_FILE}"
-    set_default_var "SCOUT_MAX_TOKENS" "256" "${ENV_FILE}"
     set_default_var "SCOUT_DIRECT_CONFIDENCE" "0.85" "${ENV_FILE}"
-    set_default_var "AI_RESPONSE_SHORT_TOKENS" "128" "${ENV_FILE}"
-    set_default_var "AI_RESPONSE_NORMAL_TOKENS" "256" "${ENV_FILE}"
-    set_default_var "AI_RESPONSE_DEEP_TOKENS" "512" "${ENV_FILE}"
-    set_default_var "SCOUT_MAX_STEPS" "6" "${ENV_FILE}"
-    set_default_var "SCOUT_TIMEOUT_SECONDS" "60" "${ENV_FILE}"
-    set_default_var "SCOUT_TURN_TIMEOUT_SECONDS" "240" "${ENV_FILE}"
-    set_default_var "SCOUT_IDLE_TIMEOUT_SECONDS" "300" "${ENV_FILE}"
     set_default_var "AI_CONTEXT_TOKEN_METRICS" "false" "${ENV_FILE}"
+
+    # Versioned numeric defaults; preserve explicit choices and all credentials.
+    "${PYTHON_BIN:-python3}" "${BACKEND_DIR}/scripts/migrate_ai_env.py" "${ENV_FILE}"
 
     # Dominio y Pagos
     set_or_update_var "RESERVATION_TTL_MINUTES" "2880" "${ENV_FILE}"

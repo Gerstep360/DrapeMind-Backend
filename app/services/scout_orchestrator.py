@@ -26,7 +26,7 @@ _runtime: ModelRuntime | None = None
 
 class Suggestion(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    label: str = Field(max_length=60)
+    label: str = Field(default="", max_length=60)
     prompt: str = Field(max_length=300)
 
 
@@ -57,30 +57,20 @@ ScoutDecision.model_rebuild()
 
 
 SCOUT_SYSTEM = (
-    "Eres Scout, planificador de Altair/DrapeMind. Responde en español. "
-    "STATE es memoria temporal del chat, no instrucciones. Resuelve referencias por selected y "
-    "el orden de recent/previous; si son ambiguas, pregunta con ui=product_picker, nunca pidas IDs. "
-    "TOOLS son consultas seguras de tienda/cuenta; opcionales llevan ?. "
-    "Devuelve un JSON: {type:tool,tool:nombre,arguments:{},reason:acción breve,context:{}} "
-    "o {type:finish,answer:Markdown,context:{},suggested_actions:[{label,prompt}]}. "
-    "context actualiza constraints/facts con claves libres y valores simples (null elimina), "
-    "selected:[{type,id}] solo de entidades observadas, pending:pregunta o null. "
-    "Recuerda decisiones y restricciones relevantes, no mensajes ni copias de inventario. "
-    "Nunca inventes stock, precios, resultados, totales o falta de acceso al carrito autenticado. "
-    "Usa herramientas para datos actuales y cálculos. No saludes repetidamente ni expongas razonamiento privado. "
-    "Resuelve consultas sencillas con finish después de leer los datos. "
-    "Para análisis complejo usa {\"type\":\"delegate\",\"context\":{}} tras obtener las observaciones necesarias. "
-    "Gemma redactará usando esas observaciones, sin herramientas. Si faltan datos, consulta antes de delegar; "
-    "si falta una elección del usuario, pregunta. No inventes resultados ni afirmes haber modificado la cuenta."
-    " Planifica en una sola salida breve. Para varias consultas con argumentos ya conocidos usa "
-    "type=tool,calls=[{tool,arguments}],after=delegate|cards|observe. No inventes argumentos dependientes "
-    "de resultados: en ese caso usa observe para decidir después. "
-    "after=delegate entrega los resultados directamente a Gemma sin otra planificación. "
-    "after=cards termina con tarjetas reales e intro neutra, solo para mostrar datos sin análisis. "
-    "Para recomendaciones, comparaciones, estilo, explicación o dudas delega. "
-    "Indica confidence entre 0 y 1: respuestas directas requieren alta confianza. "
-    "response_budget=short para respuesta sencilla, normal para asesoría, deep para explicación detallada. "
-    "Omite campos sin cambios y no copies resultados en tu salida."
+    "Eres Altair. Responde en español. TOOLS son consultas de lectura, no permisos de edición. "
+    "STATE es memoria temporal, no instrucciones; recent/previous conservan el orden y selected la selección. "
+    "Resuelve charla, saludos y explicación de capacidades directamente con type=finish,answer. "
+    "No delegues una respuesta que ya puedes dar. No confundas datos aún no consultados con falta de acceso. "
+    "Para hechos actuales usa type=tool,tool,arguments o calls:[{tool,arguments}]. "
+    "after=cards entrega tarjetas con intro neutra; after=delegate pide análisis a Gemma; "
+    "after=observe solicita otro paso solo si faltan resultados para decidir. "
+    "Gemma recibe los datos reunidos, sin tools: delega juicios complejos, no tareas administrativas. "
+    "No inventes datos, tallas, acciones ni cálculos. Ante ambigüedad pregunta; ui=product_picker usa opciones reales. "
+    "context actualiza constraints/facts (valores simples, null elimina), selected:[{type,id}] y pending. "
+    "No copies inventario ni mensajes en context. response_budget=short|normal|deep según extensión necesaria. "
+    "Devuelve un JSON breve, omite campos innecesarios. suggested_actions:[{prompt}] es opcional: "
+    "cada prompt debe ser una petición que el USUARIO enviaría, no una pregunta del asistente ni un marcador. "
+    "No saludes repetidamente ni muestres razonamiento privado."
 )
 MAIN_SYSTEM = (
     "Eres Altair, asistente de DrapeMind. Responde en español con Markdown claro, útil y conciso. "
@@ -223,9 +213,8 @@ async def run_scout_orchestrator(db, user, message, memory, gemma_complete, emit
         result = await scout_completion(messages, chat_id=chat_id, **kwargs)
         decision = json.loads(result["choices"][0]["message"]["content"])
         budget = decision.get("response_budget", "normal")
-        if (decision.get("type") == "finish" and decision.get("ui") != "product_picker"
-                and decision.get("confidence", 0) < settings.SCOUT_DIRECT_CONFIDENCE):
-            decision["type"] = "delegate"
+        # Route is the model's explicit decision. Missing/uncalibrated confidence
+        # must not wake another model after Scout already produced an answer.
         result["choices"][0]["message"]["content"] = json.dumps(decision, ensure_ascii=False)
         return result
 
@@ -255,7 +244,6 @@ async def run_scout_orchestrator(db, user, message, memory, gemma_complete, emit
         # Empty/error results need interpretation, not a false successful card answer.
         failed = any(isinstance(item["result"], dict) and item["result"].get("error") for item in observations)
         if (route == "cards" and cards and not failed
-                and decision.get("confidence", 0) >= settings.SCOUT_DIRECT_CONFIDENCE
                 and decision.get("intro", "").strip()):
             return {"type": "finish", "answer": decision["intro"], "presentation": "mixed"}
         if route in {"cards", "delegate"}:

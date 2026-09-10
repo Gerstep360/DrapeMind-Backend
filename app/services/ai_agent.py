@@ -471,10 +471,9 @@ async def run_gemma_tool_agent(
         "notices": notices,
         "response_meta": response_meta,
         "suggested_actions": [
-            {"label": item["label"].strip()[:60], "prompt": item["prompt"].strip()[:300]}
+            {"label": item["prompt"].strip()[:300], "prompt": item["prompt"].strip()[:300]}
             for item in (final.get("suggested_actions") or [])[:3]
-            if isinstance(item, dict) and isinstance(item.get("label"), str)
-            and isinstance(item.get("prompt"), str) and item["label"].strip() and item["prompt"].strip()
+            if isinstance(item, dict) and isinstance(item.get("prompt"), str) and item["prompt"].strip()
         ] if isinstance(final.get("suggested_actions", []), list) else [],
         "chat_context": state.model_dump(),
         "memory_updates": {},
