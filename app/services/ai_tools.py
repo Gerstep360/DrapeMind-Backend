@@ -165,6 +165,8 @@ class ToolDefinition:
     args_model: type[BaseModel]
     handler: Callable[[ToolContext, BaseModel], Any]
     read_only: bool = False
+    # Optional server-owned presentation adapter; a new capability needs no agent branch.
+    card_renderer: Callable[[ToolContext, dict, Any], list[dict]] | None = None
 
     def schema(self) -> dict:
         return {

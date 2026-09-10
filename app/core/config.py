@@ -68,9 +68,13 @@ class Settings(BaseSettings):
     SCOUT_MODEL_PATH: str = ""
     SCOUT_MANAGED_SERVER: bool = True
     SCOUT_SERVER_PORT: int = Field(default=8089, ge=1024, le=65535)
-    SCOUT_THREADS: int = Field(default=2, ge=1, le=3)
+    SCOUT_THREADS: int = Field(default=1, ge=1, le=3)
     SCOUT_CONTEXT_SIZE: int = Field(default=4096, ge=2048, le=8192)
-    SCOUT_MAX_TOKENS: int = Field(default=512, ge=128, le=2048)
+    SCOUT_MAX_TOKENS: int = Field(default=256, ge=128, le=2048)
+    SCOUT_DIRECT_CONFIDENCE: float = Field(default=0.85, ge=0, le=1)
+    AI_RESPONSE_SHORT_TOKENS: int = Field(default=128, ge=64, le=2048)
+    AI_RESPONSE_NORMAL_TOKENS: int = Field(default=256, ge=128, le=4096)
+    AI_RESPONSE_DEEP_TOKENS: int = Field(default=512, ge=256, le=8192)
     SCOUT_MAX_STEPS: int = Field(default=6, ge=2, le=12)
     SCOUT_TIMEOUT_SECONDS: float = Field(default=60, ge=5, le=180)
     SCOUT_TURN_TIMEOUT_SECONDS: float = Field(default=240, ge=30, le=600)

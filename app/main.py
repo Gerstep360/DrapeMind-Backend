@@ -23,6 +23,7 @@ logger = logging.getLogger("drapemind")
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
+    logger.info("AI_ROUTING mode=%s", "scout" if settings.SCOUT_ENABLED else "legacy_gemma")
     model_runtime.start_monitor()
     yield
     await shutdown_scout()

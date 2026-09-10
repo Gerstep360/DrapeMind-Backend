@@ -239,6 +239,7 @@ async def _completion(
     temperature: float | None = None,
     on_text=None,
     context_chat_id=None,
+    allow_partial: bool = False,
 ):
     clean_messages = format_messages_for_gemma(messages)
     payload = {
@@ -325,7 +326,7 @@ async def _completion(
                                 break
             if not content:
                 raise ModelRuntimeError("El modelo no devolvió contenido de respuesta")
-            if finish_reason == "length":
+            if finish_reason == "length" and not allow_partial:
                 raise ModelRuntimeError("Altair agotó su presupuesto de generación sin finalizar. Reintenta con una consulta más breve.")
             return {"choices": [{"message": {"content": content}, "finish_reason": finish_reason}],
                     "usage": usage, "timings": timings, "context_metrics": metrics}

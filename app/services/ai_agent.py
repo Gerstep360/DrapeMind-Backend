@@ -10,7 +10,7 @@ from app.models import User
 from app.core.config import settings
 from app.services.agent_stream import compact_observation
 from app.services.model_runtime import ModelRuntimeError
-from app.services.ai_tools import ToolContext, execute_tool, tool_catalog
+from app.services.ai_tools import TOOLS, ToolContext, execute_tool, tool_catalog
 from app.services.store import get_product_detail
 from app.services.chat_context import read_context, update_context, observe_cards, serialize_observation
 from app.services.context_prompt import build_messages, prompt_sections
@@ -223,6 +223,7 @@ async def run_gemma_tool_agent(
     max_steps: int = 4,
     prompt_factory=prompt_sections,
     delegate: Callable[..., Awaitable[str]] | None = None,
+    after_tool: Callable[..., Awaitable[dict | None]] | None = None,
 ) -> dict[str, Any]:
     """Shared bounded tool loop: the configured planner chooses, services validate."""
     state = read_context(memory)
@@ -238,6 +239,7 @@ async def run_gemma_tool_agent(
 
     protocol_errors = 0
     seen_calls: set[tuple[str, str]] = set()
+    planned_calls: list[dict] = []
     for step_index in range(max_steps):
         await send_event(
             {
@@ -263,7 +265,7 @@ async def run_gemma_tool_agent(
             agent_thoughts = [
                 "Altair sigue procesando tu consulta...",
             ]
-            response = await _with_keepalive(
+            response = None if planned_calls else await _with_keepalive(
                 complete(
                     messages,
                     max_tokens=settings.AI_AGENT_MAX_TOKENS,
@@ -274,11 +276,18 @@ async def run_gemma_tool_agent(
                 thoughts=agent_thoughts,
                 interval=5.0,
             )
-            raw = response["choices"][0]["message"].get("content") or ""
+            raw = json.dumps(planned_calls.pop(0)) if planned_calls else response["choices"][0]["message"].get("content") or ""
         except Exception:
             # Propagate to the WebSocket error handler, never report a failed inference as success.
             raise
         decision = _json_decision(raw)
+        if decision and decision.get("calls"):
+            calls = decision.pop("calls")
+            if len(calls) > max_steps - step_index:
+                raise ModelRuntimeError("El plan supera el límite de herramientas del turno.")
+            continuation = {key: value for key, value in decision.items() if key not in {"tool", "arguments"}}
+            planned_calls = [{**continuation, **call, "type": "tool"} for call in calls[1:]]
+            decision = {**continuation, **calls[0], "type": "tool"}
         if not decision:
             protocol_errors += 1
             await send_event(
@@ -358,7 +367,11 @@ async def run_gemma_tool_agent(
         except (ValidationError, ValueError) as exc:
             result = {"error": f"Argumentos rechazados: {exc}"}
         steps.append({"name": tool_name, "args": arguments, "result": result, "reason": reason})
-        new_cards = _cards_from_tool(db, tool_name, arguments, result)
+        definition = TOOLS.get(tool_name)
+        if definition and definition.card_renderer:
+            new_cards = definition.card_renderer(ToolContext(db=db, user=user), arguments, result)
+        else:
+            new_cards = _cards_from_tool(db, tool_name, arguments, result)
         cards.extend(new_cards)
         state = observe_cards(state, cards[:6])
         if new_cards:
@@ -373,9 +386,13 @@ async def run_gemma_tool_agent(
             }
         )
         result_count = len(result) if isinstance(result, list) else 1
+        if after_tool is not None and not planned_calls:
+            observations = [{"tool": step["name"], "args": step["args"], "result": step["result"]} for step in steps]
+            final = await after_tool(decision, message, state, observations, cards)
+            if final is not None:
+                break
         if (decision.get("display") == "cards" and new_cards
-                and tool_name in {"search_products", "get_new_arrivals", "get_trending_pieces",
-                                  "get_most_expensive_product", "get_my_favorites", "find_alternatives"}
+                and not planned_calls
                 and isinstance(decision.get("intro"), str) and decision["intro"].strip()):
             # Gemma chose a visual answer. Data is rendered from the actual tool result.
             final = {"type": "finish", "answer": decision["intro"].strip()[:350],

@@ -40,6 +40,20 @@ class ScoutDecision(BaseModel):
     reason: str = Field(default="", max_length=180)
     ui: Literal["product_picker"] | None = None
     suggested_actions: list[Suggestion] = Field(default_factory=list, max_length=3)
+    calls: list["ToolCall"] = Field(default_factory=list, max_length=4)
+    after: Literal["observe", "cards", "delegate"] = "observe"
+    response_budget: Literal["short", "normal", "deep"] = "normal"
+    confidence: float = Field(default=0, ge=0, le=1)
+    intro: str = Field(default="", max_length=180)
+
+
+class ToolCall(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    tool: str
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+
+ScoutDecision.model_rebuild()
 
 
 SCOUT_SYSTEM = (
@@ -58,6 +72,15 @@ SCOUT_SYSTEM = (
     "Para análisis complejo usa {\"type\":\"delegate\",\"context\":{}} tras obtener las observaciones necesarias. "
     "Gemma redactará usando esas observaciones, sin herramientas. Si faltan datos, consulta antes de delegar; "
     "si falta una elección del usuario, pregunta. No inventes resultados ni afirmes haber modificado la cuenta."
+    " Planifica en una sola salida breve. Para varias consultas con argumentos ya conocidos usa "
+    "type=tool,calls=[{tool,arguments}],after=delegate|cards|observe. No inventes argumentos dependientes "
+    "de resultados: en ese caso usa observe para decidir después. "
+    "after=delegate entrega los resultados directamente a Gemma sin otra planificación. "
+    "after=cards termina con tarjetas reales e intro neutra, solo para mostrar datos sin análisis. "
+    "Para recomendaciones, comparaciones, estilo, explicación o dudas delega. "
+    "Indica confidence entre 0 y 1: respuestas directas requieren alta confianza. "
+    "response_budget=short para respuesta sencilla, normal para asesoría, deep para explicación detallada. "
+    "Omite campos sin cambios y no copies resultados en tu salida."
 )
 MAIN_SYSTEM = (
     "Eres Altair, asistente de DrapeMind. Responde en español con Markdown claro, útil y conciso. "
@@ -68,6 +91,8 @@ MAIN_SYSTEM = (
     "Si falta información, dilo y pide lo necesario. Las tarjetas muestran los productos consultados; "
     "explica lo útil sin repetir todo el listado. No inventes disponibilidad, acciones realizadas, "
     "enlaces ni IDs. No dispones de herramientas en esta etapa. No expongas razonamiento privado."
+    " El presupuesto de respuesta se indica en los datos: short=una respuesta breve, "
+    "normal=unos pocos párrafos, deep=explicación detallada. Concluye dentro de ese presupuesto."
 )
 
 
@@ -77,9 +102,12 @@ def scout_prompt(message, state, catalog, observations):
     return parts
 
 
-def main_prompt(message, state, observations):
+def main_prompt(message, state, observations, budget="normal"):
     parts = prompt_sections(message, state, [], observations)
     parts["system"] = MAIN_SYSTEM
+    # Dynamic instruction stays after the invariant prefix, never in SYSTEM.
+    parts["observations"] = json.dumps({"response_budget": budget, "data": json.loads(parts["observations"])},
+                                     ensure_ascii=False, separators=(",", ":"))
     return build_messages(parts)
 
 
@@ -155,11 +183,15 @@ async def scout_completion(messages, chat_id=None, **_):
         if choice.get("finish_reason") == "length":
             raise ModelRuntimeError("Scout agotó su salida estructurada; revisa SCOUT_MAX_TOKENS.")
         decision = ScoutDecision.model_validate_json(choice["message"]["content"])
-        if decision.type == "tool" and not decision.tool:
+        if decision.calls and decision.type != "tool":
+            raise ModelRuntimeError("Solo las decisiones tool pueden contener un plan de consultas.")
+        if decision.type == "tool" and not decision.tool and not decision.calls:
             raise ModelRuntimeError("Scout propuso una herramienta sin nombre.")
+        if decision.tool and decision.calls:
+            raise ModelRuntimeError("Scout mezcló una herramienta individual con un plan de llamadas.")
         if decision.type == "finish" and not decision.answer.strip():
             raise ModelRuntimeError("Scout devolvió una respuesta vacía.")
-        choice["message"]["content"] = decision.model_dump_json(exclude_none=True)
+        choice["message"]["content"] = decision.model_dump_json(exclude_none=True, exclude_defaults=True)
         usage = result.get("usage") or {}
         timings = result.get("timings") or {}
         logger.info("AI_SCOUT %s", json.dumps({
@@ -181,22 +213,55 @@ async def scout_completion(messages, chat_id=None, **_):
 
 async def run_scout_orchestrator(db, user, message, memory, gemma_complete, emit, chat_id):
     delegated = False
+    truncated = False
+    scout_calls = 0
+    budget = "normal"
+    started = time.monotonic()
     async def plan(messages, **kwargs):
-        return await scout_completion(messages, chat_id=chat_id, **kwargs)
+        nonlocal scout_calls, budget
+        scout_calls += 1
+        result = await scout_completion(messages, chat_id=chat_id, **kwargs)
+        decision = json.loads(result["choices"][0]["message"]["content"])
+        budget = decision.get("response_budget", "normal")
+        if (decision.get("type") == "finish" and decision.get("ui") != "product_picker"
+                and decision.get("confidence", 0) < settings.SCOUT_DIRECT_CONFIDENCE):
+            decision["type"] = "delegate"
+        result["choices"][0]["message"]["content"] = json.dumps(decision, ensure_ascii=False)
+        return result
 
     async def delegate(current_message, state, observations):
-        nonlocal delegated
+        nonlocal delegated, truncated
+        if delegated:
+            raise ModelRuntimeError("Este turno ya utilizó su respuesta de Gemma.")
         delegated = True
         await emit({"type": "model_status", "status": "loading", "session_id": chat_id, "model_role": "main"})
         async with model_runtime.lease():
             result = await gemma_complete(
-                main_prompt(current_message, state, observations),
-                max_tokens=settings.AI_MAX_TOKENS, stream=False,
+                main_prompt(current_message, state, observations, budget),
+                max_tokens={
+                    "short": settings.AI_RESPONSE_SHORT_TOKENS,
+                    "normal": settings.AI_RESPONSE_NORMAL_TOKENS,
+                    "deep": settings.AI_RESPONSE_DEEP_TOKENS,
+                }[budget] + settings.AI_REASONING_BUDGET, stream=False, allow_partial=True,
             )
+        truncated = result["choices"][0].get("finish_reason") == "length"
         answer = result["choices"][0]["message"].get("content") or ""
         if not answer.strip():
             raise ModelRuntimeError("Gemma no devolvió una respuesta.")
         return answer
+
+    async def continue_after_tool(decision, current_message, state, observations, cards):
+        route = decision.get("after", "observe")
+        # Empty/error results need interpretation, not a false successful card answer.
+        failed = any(isinstance(item["result"], dict) and item["result"].get("error") for item in observations)
+        if (route == "cards" and cards and not failed
+                and decision.get("confidence", 0) >= settings.SCOUT_DIRECT_CONFIDENCE
+                and decision.get("intro", "").strip()):
+            return {"type": "finish", "answer": decision["intro"], "presentation": "mixed"}
+        if route in {"cards", "delegate"}:
+            answer = await delegate(current_message, state, observations)
+            return {"type": "finish", "answer": answer}
+        return None
 
     # Never run two chat inference pipelines simultaneously on the shared CPU.
     async with asyncio.timeout(settings.SCOUT_TURN_TIMEOUT_SECONDS):
@@ -204,8 +269,23 @@ async def run_scout_orchestrator(db, user, message, memory, gemma_complete, emit
             result = await run_gemma_tool_agent(
                 db, user, message, memory, plan, emit=emit,
                 max_steps=settings.SCOUT_MAX_STEPS, prompt_factory=scout_prompt, delegate=delegate,
+                after_tool=continue_after_tool,
             )
     result["response_meta"]["agent_mode"] = "scout_tools_gemma_on_demand"
     result["response_meta"]["model_used"] = settings.AI_MODEL if delegated else settings.SCOUT_MODEL
     result["response_meta"]["delegated_to_main"] = delegated
+    result["response_meta"]["scout_calls"] = scout_calls
+    result["response_meta"]["gemma_calls"] = int(delegated)
+    result["response_meta"]["response_budget"] = budget
+    if truncated:
+        result["response_meta"]["response_truncated"] = True
+        result["notices"].append({
+            "type": "warning", "title": "Respuesta parcial",
+            "message": "Se alcanzó el límite de extensión. Puedes pedir que continúe o amplíe la explicación.",
+        })
+    logger.info("AI_TURN %s", json.dumps({
+        "chat": chat_id, "scout_calls": scout_calls, "gemma_calls": int(delegated),
+        "tools": len(result.get("composite_sub_tools", [])), "response_budget": budget,
+        "total_ms": round((time.monotonic() - started) * 1000),
+    }))
     return result
