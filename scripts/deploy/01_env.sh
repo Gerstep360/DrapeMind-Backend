@@ -20,6 +20,13 @@ set_or_update_var() {
     fi
 }
 
+set_default_var() {
+    local key="$1" val="$2" file="$3"
+    if ! grep -q "^${key}=" "${file}"; then
+        set_or_update_var "${key}" "${val}" "${file}"
+    fi
+}
+
 sync_env_production() {
     local ENV_FILE="${BACKEND_DIR}/.env"
     local PROD_REF_FILE="${BACKEND_DIR}/.env_produccion"
@@ -122,58 +129,61 @@ sync_env_production() {
     set_or_update_var "CORS_ALLOW_CREDENTIALS" "true" "${ENV_FILE}"
 
     # Paso 4: Parámetros del motor Gemma 4 y agente Altair
-    set_or_update_var "AI_BASE_URL" "\"http://127.0.0.1:${AI_SERVER_PORT}/v1\"" "${ENV_FILE}"
-    set_or_update_var "AI_API_KEY" "\"local-no-key\"" "${ENV_FILE}"
-    set_or_update_var "AI_MODEL" "\"google/gemma-4-E2B-it-qat-q4_0-gguf\"" "${ENV_FILE}"
-    set_or_update_var "AI_MANAGED_SERVER" "true" "${ENV_FILE}"
-    set_or_update_var "AI_SERVER_HOST" "\"127.0.0.1\"" "${ENV_FILE}"
-    set_or_update_var "AI_SERVER_PORT" "${AI_SERVER_PORT}" "${ENV_FILE}"
-    set_or_update_var "AI_MODEL_PATH" "\"ai_models/gemma-4-e2b/gemma-4-E2B_q4_0-it.gguf\"" "${ENV_FILE}"
-    set_or_update_var "AI_MMPROJ_PATH" "\"ai_models/gemma-4-e2b/gemma-4-E2B-it-mmproj.gguf\"" "${ENV_FILE}"
-    set_or_update_var "LLAMA_SERVER_PATH" "\"/usr/local/bin/llama-server\"" "${ENV_FILE}"
-    set_or_update_var "AI_IDLE_TIMEOUT_SECONDS" "600" "${ENV_FILE}"
-    set_or_update_var "AI_STARTUP_TIMEOUT_SECONDS" "240" "${ENV_FILE}"
-    set_or_update_var "AI_CONTEXT_SIZE" "4096" "${ENV_FILE}"
-    set_or_update_var "AI_PARALLEL_SLOTS" "1" "${ENV_FILE}"
-    set_or_update_var "AI_THREADS" "3" "${ENV_FILE}"
-    set_or_update_var "AI_GPU_LAYERS" "\"0\"" "${ENV_FILE}"
-    set_or_update_var "AI_SERVER_EXTRA_ARGS" "\"\"" "${ENV_FILE}"
+    set_default_var "AI_BASE_URL" "\"http://127.0.0.1:${AI_SERVER_PORT}/v1\"" "${ENV_FILE}"
+    set_default_var "AI_API_KEY" "\"local-no-key\"" "${ENV_FILE}"
+    set_default_var "AI_MODEL" "\"google/gemma-4-E2B-it-qat-q4_0-gguf\"" "${ENV_FILE}"
+    set_default_var "AI_MANAGED_SERVER" "true" "${ENV_FILE}"
+    set_default_var "AI_SERVER_HOST" "\"127.0.0.1\"" "${ENV_FILE}"
+    set_default_var "AI_SERVER_PORT" "${AI_SERVER_PORT}" "${ENV_FILE}"
+    set_default_var "AI_MODEL_PATH" "\"ai_models/gemma-4-e2b/gemma-4-E2B_q4_0-it.gguf\"" "${ENV_FILE}"
+    set_default_var "AI_MMPROJ_PATH" "\"ai_models/gemma-4-e2b/gemma-4-E2B-it-mmproj.gguf\"" "${ENV_FILE}"
+    set_default_var "LLAMA_SERVER_PATH" "\"/usr/local/bin/llama-server\"" "${ENV_FILE}"
+    set_default_var "AI_IDLE_TIMEOUT_SECONDS" "600" "${ENV_FILE}"
+    set_default_var "AI_STARTUP_TIMEOUT_SECONDS" "240" "${ENV_FILE}"
+    set_default_var "AI_CONTEXT_SIZE" "4096" "${ENV_FILE}"
+    set_default_var "AI_PARALLEL_SLOTS" "1" "${ENV_FILE}"
+    set_default_var "AI_THREADS" "3" "${ENV_FILE}"
+    set_default_var "AI_GPU_LAYERS" "\"0\"" "${ENV_FILE}"
+    set_default_var "AI_SERVER_EXTRA_ARGS" "\"\"" "${ENV_FILE}"
 
     # =====================================================================
     # NUEVAS VARIABLES DE IA Y STREAMING ALTAIR SOLICITADAS
     # =====================================================================
-    set_or_update_var "AI_MAX_AGENT_STEPS" "4" "${ENV_FILE}"
-    set_or_update_var "AI_TIMEOUT_SECONDS" "90" "${ENV_FILE}"
-    set_or_update_var "AI_MAX_TOKENS" "1024" "${ENV_FILE}"
-    set_or_update_var "AI_AGENT_MAX_TOKENS" "768" "${ENV_FILE}"
-    set_or_update_var "AI_AGENT_DEADLINE_SECONDS" "180" "${ENV_FILE}"
-    set_or_update_var "AI_REASONING_MODE" "auto" "${ENV_FILE}"
-    set_or_update_var "AI_REASONING_BUDGET" "64" "${ENV_FILE}"
-    set_or_update_var "AI_FIRST_TOKEN_TIMEOUT_SECONDS" "120" "${ENV_FILE}"
-    set_or_update_var "AI_TEMPERATURE" "0.35" "${ENV_FILE}"
+    set_default_var "AI_MAX_AGENT_STEPS" "4" "${ENV_FILE}"
+    set_default_var "AI_TURN_TIMEOUT_SECONDS" "150" "${ENV_FILE}"
+    set_default_var "AI_TIMEOUT_SECONDS" "90" "${ENV_FILE}"
+    set_default_var "AI_MAX_TOKENS" "1024" "${ENV_FILE}"
+    set_default_var "AI_AGENT_MAX_TOKENS" "768" "${ENV_FILE}"
+    set_default_var "AI_AGENT_DEADLINE_SECONDS" "180" "${ENV_FILE}"
+    set_default_var "AI_REASONING_MODE" "auto" "${ENV_FILE}"
+    set_default_var "AI_REASONING_BUDGET" "64" "${ENV_FILE}"
+    set_default_var "AI_FIRST_TOKEN_TIMEOUT_SECONDS" "120" "${ENV_FILE}"
+    set_default_var "AI_TEMPERATURE" "0.35" "${ENV_FILE}"
 
-    # =====================================================================
-    # ARQUITECTURA SCOUT (QWEN) Y MÉTRICAS DE CONTEXTO
-    # =====================================================================
-    set_or_update_var "SCOUT_ENABLED" "false" "${ENV_FILE}"
-    set_or_update_var "SCOUT_MODEL" "\"ai_models/qwen3-0.6B/Qwen3-0.6B-Q8_0.gguf\"" "${ENV_FILE}"
-    set_or_update_var "SCOUT_MODEL_PATH" "\"ai_models/qwen3-0.6B/Qwen3-0.6B-Q8_0.gguf\"" "${ENV_FILE}"
-    set_or_update_var "SCOUT_BASE_URL" "\"http://127.0.0.1:${SCOUT_SERVER_PORT:-8089}/v1\"" "${ENV_FILE}"
-    set_or_update_var "SCOUT_API_KEY" "\"local-no-key\"" "${ENV_FILE}"
-    set_or_update_var "SCOUT_MANAGED_SERVER" "true" "${ENV_FILE}"
-    set_or_update_var "SCOUT_SERVER_PORT" "${SCOUT_SERVER_PORT:-8089}" "${ENV_FILE}"
-    set_or_update_var "SCOUT_THREADS" "1" "${ENV_FILE}"
-    set_or_update_var "SCOUT_CONTEXT_SIZE" "4096" "${ENV_FILE}"
-    set_or_update_var "SCOUT_MAX_TOKENS" "256" "${ENV_FILE}"
-    set_or_update_var "SCOUT_DIRECT_CONFIDENCE" "0.85" "${ENV_FILE}"
-    set_or_update_var "AI_RESPONSE_SHORT_TOKENS" "128" "${ENV_FILE}"
-    set_or_update_var "AI_RESPONSE_NORMAL_TOKENS" "256" "${ENV_FILE}"
-    set_or_update_var "AI_RESPONSE_DEEP_TOKENS" "512" "${ENV_FILE}"
-    set_or_update_var "SCOUT_MAX_STEPS" "6" "${ENV_FILE}"
-    set_or_update_var "SCOUT_TIMEOUT_SECONDS" "60" "${ENV_FILE}"
-    set_or_update_var "SCOUT_TURN_TIMEOUT_SECONDS" "240" "${ENV_FILE}"
-    set_or_update_var "SCOUT_IDLE_TIMEOUT_SECONDS" "300" "${ENV_FILE}"
-    set_or_update_var "AI_CONTEXT_TOKEN_METRICS" "false" "${ENV_FILE}"
+    local SCOUT_FILE="${BACKEND_DIR}/ai_models/qwen3-0.6B/Qwen3-0.6B-Q8_0.gguf"
+    if [[ -f "${SCOUT_FILE}" ]]; then
+        set_default_var "SCOUT_ENABLED" "true" "${ENV_FILE}"
+    else
+        set_default_var "SCOUT_ENABLED" "false" "${ENV_FILE}"
+    fi
+    set_default_var "SCOUT_MODEL" "\"ai_models/qwen3-0.6B/Qwen3-0.6B-Q8_0.gguf\"" "${ENV_FILE}"
+    set_default_var "SCOUT_MODEL_PATH" "\"ai_models/qwen3-0.6B/Qwen3-0.6B-Q8_0.gguf\"" "${ENV_FILE}"
+    set_default_var "SCOUT_BASE_URL" "\"http://127.0.0.1:${SCOUT_SERVER_PORT:-8089}/v1\"" "${ENV_FILE}"
+    set_default_var "SCOUT_API_KEY" "\"local-no-key\"" "${ENV_FILE}"
+    set_default_var "SCOUT_MANAGED_SERVER" "true" "${ENV_FILE}"
+    set_default_var "SCOUT_SERVER_PORT" "${SCOUT_SERVER_PORT:-8089}" "${ENV_FILE}"
+    set_default_var "SCOUT_THREADS" "1" "${ENV_FILE}"
+    set_default_var "SCOUT_CONTEXT_SIZE" "4096" "${ENV_FILE}"
+    set_default_var "SCOUT_MAX_TOKENS" "256" "${ENV_FILE}"
+    set_default_var "SCOUT_DIRECT_CONFIDENCE" "0.85" "${ENV_FILE}"
+    set_default_var "AI_RESPONSE_SHORT_TOKENS" "128" "${ENV_FILE}"
+    set_default_var "AI_RESPONSE_NORMAL_TOKENS" "256" "${ENV_FILE}"
+    set_default_var "AI_RESPONSE_DEEP_TOKENS" "512" "${ENV_FILE}"
+    set_default_var "SCOUT_MAX_STEPS" "6" "${ENV_FILE}"
+    set_default_var "SCOUT_TIMEOUT_SECONDS" "60" "${ENV_FILE}"
+    set_default_var "SCOUT_TURN_TIMEOUT_SECONDS" "240" "${ENV_FILE}"
+    set_default_var "SCOUT_IDLE_TIMEOUT_SECONDS" "300" "${ENV_FILE}"
+    set_default_var "AI_CONTEXT_TOKEN_METRICS" "false" "${ENV_FILE}"
 
     # Dominio y Pagos
     set_or_update_var "RESERVATION_TTL_MINUTES" "2880" "${ENV_FILE}"
@@ -194,9 +204,10 @@ sync_env_production() {
     echo -e "${COLOR_SUCCESS}  ┌── Resumen de Configuración (.env) ──────────────────────────────┐${NC}"
     echo -e "${COLOR_SUCCESS}  │${NC} • Estado:           ${COLOR_SUCCESS}${BOLD}Protegido y Sincronizado${NC}"
     echo -e "${COLOR_SUCCESS}  │${NC} • Base de Datos:    ${BOLD}PostgreSQL (${CONFIGURED_DB_USER:-drapemind_user}@localhost:5432)${NC}"
-    echo -e "${COLOR_SUCCESS}  │${NC} • Streaming IA:     ${BOLD}Tokens: 768 / Timeout 1er token: 120s / Deadline: 180s${NC}"
-    echo -e "${COLOR_SUCCESS}  │${NC} • Razonamiento:     ${BOLD}Modo: auto / Presupuesto: 64 tokens${NC}"
-    echo -e "${COLOR_SUCCESS}  │${NC} • Arquitectura IA:  ${BOLD}Gemma 4 (:8088) + Scout Qwen (:8089)${NC}"
+    echo -e "${COLOR_SUCCESS}  │${NC} • Streaming IA:     ${BOLD}Configuración existente preservada en .env${NC}"
+    echo -e "${COLOR_SUCCESS}  │${NC} • Razonamiento:     ${BOLD}Se conserva el valor configurado${NC}"
+    echo -e "${COLOR_SUCCESS}  │${NC} • Arquitectura IA:  ${BOLD}Ver SCOUT_ENABLED en .env y AI_ROUTING en logs${NC}"
+    log_info "Scout no se activa automáticamente: si estaba false, configure modelo y SCOUT_ENABLED=true antes de reiniciar."
     echo -e "${COLOR_SUCCESS}  │${NC} • Secretos:         ${COLOR_SUCCESS}${BOLD}Protegidos sin sobreescritura destructiva${NC}"
     echo -e "${COLOR_SUCCESS}  └───────────────────────────────────────────────────────────────────┘${NC}"
     log_success "Archivo de variables de entorno (.env) actualizado satisfactoriamente."

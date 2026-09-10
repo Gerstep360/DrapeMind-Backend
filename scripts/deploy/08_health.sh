@@ -31,12 +31,20 @@ verify_backend() {
         AI_BADGE="${COLOR_SUCCESS}${BOLD}[ ✔ ACTIVO ]${NC}"
     fi
 
+    local ROUTING_BADGE="${COLOR_MUTED}[ DESCONOCIDO ]${NC}"
+    if echo "${AI_HEALTH}" | grep -q '"routing_mode":"scout"'; then
+        ROUTING_BADGE="${COLOR_SUCCESS}${BOLD}[ scout (Orquestador Qwen) ]${NC}"
+    elif echo "${AI_HEALTH}" | grep -q '"routing_mode":"legacy_gemma"'; then
+        ROUTING_BADGE="${COLOR_WARNING}${BOLD}[ legacy_gemma (Directo Gemma 4) ]${NC}"
+    fi
+
     echo ""
     echo -e "${COLOR_PRIMARY}╭──────────────────────────────────────────────────────────────────────────╮${NC}"
     echo -e "${COLOR_PRIMARY}│${NC}  ${BOLD}${COLOR_ACCENT}${ICON_SPARK} PANEL DE ESTADO — DRAPEMIND BACKEND & AGENTE ALTAIR${NC}                   ${COLOR_PRIMARY}│${NC}"
     echo -e "${COLOR_PRIMARY}├──────────────────────────────────────────────────────────────────────────┤${NC}"
     echo -e "${COLOR_PRIMARY}│${NC}  ${BOLD}Salud General:${NC}     ${HEALTH_BADGE}"
     echo -e "${COLOR_PRIMARY}│${NC}  ${BOLD}Motor Gemma 4:${NC}     ${AI_BADGE} (Puerto ${AI_SERVER_PORT})"
+    echo -e "${COLOR_PRIMARY}│${NC}  ${BOLD}Enrutamiento IA:${NC}   ${ROUTING_BADGE}"
     echo -e "${COLOR_PRIMARY}│${NC}  ${BOLD}API Interna:${NC}       http://127.0.0.1:${BACKEND_PORT}/health/ready"
     echo -e "${COLOR_PRIMARY}│${NC}  ${BOLD}API Pública:${NC}       http://${SERVER_IP}/DrapeMind/api/v1/catalog/products"
     echo -e "${COLOR_PRIMARY}│${NC}  ${BOLD}Documentación:${NC}     http://${SERVER_IP}/DrapeMind/docs"

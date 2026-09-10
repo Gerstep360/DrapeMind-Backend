@@ -4,6 +4,9 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, field_validator
 
 MAX_ENTITIES = 8
+LLM_OMITTED_FIELDS = frozenset({
+    "imagenes", "imagen", "image_url", "resumen_texto", "costo_referencia", "created_at",
+})
 
 
 class EntityRef(BaseModel):
@@ -107,12 +110,12 @@ def serialize_observation(value):
     """Column/row packing removes repeated keys, not rows or monetary precision."""
     if isinstance(value, list):
         if value and all(isinstance(row, dict) for row in value):
-            columns = sorted(set().union(*(row.keys() for row in value)))
+            columns = sorted(set().union(*(row.keys() for row in value)) - LLM_OMITTED_FIELDS)
             return {"columns": columns, "rows": [
                 [serialize_observation(row.get(key)) for key in columns] for row in value
             ]}
         return [serialize_observation(item) for item in value]
     if isinstance(value, dict):
         return {key: serialize_observation(item) for key, item in value.items()
-                if key not in {"imagenes", "imagen", "image_url", "tags_ai", "resumen_texto"}}
+                if key not in LLM_OMITTED_FIELDS}
     return value

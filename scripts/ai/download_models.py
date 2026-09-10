@@ -18,21 +18,31 @@ from typing import Callable, Optional
 
 # Directorio base del backend
 BACKEND_DIR = Path(__file__).resolve().parents[2]
-DEFAULT_MODELS_DIR = BACKEND_DIR / "ai_models" / "gemma-4-e2b"
+MODELS_ROOT = BACKEND_DIR / "ai_models"
+DEFAULT_MODELS_DIR = MODELS_ROOT / "gemma-4-e2b"
 
-# URLs oficiales de Google Gemma 4 en HuggingFace CDN
+# URLs oficiales de modelos Google Gemma 4 y Scout Qwen en HuggingFace CDN
 DEFAULT_MODELS = [
     {
         "filename": "gemma-4-E2B-it-mmproj.gguf",
         "url": "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf/resolve/main/gemma-4-E2B-it-mmproj.gguf?download=true",
         "description": "Proyector multimodal / visión Atelier",
         "approx_size_mb": 941,
+        "subdir": "gemma-4-e2b",
     },
     {
         "filename": "gemma-4-E2B_q4_0-it.gguf",
         "url": "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf/resolve/main/gemma-4-E2B_q4_0-it.gguf?download=true",
         "description": "Modelo cuantizado Gemma 4-E2B Q4_0",
         "approx_size_mb": 3194,
+        "subdir": "gemma-4-e2b",
+    },
+    {
+        "filename": "Qwen3-0.6B-Q8_0.gguf",
+        "url": "https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf?download=true",
+        "description": "Modelo Scout Qwen 0.6B Q8_0 (Orquestador de herramientas)",
+        "approx_size_mb": 610,
+        "subdir": "qwen3-0.6B",
     },
 ]
 
@@ -215,13 +225,15 @@ def download_file_fast(
                 pass
 
 
-def check_models_status(target_dir: Optional[Path] = None) -> list[dict]:
+def check_models_status(base_dir: Optional[Path] = None) -> list[dict]:
     """Verifica el estado y peso actual de los modelos en el directorio de destino."""
-    dest_dir = target_dir or DEFAULT_MODELS_DIR
+    root_dir = base_dir or MODELS_ROOT
     results = []
 
     for item in DEFAULT_MODELS:
         filename = item["filename"]
+        subdir = item.get("subdir", "")
+        dest_dir = root_dir / subdir if subdir else root_dir
         path = dest_dir / filename
         part_path = dest_dir / (filename + ".part")
 
@@ -244,6 +256,7 @@ def check_models_status(target_dir: Optional[Path] = None) -> list[dict]:
         results.append({
             "filename": filename,
             "path": str(path),
+            "dest_dir": dest_dir,
             "description": item["description"],
             "exists": exists,
             "size_bytes": size_bytes,
@@ -261,8 +274,8 @@ if __name__ == "__main__":
     print("  DRAPEMIND ATELIER - VERIFICADOR Y DESCARGADOR DE IA")
     print("=" * 60)
 
-    target_directory = DEFAULT_MODELS_DIR
-    print(f"Directorio de destino: {target_directory}\n")
+    target_directory = MODELS_ROOT
+    print(f"Directorio base de modelos: {target_directory}\n")
 
     status_list = check_models_status(target_directory)
     for m in status_list:
@@ -291,8 +304,9 @@ if __name__ == "__main__":
 
         if ans == "s":
             for m in missing:
-                print(f"\nDescargando {m['filename']}...")
-                dest = target_directory / m["filename"]
+                print(f"\nDescargando {m['filename']} ({m['description']})...")
+                dest = m["dest_dir"] / m["filename"]
+                dest.parent.mkdir(parents=True, exist_ok=True)
 
                 def _cli_progress(info):
                     if info.get("status") == "downloading":

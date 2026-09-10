@@ -53,6 +53,7 @@ class Settings(BaseSettings):
     AI_GPU_LAYERS: str = "0"
     AI_SERVER_EXTRA_ARGS: str = ""
     AI_MAX_AGENT_STEPS: int = 4
+    AI_TURN_TIMEOUT_SECONDS: float = Field(default=150, ge=30, le=240)
     AI_TIMEOUT_SECONDS: float = 90.0
     AI_MAX_TOKENS: int = 1024
     AI_AGENT_MAX_TOKENS: int = Field(default=768, ge=128, le=4096)

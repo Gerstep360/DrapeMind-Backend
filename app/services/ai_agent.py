@@ -432,7 +432,8 @@ async def run_gemma_tool_agent(
         "agent_mode": "gemma_observe_act",
         "agent_protocol_valid": protocol_valid,
     }
-    if outfit_step and isinstance(outfit_step["result"], dict):
+    if (outfit_step and isinstance(outfit_step["result"], dict)
+            and outfit_step["result"].get("status") != "needs_input"):
         result = outfit_step["result"]
         notices.extend([
             {"type": "warning", "title": "Prenda no encontrada", "message": value}

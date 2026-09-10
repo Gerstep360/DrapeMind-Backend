@@ -418,12 +418,19 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
                 db, user, message, memory, agent_complete, send, session.id,
             )
         else:
-            async with turn_lock:
-                async with model_runtime.lease():
-                    skill_res = await run_gemma_tool_agent(
-                        db, user, message, memory, agent_complete, emit=send,
-                        max_steps=settings.AI_MAX_AGENT_STEPS,
-                    )
+            try:
+                async with asyncio.timeout(settings.AI_TURN_TIMEOUT_SECONDS):
+                    async with turn_lock:
+                        async with model_runtime.lease():
+                            skill_res = await run_gemma_tool_agent(
+                                db, user, message, memory, agent_complete, emit=send,
+                                max_steps=settings.AI_MAX_AGENT_STEPS,
+                            )
+            except TimeoutError as exc:
+                raise ModelRuntimeError(
+                    "La consulta superó el tiempo total permitido. Se canceló el turno; "
+                    "el servidor está usando Gemma sin Scout. Revisa SCOUT_ENABLED."
+                ) from exc
 
         skill = SimpleNamespace(name="gemma_tool_agent")
         tool_name = skill_res.get("tool_name")

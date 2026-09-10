@@ -53,7 +53,7 @@ install_full() {
     tui_step 6 8 "Instalación de Motor de Inferencia llama-server (Gemma 4)"
     install_llama_server false
 
-    tui_step 7 8 "Descarga y Validación de Modelos Gemma 4 en Hugging Face"
+    tui_step 7 8 "Descarga y Validación de Modelos IA (Gemma 4 y Scout Qwen)"
     download_ai_models
 
     tui_step 8 8 "Configuración e Inicio del Servicio Systemd"
@@ -113,7 +113,7 @@ show_menu() {
     echo -e "${COLOR_PRIMARY}│${BOLD}  6 ${NC}${COLOR_PRIMARY}│${NC}  ${ICON_BRAIN} ${BOLD}Ver Logs de Llama / IA${NC} (Tokens, Velocidad y Generación en vivo)  ${COLOR_PRIMARY}│${NC}"
     echo -e "${COLOR_PRIMARY}│${BOLD}  7 ${NC}${COLOR_PRIMARY}│${NC}  ${ICON_DATABASE} ${BOLD}Configurar PostgreSQL${NC} (Usuario, base de datos y migraciones)        ${COLOR_PRIMARY}│${NC}"
     echo -e "${COLOR_PRIMARY}│${BOLD}  8 ${NC}${COLOR_PRIMARY}│${NC}  ⚡ ${BOLD}Instalar llama-server${NC} (Binarios GGML con soporte Gemma 4)           ${COLOR_PRIMARY}│${NC}"
-    echo -e "${COLOR_PRIMARY}│${BOLD}  9 ${NC}${COLOR_PRIMARY}│${NC}  ${ICON_BRAIN} ${BOLD}Descargar Modelos Gemma 4${NC} (Pesos E2B desde Hugging Face)            ${COLOR_PRIMARY}│${NC}"
+    echo -e "${COLOR_PRIMARY}│${BOLD}  9 ${NC}${COLOR_PRIMARY}│${NC}  ${ICON_BRAIN} ${BOLD}Descargar Modelos IA${NC} (Gemma 4 + Scout Qwen 0.6B)                 ${COLOR_PRIMARY}│${NC}"
     echo -e "${COLOR_PRIMARY}│${BOLD} 10 ${NC}${COLOR_PRIMARY}│${NC}  🩺 ${BOLD}Verificar Diagnóstico y Salud${NC} (/health/ready y /health/ai)          ${COLOR_PRIMARY}│${NC}"
     echo -e "${COLOR_PRIMARY}│${BOLD}  0 ${NC}${COLOR_PRIMARY}│${NC}  🚪 ${BOLD}Salir del Instalador${NC}                                                ${COLOR_PRIMARY}│${NC}"
     echo -e "${COLOR_PRIMARY}╰────┴──────────────────────────────────────────────────────────────────────╯${NC}"
@@ -130,7 +130,7 @@ show_help() {
     echo "  --env         Sincroniza y actualiza únicamente las variables de entorno en .env"
     echo "  --db          Solo configura PostgreSQL, migraciones Alembic y sembrado inicial"
     echo "  --llama       Descarga o compila el binario llama-server con librerías GGML"
-    echo "  --models      Descarga modelos Gemma 4 de Hugging Face"
+    echo "  --models      Descarga modelos IA (Gemma 4 y Scout Qwen 0.6B) de Hugging Face"
     echo "  --service     Reconfigura y reinicia el servicio systemd"
     echo "  --restart     Solo reinicia el servicio systemd actual"
     echo "  --logs        Muestra logs de journalctl del backend en tiempo real"

@@ -118,7 +118,7 @@ class CompareProductsArgs(BaseModel):
 
 
 class RecommendOutfitArgs(BaseModel):
-    occasion: str = Field(default="casual", description="Ocasion: casual, cena, fiesta, formal, oficina, verano, cita")
+    occasion: str | None = Field(default=None, description="Ocasion o estilo indicado por el usuario; no asumir")
     max_budget: float | None = Field(default=None, ge=0, description="Presupuesto maximo en Bs")
     gender: str | None = Field(default=None, description="HOMBRE, MUJER o UNISEX")
     top_size: str | None = Field(default=None, max_length=20)
@@ -352,6 +352,12 @@ def _compare(context: ToolContext, raw: BaseModel) -> Any:
 
 def _recommend_outfit(context: ToolContext, raw: BaseModel) -> Any:
     args = RecommendOutfitArgs.model_validate(raw)
+    preferences = {"occasion": args.occasion, "top_size": args.top_sizes or args.top_size,
+                   "bottom_size": args.bottom_sizes or args.bottom_size}
+    missing = [name for name, value in preferences.items() if not value]
+    if missing:
+        return {"status": "needs_input", "missing_fields": missing,
+                "instruction": "Pregunta por los datos faltantes antes de elegir variantes; no asumas tallas ni estilo."}
 
     def normalized(value: Any) -> str:
         return "".join(
@@ -459,6 +465,7 @@ def _recommend_outfit(context: ToolContext, raw: BaseModel) -> Any:
         if typed_tops:
             tops = typed_tops
         else:
+            tops = []
             restrictions.append(f"No hay {args.top_type} disponible con las restricciones indicadas")
     if args.bottom_type:
         typed_bottoms = [
@@ -467,6 +474,7 @@ def _recommend_outfit(context: ToolContext, raw: BaseModel) -> Any:
         if typed_bottoms:
             bottoms = typed_bottoms
         else:
+            bottoms = []
             restrictions.append(f"No hay {args.bottom_type} disponible con las restricciones indicadas")
     if args.bottom_fit:
         fit_terms = {
@@ -494,6 +502,7 @@ def _recommend_outfit(context: ToolContext, raw: BaseModel) -> Any:
         if fitted_bottoms:
             bottoms = fitted_bottoms
         else:
+            bottoms = []
             restrictions.append(
                 f"No hay pantalón de corte {args.bottom_fit} identificado en el catálogo"
             )

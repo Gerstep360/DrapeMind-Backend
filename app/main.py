@@ -139,6 +139,9 @@ def readiness():
 @app.get("/health/ai", tags=["Sistema"], summary="Estado del runtime Gemma")
 async def ai_health():
     status_data = await model_runtime.status()
+    status_data["routing_mode"] = "scout" if settings.SCOUT_ENABLED else "legacy_gemma"
+    status_data["scout_configured"] = bool(settings.SCOUT_MODEL and (
+        settings.SCOUT_MODEL_PATH or not settings.SCOUT_MANAGED_SERVER))
     return JSONResponse(
         status_code=200 if status_data["healthy"] else 503,
         content=status_data,
