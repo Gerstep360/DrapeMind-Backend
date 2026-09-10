@@ -60,10 +60,8 @@ async def test_stop_process_terminates_and_cleans_up():
     fake_process.wait = MagicMock()
 
     runtime.process = fake_process
-    runtime._cleanup_stale_processes = MagicMock()
 
     await runtime._stop_process()
 
     assert runtime.process is None
     fake_process.terminate.assert_called_once()
-    runtime._cleanup_stale_processes.assert_called_once()

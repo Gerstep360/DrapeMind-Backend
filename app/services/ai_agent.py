@@ -221,11 +221,13 @@ async def run_gemma_tool_agent(
     complete: CompleteFn,
     emit: EventFn | None = None,
     max_steps: int = 4,
+    prompt_factory=prompt_sections,
+    delegate: Callable[..., Awaitable[str]] | None = None,
 ) -> dict[str, Any]:
-    """Bounded Observe/Think/Act loop. Gemma chooses every tool; FastAPI only validates it."""
+    """Shared bounded tool loop: the configured planner chooses, services validate."""
     state = read_context(memory)
     catalog = tool_catalog()
-    messages = build_messages(prompt_sections(message, state, catalog, []))
+    messages = build_messages(prompt_factory(message, state, catalog, []))
     steps: list[dict[str, Any]] = []
     cards: list[dict[str, Any]] = []
     final: dict[str, Any] | None = None
@@ -241,9 +243,9 @@ async def run_gemma_tool_agent(
             {
                 "type": "thought",
                 "content": (
-                    "Gemma está interpretando la consulta y eligiendo la siguiente acción..."
+                    "Altair está interpretando la consulta y eligiendo la siguiente acción..."
                     if step_index == 0
-                    else "Gemma está revisando la observación antes de decidir cómo continuar..."
+                    else "Altair está revisando la observación antes de decidir cómo continuar..."
                 ),
             }
         )
@@ -252,8 +254,8 @@ async def run_gemma_tool_agent(
                 {
                     "role": "user",
                     "content": (
-                        "ÚLTIMO PASO: no llames más tools. Responde en Markdown usando sólo "
-                        "las observaciones verificadas, incluso si el resultado está vacío."
+                        "ÚLTIMO PASO: no llames más tools. Finaliza usando el JSON finish "
+                        "o delega si está permitido. Usa solo las observaciones disponibles."
                     ),
                 }
             )
@@ -292,6 +294,13 @@ async def run_gemma_tool_agent(
                 ]
             )
             continue
+        if decision.get("type") == "delegate" and delegate is not None:
+            state = update_context(state, decision.get("context"))
+            observations = [{"tool": step["name"], "args": step["args"], "result": step["result"]} for step in steps]
+            await send_event({"type": "progress", "content": "Altair está elaborando la respuesta con los datos consultados."})
+            answer = await delegate(message, state, observations)
+            final = {**decision, "type": "finish", "answer": answer}
+            break
         if decision.get("type") == "finish":
             state = update_context(state, decision.get("context"))
             final = decision
@@ -381,7 +390,7 @@ async def run_gemma_tool_agent(
             }
         )
         observations = [{"tool": step["name"], "args": step["args"], "result": step["result"]} for step in steps]
-        messages = build_messages(prompt_sections(message, state, catalog, observations))
+        messages = build_messages(prompt_factory(message, state, catalog, observations))
 
     protocol_valid = final is not None
     if final is None:

@@ -60,6 +60,21 @@ class Settings(BaseSettings):
     AI_REASONING_MODE: Literal["auto", "on", "off"] = "auto"
     AI_REASONING_BUDGET: int = Field(default=64, ge=0, le=512)
     AI_CONTEXT_TOKEN_METRICS: bool = False
+    # Opt-in: an independent local planner. Gemma settings remain unchanged.
+    SCOUT_ENABLED: bool = False
+    SCOUT_BASE_URL: str = "http://127.0.0.1:8089/v1"
+    SCOUT_API_KEY: str = "local-no-key"
+    SCOUT_MODEL: str = ""
+    SCOUT_MODEL_PATH: str = ""
+    SCOUT_MANAGED_SERVER: bool = True
+    SCOUT_SERVER_PORT: int = Field(default=8089, ge=1024, le=65535)
+    SCOUT_THREADS: int = Field(default=2, ge=1, le=3)
+    SCOUT_CONTEXT_SIZE: int = Field(default=4096, ge=2048, le=8192)
+    SCOUT_MAX_TOKENS: int = Field(default=512, ge=128, le=2048)
+    SCOUT_MAX_STEPS: int = Field(default=6, ge=2, le=12)
+    SCOUT_TIMEOUT_SECONDS: float = Field(default=60, ge=5, le=180)
+    SCOUT_TURN_TIMEOUT_SECONDS: float = Field(default=240, ge=30, le=600)
+    SCOUT_IDLE_TIMEOUT_SECONDS: int = Field(default=300, ge=15, le=3600)
     AI_FIRST_TOKEN_TIMEOUT_SECONDS: float = Field(default=120.0, ge=10, le=600)
     AI_TEMPERATURE: float = 0.35
     RESERVATION_TTL_MINUTES: int = 2880

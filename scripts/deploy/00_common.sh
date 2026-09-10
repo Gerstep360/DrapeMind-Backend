@@ -39,6 +39,7 @@ ICON_DATABASE="🗄️ "
 SERVER_IP="157.173.102.129"
 BACKEND_PORT=8045
 AI_SERVER_PORT=8088
+SCOUT_SERVER_PORT=8089
 
 # Resolver directorio raíz del backend
 if [[ -z "${BACKEND_DIR}" ]]; then

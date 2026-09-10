@@ -24,7 +24,9 @@ class ModelRuntimeError(RuntimeError):
 class ModelRuntime:
     """Manages a local llama-server process and unloads it after idle time."""
 
-    def __init__(self) -> None:
+    def __init__(self, config=None, name: str = "gemma") -> None:
+        self.config = config if config is not None else settings
+        self.log_name = "llama-server.log" if name == "gemma" else f"llama-{name}.log"
         self.process: subprocess.Popen | None = None
         self.active_requests = 0
         self.last_used_at = 0.0
@@ -39,8 +41,8 @@ class ModelRuntime:
         return path if path.is_absolute() else BACKEND_DIR / path
 
     def executable(self) -> Path | None:
-        if settings.LLAMA_SERVER_PATH:
-            configured = self._resolve_path(settings.LLAMA_SERVER_PATH)
+        if self.config.LLAMA_SERVER_PATH:
+            configured = self._resolve_path(self.config.LLAMA_SERVER_PATH)
             if configured.exists():
                 return configured
         local_windows = BACKEND_DIR / "vendor" / "llama.cpp" / "llama-server.exe"
@@ -61,16 +63,16 @@ class ModelRuntime:
         return Path(found) if found else None
 
     def model_path(self) -> Path:
-        return self._resolve_path(settings.AI_MODEL_PATH)
+        return self._resolve_path(self.config.AI_MODEL_PATH)
 
     def mmproj_path(self) -> Path | None:
-        if not settings.AI_MMPROJ_PATH:
+        if not self.config.AI_MMPROJ_PATH:
             return None
-        path = self._resolve_path(settings.AI_MMPROJ_PATH)
+        path = self._resolve_path(self.config.AI_MMPROJ_PATH)
         return path if path.exists() else None
 
     def _read_recent_logs(self, max_lines: int = 15) -> str:
-        log_file = BACKEND_DIR / "logs" / "llama-server.log"
+        log_file = BACKEND_DIR / "logs" / self.log_name
         if not log_file.exists():
             return ""
         try:
@@ -81,7 +83,7 @@ class ModelRuntime:
             return ""
 
     async def is_healthy(self) -> bool:
-        base = settings.AI_BASE_URL.rstrip("/")
+        base = self.config.AI_BASE_URL.rstrip("/")
         root_url = base[:-3] if base.endswith("/v1") else base
         try:
             async with httpx.AsyncClient(timeout=2.0) as client:
@@ -107,66 +109,45 @@ class ModelRuntime:
             raise ModelRuntimeError(f"Modelo GGUF no encontrado: {model}")
 
         # Ensure GPU layers is an integer string: llama.cpp CLI rejects "auto"
-        ngl = str(settings.AI_GPU_LAYERS).strip()
+        ngl = str(self.config.AI_GPU_LAYERS).strip()
         ngl_val = ngl if (ngl.isdigit() or (ngl.startswith("-") and ngl[1:].isdigit())) else "0"
 
         # Honor the deployment context budget; memory usage depends on the model and KV cache.
-        ctx_size = max(2048, int(settings.AI_CONTEXT_SIZE or 4096))
-        parallel_slots = max(1, min(int(settings.AI_PARALLEL_SLOTS or 1), 1))
+        ctx_size = max(2048, int(self.config.AI_CONTEXT_SIZE or 4096))
+        parallel_slots = max(1, min(int(self.config.AI_PARALLEL_SLOTS or 1), 1))
 
         command = [
             str(executable),
             "--model", str(model),
-            "--alias", settings.AI_MODEL,
-            "--host", settings.AI_SERVER_HOST,
-            "--port", str(settings.AI_SERVER_PORT),
+            "--alias", self.config.AI_MODEL,
+            "--host", self.config.AI_SERVER_HOST,
+            "--port", str(self.config.AI_SERVER_PORT),
             "--ctx-size", str(ctx_size),
             "--parallel", str(parallel_slots),
             "-ngl", ngl_val,
             "--jinja",
-            "--reasoning", settings.AI_REASONING_MODE,
-            "--reasoning-budget", str(settings.AI_REASONING_BUDGET),
+            "--reasoning", self.config.AI_REASONING_MODE,
+            "--reasoning-budget", str(self.config.AI_REASONING_BUDGET),
         ]
         # llama-server is an OpenAI-compatible text/reasoning server; --mmproj is not a valid CLI argument for llama-server
 
-        threads = settings.AI_THREADS
+        threads = self.config.AI_THREADS
         if threads <= 0 and os.name != "nt":
             cpu_cnt = os.cpu_count() or 2
             threads = max(1, min(cpu_cnt, 3 if cpu_cnt >= 4 else 2))
         if threads > 0:
             command.extend(["--threads", str(threads)])
 
-        if settings.AI_SERVER_EXTRA_ARGS:
-            command.extend(shlex.split(settings.AI_SERVER_EXTRA_ARGS, posix=os.name != "nt"))
+        if self.config.AI_SERVER_EXTRA_ARGS:
+            command.extend(shlex.split(self.config.AI_SERVER_EXTRA_ARGS, posix=os.name != "nt"))
         return command
-
-    def _cleanup_stale_processes(self) -> None:
-        """Kills any orphaned llama-server process on the system."""
-        if os.name == "nt":
-            try:
-                subprocess.run(
-                    ["taskkill", "/F", "/IM", "llama-server.exe"],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            except Exception:
-                pass
-        else:
-            try:
-                subprocess.run(
-                    ["pkill", "-9", "-f", "llama-server"],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            except Exception:
-                pass
 
     async def ensure_started(self) -> None:
         self.start_monitor()
         if await self.is_healthy():
             self.last_used_at = time.monotonic()
             return
-        if not settings.AI_MANAGED_SERVER:
+        if not self.config.AI_MANAGED_SERVER:
             raise ModelRuntimeError(
                 "El servidor de IA no responde y AI_MANAGED_SERVER esta desactivado."
             )
@@ -177,14 +158,12 @@ class ModelRuntime:
             if self.process and self.process.poll() is None:
                 await self._wait_until_healthy()
                 return
-            # Clean up any stale process binding port before starting
-            self._cleanup_stale_processes()
             command = self.command()
             log_dir = BACKEND_DIR / "logs"
             log_dir.mkdir(exist_ok=True)
-            self._log_handle = (log_dir / "llama-server.log").open("ab")
+            self._log_handle = (log_dir / self.log_name).open("ab")
             creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-            logger.info("Iniciando proceso llama-server (puerto %s)...", settings.AI_SERVER_PORT)
+            logger.info("Iniciando proceso llama-server (puerto %s)...", self.config.AI_SERVER_PORT)
 
             # Configure environment for GGML dynamic backend loading
             runtime_env = os.environ.copy()
@@ -251,7 +230,7 @@ class ModelRuntime:
             await self._wait_until_healthy()
 
     async def _wait_until_healthy(self) -> None:
-        deadline = time.monotonic() + settings.AI_STARTUP_TIMEOUT_SECONDS
+        deadline = time.monotonic() + self.config.AI_STARTUP_TIMEOUT_SECONDS
         while time.monotonic() < deadline:
             if self.process and self.process.poll() is not None:
                 exit_code = self.process.returncode
@@ -262,23 +241,23 @@ class ModelRuntime:
                     f"llama-server terminó durante el arranque{detail}"
                 )
             if await self.is_healthy():
-                logger.info("llama-server listo y saludable en puerto %s", settings.AI_SERVER_PORT)
+                logger.info("llama-server listo y saludable en puerto %s", self.config.AI_SERVER_PORT)
                 return
             await asyncio.sleep(1.0)
         log_tail = self._read_recent_logs(15)
         await self._stop_process()
         detail = f":\n{log_tail}" if log_tail else "."
         raise ModelRuntimeError(
-            f"Gemma no estuvo listo antes del timeout ({settings.AI_STARTUP_TIMEOUT_SECONDS}s){detail}"
+            f"Gemma no estuvo listo antes del timeout ({self.config.AI_STARTUP_TIMEOUT_SECONDS}s){detail}"
         )
 
     @asynccontextmanager
     async def lease(self) -> AsyncIterator[None]:
-        await self.ensure_started()
         async with self._state_lock:
             self.active_requests += 1
             self.last_used_at = time.monotonic()
         try:
+            await self.ensure_started()
             yield
         finally:
             async with self._state_lock:
@@ -296,7 +275,6 @@ class ModelRuntime:
             except subprocess.TimeoutExpired:
                 process.kill()
                 await asyncio.to_thread(process.wait, 5)
-        self._cleanup_stale_processes()
         if self._log_handle:
             try:
                 self._log_handle.close()
@@ -310,11 +288,11 @@ class ModelRuntime:
             await self._stop_process()
 
     async def _monitor(self) -> None:
-        interval = max(5, min(15, settings.AI_IDLE_TIMEOUT_SECONDS // 4))
+        interval = max(5, min(15, self.config.AI_IDLE_TIMEOUT_SECONDS // 4))
         while True:
             try:
                 await asyncio.sleep(interval)
-                if not settings.AI_MANAGED_SERVER:
+                if not self.config.AI_MANAGED_SERVER:
                     continue
                 is_alive = await self.is_healthy() or (self.process and self.process.poll() is None)
                 if not is_alive:
@@ -323,12 +301,12 @@ class ModelRuntime:
                     if self.last_used_at == 0.0:
                         self.last_used_at = time.monotonic()
                     idle = time.monotonic() - self.last_used_at
-                    should_stop = self.active_requests == 0 and idle >= settings.AI_IDLE_TIMEOUT_SECONDS
+                    should_stop = self.active_requests == 0 and idle >= self.config.AI_IDLE_TIMEOUT_SECONDS
                 if should_stop:
                     logger.info(
                         "AI Idle timeout alcanzado (%ds inactivo >= %ds). Deteniendo llama-server para liberar memoria...",
                         int(idle),
-                        settings.AI_IDLE_TIMEOUT_SECONDS,
+                        self.config.AI_IDLE_TIMEOUT_SECONDS,
                     )
                     await self.stop()
             except asyncio.CancelledError:
@@ -357,12 +335,12 @@ class ModelRuntime:
         )
         return {
             "healthy": healthy,
-            "managed": settings.AI_MANAGED_SERVER,
+            "managed": self.config.AI_MANAGED_SERVER,
             "running": healthy or bool(self.process and self.process.poll() is None),
             "active_requests": self.active_requests,
             "idle_seconds": idle_seconds,
-            "idle_timeout_seconds": settings.AI_IDLE_TIMEOUT_SECONDS,
-            "model": settings.AI_MODEL,
+            "idle_timeout_seconds": self.config.AI_IDLE_TIMEOUT_SECONDS,
+            "model": self.config.AI_MODEL,
             "model_exists": self.model_path().exists(),
             "mmproj_exists": bool(self.mmproj_path()),
             "executable": str(self.executable()) if self.executable() else None,

@@ -20,6 +20,7 @@ from app.models import (
 from app.services.store import cart_payload, replace_cart_item, search_products
 from app.services.ai_tools import TOOLS
 from app.services.ai_agent import run_gemma_tool_agent
+from app.services.scout_orchestrator import run_scout_orchestrator, turn_lock
 from app.services.agent_stream import partial_answer
 from app.services.ai_memory import build_session_summary, load_ai_memory, merge_ai_memory
 from app.services.chat_sessions import owned_session
@@ -387,12 +388,13 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
         })
 
         memory = load_ai_memory(session.resumen_contexto)
-        was_ready = await model_runtime.is_healthy()
+        was_ready = False if settings.SCOUT_ENABLED else await model_runtime.is_healthy()
         await send(
             {
                 "type": "model_status",
                 "status": "ready" if was_ready else "loading",
                 "session_id": session.id,
+                "model_role": "scout" if settings.SCOUT_ENABLED else "main",
             }
         )
         streamed_text = ""
@@ -410,11 +412,17 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
         async def agent_complete(messages, **kwargs):
             return await _completion(messages, **kwargs, on_text=on_agent_text, context_chat_id=session.id)
 
-        async with model_runtime.lease():
-            skill_res = await run_gemma_tool_agent(
-                db, user, message, memory, agent_complete, emit=send,
-                max_steps=settings.AI_MAX_AGENT_STEPS,
+        if settings.SCOUT_ENABLED:
+            skill_res = await run_scout_orchestrator(
+                db, user, message, memory, agent_complete, send, session.id,
             )
+        else:
+            async with turn_lock:
+                async with model_runtime.lease():
+                    skill_res = await run_gemma_tool_agent(
+                        db, user, message, memory, agent_complete, emit=send,
+                        max_steps=settings.AI_MAX_AGENT_STEPS,
+                    )
 
         skill = SimpleNamespace(name="gemma_tool_agent")
         tool_name = skill_res.get("tool_name")
@@ -669,7 +677,8 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
             answer or f"[{presentation_mode}: {len(action_items)} cards]",
             ",".join(used_tools) or "skill:" + skill.name,
             started,
-            {"prompt_tokens": None, "completion_tokens": None},
+            {"prompt_tokens": None, "completion_tokens": None,
+             "model": response_meta.get("model_used", settings.AI_MODEL)},
         )
         recommended_product_ids = [
             int(item["id"])
@@ -744,7 +753,7 @@ def _save_interaction(
         sesion_id=session.id, tipo=kind, mensaje_usuario=message, respuesta=answer,
         tool_principal=tool, duracion_ms=max(0, int((time.perf_counter() - started) * 1000)),
         tokens_entrada=usage.get("prompt_tokens"), tokens_salida=usage.get("completion_tokens"),
-        modelo=settings.AI_MODEL, estado=status,
+        modelo=usage.get("model", settings.AI_MODEL), estado=status,
     )
     db.add(interaction)
     db.flush()
@@ -806,7 +815,7 @@ async def run_ai_action(
                     if item.get("accion") == "AGREGAR"]
         return {"sesion_id": session.id, "interaccion_id": interaction.id,
                 "respuesta": interaction.respuesta, "productos": products,
-                "recomendaciones": [], "modelo": settings.AI_MODEL}
+                "recomendaciones": [], "modelo": interaction.modelo}
     elif action == "search":
         kind = "PRODUCT_SEARCH"
         extractor, _ = await call_gemma(

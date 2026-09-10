@@ -15,6 +15,7 @@ from app.api.v1.router import api_router
 from app.core.config import settings
 from app.db.session import engine
 from app.services.model_runtime import model_runtime
+from app.services.scout_orchestrator import shutdown_scout
 from app.services.realtime import websocket_origin_allowed
 
 logger = logging.getLogger("drapemind")
@@ -24,6 +25,7 @@ logger = logging.getLogger("drapemind")
 async def lifespan(application: FastAPI):
     model_runtime.start_monitor()
     yield
+    await shutdown_scout()
     await model_runtime.shutdown()
 
 tags_metadata = [

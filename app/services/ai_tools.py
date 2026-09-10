@@ -164,6 +164,7 @@ class ToolDefinition:
     description: str
     args_model: type[BaseModel]
     handler: Callable[[ToolContext, BaseModel], Any]
+    read_only: bool = False
 
     def schema(self) -> dict:
         return {
@@ -673,92 +674,98 @@ def _evaluate_fit(context: ToolContext, raw: BaseModel) -> Any:
     }
 
 
+@dataclass
+class ReadToolDefinition(ToolDefinition):
+    """Explicit capability policy; new tools are denied unless classified."""
+    read_only: bool = True
+
+
 TOOLS = {
     tool.name: tool
     for tool in [
-        ToolDefinition("get_my_favorites", "Consulta los favoritos reales del usuario para personalizar sugerencias.", EmptyArgs, _favorites),
-        ToolDefinition("get_branch_availability", "Busca showrooms con stock exacto por prenda, talla y color, e indica dirección.", BranchAvailabilityArgs, _branch_availability),
-        ToolDefinition("get_my_payment_status", "Lee el estado registrado del pago de un pedido propio; nunca aprueba pagos.", OrderPaymentArgs, _my_payment_status),
-        ToolDefinition("calculate_selection_budget", "Calcula total exacto y saldo de una selección de variantes, una unidad por variante, sin cambiar el carrito.", SelectionBudgetArgs, _selection_budget),
-        ToolDefinition(
+        ReadToolDefinition("get_my_favorites", "Consulta los favoritos reales del usuario para personalizar sugerencias.", EmptyArgs, _favorites),
+        ReadToolDefinition("get_branch_availability", "Busca showrooms con stock exacto por prenda, talla y color, e indica dirección.", BranchAvailabilityArgs, _branch_availability),
+        ReadToolDefinition("get_my_payment_status", "Lee el estado registrado del pago de un pedido propio; nunca aprueba pagos.", OrderPaymentArgs, _my_payment_status),
+        ReadToolDefinition("calculate_selection_budget", "Calcula total exacto y saldo de una selección de variantes, una unidad por variante, sin cambiar el carrito.", SelectionBudgetArgs, _selection_budget),
+        ReadToolDefinition(
             "search_products",
             "Busca prendas reales en el catálogo con filtros de nombre, categoría, presupuesto, color o talla.",
             SearchProductsArgs,
             _search,
         ),
-        ToolDefinition(
+        ReadToolDefinition(
             "get_product_detail",
             "Obtiene información detallada de una prenda: material, variantes, colores, tallas y stock.",
             ProductArgs,
             _product,
         ),
-        ToolDefinition(
+        ReadToolDefinition(
             "get_my_cart",
             "Lee todas las prendas que el usuario tiene actualmente en su carrito (nombre, talla, color, precio y total). Usar siempre que el usuario pregunte por su carrito, bolsa o qué tiene guardado.",
             EmptyArgs,
             _cart,
         ),
-        ToolDefinition(
+        ReadToolDefinition(
             "recommend_outfit",
             "Arma outfits completos armonizados (top + inferior + calzado + accesorios) según ocasión (cena, fiesta, casual, oficina) y presupuesto.",
             RecommendOutfitArgs,
             _recommend_outfit,
         ),
-        ToolDefinition(
+        ReadToolDefinition(
             "get_trending_pieces",
             "Obtiene las piezas más destacadas, de mayor calidad (Q5/Q4) y tendencia del atelier.",
             TrendingArgs,
             _trending,
         ),
-        ToolDefinition(
+        ReadToolDefinition(
             "get_new_arrivals",
             "Obtiene novedades del catálogo con stock y evita repetir recomendaciones recientes de la conversación.",
             NewArrivalsArgs,
             _new_arrivals,
         ),
-        ToolDefinition(
+        ReadToolDefinition(
             "get_most_expensive_product",
             "Devuelve exactamente una prenda: la de mayor precio con una variante disponible. No arma outfits.",
             EmptyArgs,
             _most_expensive,
         ),
-        ToolDefinition(
+        ReadToolDefinition(
             "get_stock",
             "Consulta stock real disponible por producto o variante.",
             StockArgs,
             _stock,
         ),
-        ToolDefinition(
+        ReadToolDefinition(
             "find_alternatives",
             "Busca alternativas con stock para ahorrar, mejorar calidad o mantener el mismo estilo.",
             AlternativesArgs,
             _alternatives,
         ),
-        ToolDefinition(
+        ReadToolDefinition(
             "calculate_cart_totals",
             "Calcula cantidades, subtotales y líneas exactas del carrito de compras.",
             EmptyArgs,
             _cart_totals,
         ),
-        ToolDefinition(
+        ReadToolDefinition(
             "compare_products",
             "Compara precio y calidad entre múltiples prendas de forma objetiva.",
             CompareProductsArgs,
             _compare,
         ),
-        ToolDefinition(
+        ReadToolDefinition(
             "get_my_orders",
             "Consulta los últimos pedidos y estados de compra del usuario autenticado.",
             EmptyArgs,
             _orders,
         ),
-        ToolDefinition(
+        ReadToolDefinition(
             "get_my_reservations",
             "Consulta reservas activas y fechas de vencimiento del usuario.",
             EmptyArgs,
             _reservations,
         ),
-        ToolDefinition(
+        ReadToolDefinition(
             "evaluate_garment_fit",
             "Calcula la holgura en cm, caída sastrera y tensión de una talla específica para el probador AR.",
             EvaluateGarmentFitArgs,
@@ -770,13 +777,15 @@ TOOLS = {
 
 
 def tool_catalog() -> list[dict]:
-    return [tool.schema() for tool in TOOLS.values()]
+    return [tool.schema() for tool in TOOLS.values() if tool.read_only]
 
 
 def execute_tool(name: str, arguments: dict, context: ToolContext) -> Any:
     tool = TOOLS.get(name)
     if not tool:
         return {"error": f"Tool no permitida: {name}"}
+    if not tool.read_only:
+        return {"error": "Esta operación requiere confirmación en la interfaz; no se ejecutó ningún cambio."}
     try:
         validated = tool.args_model.model_validate(arguments or {})
         return tool.handler(context, validated)

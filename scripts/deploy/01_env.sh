@@ -150,6 +150,25 @@ sync_env_production() {
     set_or_update_var "AI_FIRST_TOKEN_TIMEOUT_SECONDS" "120" "${ENV_FILE}"
     set_or_update_var "AI_TEMPERATURE" "0.35" "${ENV_FILE}"
 
+    # =====================================================================
+    # ARQUITECTURA SCOUT (QWEN) Y MÉTRICAS DE CONTEXTO
+    # =====================================================================
+    set_or_update_var "SCOUT_ENABLED" "false" "${ENV_FILE}"
+    set_or_update_var "SCOUT_MODEL" "\"ai_models/qwen3-0.6B/Qwen3-0.6B-Q8_0.gguf\"" "${ENV_FILE}"
+    set_or_update_var "SCOUT_MODEL_PATH" "\"ai_models/qwen3-0.6B/Qwen3-0.6B-Q8_0.gguf\"" "${ENV_FILE}"
+    set_or_update_var "SCOUT_BASE_URL" "\"http://127.0.0.1:${SCOUT_SERVER_PORT:-8089}/v1\"" "${ENV_FILE}"
+    set_or_update_var "SCOUT_API_KEY" "\"local-no-key\"" "${ENV_FILE}"
+    set_or_update_var "SCOUT_MANAGED_SERVER" "true" "${ENV_FILE}"
+    set_or_update_var "SCOUT_SERVER_PORT" "${SCOUT_SERVER_PORT:-8089}" "${ENV_FILE}"
+    set_or_update_var "SCOUT_THREADS" "2" "${ENV_FILE}"
+    set_or_update_var "SCOUT_CONTEXT_SIZE" "4096" "${ENV_FILE}"
+    set_or_update_var "SCOUT_MAX_TOKENS" "512" "${ENV_FILE}"
+    set_or_update_var "SCOUT_MAX_STEPS" "6" "${ENV_FILE}"
+    set_or_update_var "SCOUT_TIMEOUT_SECONDS" "60" "${ENV_FILE}"
+    set_or_update_var "SCOUT_TURN_TIMEOUT_SECONDS" "240" "${ENV_FILE}"
+    set_or_update_var "SCOUT_IDLE_TIMEOUT_SECONDS" "300" "${ENV_FILE}"
+    set_or_update_var "AI_CONTEXT_TOKEN_METRICS" "false" "${ENV_FILE}"
+
     # Dominio y Pagos
     set_or_update_var "RESERVATION_TTL_MINUTES" "2880" "${ENV_FILE}"
     set_or_update_var "PAYMENT_PROVIDER" "\"mock\"" "${ENV_FILE}"
@@ -171,6 +190,7 @@ sync_env_production() {
     echo -e "${COLOR_SUCCESS}  │${NC} • Base de Datos:    ${BOLD}PostgreSQL (${CONFIGURED_DB_USER:-drapemind_user}@localhost:5432)${NC}"
     echo -e "${COLOR_SUCCESS}  │${NC} • Streaming IA:     ${BOLD}Tokens: 768 / Timeout 1er token: 120s / Deadline: 180s${NC}"
     echo -e "${COLOR_SUCCESS}  │${NC} • Razonamiento:     ${BOLD}Modo: auto / Presupuesto: 64 tokens${NC}"
+    echo -e "${COLOR_SUCCESS}  │${NC} • Arquitectura IA:  ${BOLD}Gemma 4 (:8088) + Scout Qwen (:8089)${NC}"
     echo -e "${COLOR_SUCCESS}  │${NC} • Secretos:         ${COLOR_SUCCESS}${BOLD}Protegidos sin sobreescritura destructiva${NC}"
     echo -e "${COLOR_SUCCESS}  └───────────────────────────────────────────────────────────────────┘${NC}"
     log_success "Archivo de variables de entorno (.env) actualizado satisfactoriamente."

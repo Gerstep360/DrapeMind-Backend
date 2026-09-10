@@ -63,10 +63,15 @@ def update_context(state: ChatContext, patch: dict | None) -> ChatContext:
         selected = []
         for value in patch["selected"] if isinstance(patch["selected"], list) else []:
             if isinstance(value, dict):
-                item = known.get((value.get("type"), value.get("id")))
+                try:
+                    reference = EntityRef.model_validate(value)
+                except ValidationError:
+                    continue
+                item = known.get((reference.type, reference.id))
                 if item:
                     selected.append(item.model_dump())
-        data["selected"] = selected[:MAX_ENTITIES]
+        if selected or patch["selected"] == []:
+            data["selected"] = selected[:MAX_ENTITIES]
     try:
         return ChatContext.model_validate(data)
     except ValidationError:
@@ -109,5 +114,5 @@ def serialize_observation(value):
         return [serialize_observation(item) for item in value]
     if isinstance(value, dict):
         return {key: serialize_observation(item) for key, item in value.items()
-                if key not in {"imagenes", "tags_ai", "descripcion_ai"}}
+                if key not in {"imagenes", "imagen", "image_url", "tags_ai", "resumen_texto"}}
     return value
