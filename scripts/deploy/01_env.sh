@@ -106,8 +106,8 @@ sync_env_production() {
     set_or_update_var "DOCS_ENABLED" "true" "${ENV_FILE}"
     set_or_update_var "PORT" "${BACKEND_PORT}" "${ENV_FILE}"
 
-    set_or_update_var "JWT_ALGORITHM" "\"HS256\"" "${ENV_FILE}"
-    set_or_update_var "ACCESS_TOKEN_EXPIRE_MINUTES" "60" "${ENV_FILE}"
+    set_default_var "JWT_ALGORITHM" "\"HS256\"" "${ENV_FILE}"
+    set_default_var "ACCESS_TOKEN_EXPIRE_MINUTES" "60" "${ENV_FILE}"
 
     # Base de datos PostgreSQL
     set_or_update_var "POSTGRES_HOST" "\"localhost\"" "${ENV_FILE}"

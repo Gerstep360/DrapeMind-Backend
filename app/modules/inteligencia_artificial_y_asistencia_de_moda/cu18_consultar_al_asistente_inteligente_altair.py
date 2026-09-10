@@ -128,11 +128,12 @@ async def ai_socket(socket: WebSocket) -> None:
                         safe_send,
                     )
                 except Exception as exc:
+                    db.rollback()
                     logger.exception("Error procesando mensaje de IA en WebSocket: %s", exc)
                     await safe_send(
                         {
                             "type": "error",
-                            "code": "AI_UNAVAILABLE",
+                            "code": "CHAT_NOT_FOUND" if isinstance(exc, HTTPException) and exc.status_code == 404 else "AI_UNAVAILABLE",
                             "message": str(exc) if isinstance(exc, (ModelRuntimeError, HTTPException)) and str(exc) else
                                 "La generación no pudo completarse. Reintenta en unos instantes; el detalle quedó registrado en el servidor.",
                         }
