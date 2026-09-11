@@ -171,7 +171,15 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
     def test_resolve_fast_intent_detects_cart_and_perchero(self):
         self.assertEqual(
             scout.resolve_fast_intent('Analiza las prendas de mi perchero y recomiéndame combinaciones de estilo.'),
-            ('get_my_cart', {})
+            ('combine_with_cart', {'count': 2})
+        )
+        self.assertEqual(
+            scout.resolve_fast_intent('dime 2 prendas que combine con la que esta en mi perchero'),
+            ('combine_with_cart', {'count': 2})
+        )
+        self.assertEqual(
+            scout.resolve_fast_intent('dime 2 prendas que combine con la que tengo en mi perchero'),
+            ('combine_with_cart', {'count': 2})
         )
         self.assertEqual(
             scout.resolve_fast_intent('¿Qué tengo en el carrito actualmente?'),
@@ -184,6 +192,10 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             scout.resolve_fast_intent('Look por presupuesto de Bs 400'),
             ('recommend_outfit', {'max_budget': 400.0, 'occasion': 'casual'})
+        )
+        self.assertEqual(
+            scout.resolve_fast_intent('dime 2 pantalones'),
+            ('search_products', {'query': 'pantalon', 'limit': 2})
         )
         self.assertIsNone(scout.resolve_fast_intent('¿Quién diseñó la última colección?'))
 

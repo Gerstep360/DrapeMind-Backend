@@ -258,6 +258,104 @@ async def scout_completion(messages, chat_id=None, step=1, **_):
         raise ModelRuntimeError("Scout no devolvió una decisión válida. Revisa su configuración y compatibilidad JSON Schema.") from exc
 
 
+def execute_combine_with_cart(db, user, count: int = 2) -> dict:
+    """Finds complementary showroom items to combine with the user's cart items."""
+    from app.services.store import cart_payload, search_products, get_product_detail
+    from app.services.ai_tools import _available_variant
+
+    cart = cart_payload(db, user.id)
+    cart_items = cart.get("items", [])
+    if not cart_items:
+        trending = search_products(db, only_available=True, limit=count)
+        return {
+            "status": "CART_EMPTY",
+            "base_item": None,
+            "cart_items": [],
+            "recommendations": trending[:count],
+            "count": count,
+        }
+
+    base_item = cart_items[0]
+    base_name = base_item.get("nombre", "Prenda")
+    base_lower = base_name.lower()
+    cart_prod_ids = {it.get("producto_id") for it in cart_items}
+
+    # Determine base category and complementary search targets
+    is_top = any(k in base_lower for k in ("polera", "remera", "t-shirt", "top", "camisa", "polo", "hoodie", "sueter", "chamarra", "blazer", "chaqueta"))
+    is_bottom = any(k in base_lower for k in ("pantalon", "jean", "jogger", "falda", "palazzo", "chino", "short"))
+    is_footwear = any(k in base_lower for k in ("zapato", "sneaker", "zapatilla", "calzado", "bota", "mocas", "chelsea", "oxford"))
+
+    if is_top:
+        complementary_queries = ["pantalon", "zapato", "blazer"]
+    elif is_bottom:
+        complementary_queries = ["camisa", "polera", "zapato"]
+    elif is_footwear:
+        complementary_queries = ["pantalon", "polera", "camisa"]
+    else:
+        complementary_queries = ["pantalon", "polera", "zapato"]
+
+    recommendations = []
+    seen_ids = set(cart_prod_ids)
+
+    for q in complementary_queries:
+        if len(recommendations) >= count:
+            break
+        candidates = search_products(db, query=q, only_available=True, limit=4)
+        for cand in candidates:
+            cid = cand.get("id")
+            if cid and cid not in seen_ids:
+                seen_ids.add(cid)
+                detail = get_product_detail(db, cid)
+                variant = _available_variant(detail, None)
+                if variant:
+                    recommendations.append({
+                        "id": cid,
+                        "producto_id": cid,
+                        "variante_id": variant.get("id"),
+                        "nombre": detail.get("nombre") or cand.get("nombre"),
+                        "precio": float(detail.get("precio") or cand.get("precio") or 0),
+                        "color": variant.get("color"),
+                        "talla": variant.get("talla"),
+                        "sku": variant.get("sku"),
+                        "imagen": variant.get("imagen") or ((detail.get("imagenes") or [None])[0]),
+                        "categoria_complementaria": q,
+                    })
+                    if len(recommendations) >= count:
+                        break
+
+    if len(recommendations) < count:
+        fallback = search_products(db, only_available=True, limit=count * 2)
+        for cand in fallback:
+            cid = cand.get("id")
+            if cid and cid not in seen_ids:
+                seen_ids.add(cid)
+                detail = get_product_detail(db, cid)
+                variant = _available_variant(detail, None)
+                if variant:
+                    recommendations.append({
+                        "id": cid,
+                        "producto_id": cid,
+                        "variante_id": variant.get("id"),
+                        "nombre": detail.get("nombre") or cand.get("nombre"),
+                        "precio": float(detail.get("precio") or cand.get("precio") or 0),
+                        "color": variant.get("color"),
+                        "talla": variant.get("talla"),
+                        "sku": variant.get("sku"),
+                        "imagen": variant.get("imagen") or ((detail.get("imagenes") or [None])[0]),
+                        "categoria_complementaria": "complemento",
+                    })
+                    if len(recommendations) >= count:
+                        break
+
+    return {
+        "status": "OK",
+        "base_item": base_item,
+        "cart_items": cart_items,
+        "recommendations": recommendations[:count],
+        "count": count,
+    }
+
+
 def resolve_fast_intent(message: str) -> tuple[str, dict] | None:
     """Zero-latency deterministic intent router for common queries and commands.
     
@@ -266,22 +364,35 @@ def resolve_fast_intent(message: str) -> tuple[str, dict] | None:
     if not message:
         return None
     raw = unicodedata.normalize("NFKD", message).encode("ASCII", "ignore").decode("utf-8").lower().strip()
-    
-    # 1. Perchero / Carrito / Bolsa / Selección
+
+    # Detect requested count (e.g. "dime 2 prendas", "3 opciones")
+    num_match = re.search(r"\b(\d+)\s*(?:prendas?|opciones?|piezas?|ideas?|outfits?|looks?)?\b", raw)
+    count = 2
+    if num_match:
+        try:
+            val = int(num_match.group(1))
+            if 1 <= val <= 8:
+                count = val
+        except ValueError:
+            count = 2
+
+    # 1. Combinar prendas con las que están en el perchero / carrito
+    is_combine = any(w in raw for w in ("combine", "combinar", "combina", "combinacion", "conjunto", "armo"))
+    is_cart_ref = any(w in raw for w in ("perchero", "carrito", "bolsa", "tengo", "guardado", "seleccion"))
+    if is_combine and is_cart_ref:
+        return ("combine_with_cart", {"count": count})
+
+    # 2. Consultar o ver lo que hay en el perchero / carrito (sin pedir combinación nueva)
     if any(k in raw for k in ("perchero", "carrito", "bolsa", "mi seleccion", "mis compras")):
         return ("get_my_cart", {})
 
-    # 2. Mis Pedidos
+    # 3. Mis Pedidos
     if any(k in raw for k in ("mis pedidos", "ver pedidos", "estado de mi pedido", "que pedidos tengo")):
         return ("get_my_orders", {})
 
-    # 3. Mis Reservas
+    # 4. Mis Reservas
     if any(k in raw for k in ("mis reservas", "ver reservas", "reservas activas", "que reservas tengo")):
         return ("get_my_reservations", {})
-
-    # 4. Tendencias / Lo más nuevo / Destacadas / Explorar Catálogo
-    if any(k in raw for k in ("destacada", "destacadas", "explorar catalogo", "tendencia", "novedades", "lo mas nuevo", "ultimas prendas")):
-        return ("get_trending_pieces", {})
 
     # 5. Look por Presupuesto con cifra explícita
     budget_m = re.search(r"(?:menos de|presupuesto de|hasta|por)\s*(?:bs\.?|bob)?\s*(\d+(?:\.\d+)?)", raw)
@@ -292,6 +403,22 @@ def resolve_fast_intent(message: str) -> tuple[str, dict] | None:
                 return ("recommend_outfit", {"max_budget": val, "occasion": "casual"})
         except ValueError:
             pass
+
+    # 6. Búsqueda explícita de tipos de prenda ("dime 2 pantalones", "busca zapatillas", "recomiéndame poleras")
+    garment_types = {
+        "pantalon": "pantalon", "pantalones": "pantalon", "jean": "jean", "jeans": "jean",
+        "jogger": "jogger", "falda": "falda", "polera": "polera", "poleras": "polera",
+        "camisa": "camisa", "camisas": "camisa", "zapato": "zapato", "zapatos": "zapato",
+        "zapatilla": "zapatilla", "zapatillas": "zapatilla", "sneakers": "sneaker",
+        "mocasines": "mocas", "chaqueta": "chaqueta", "chamarra": "chamarra", "blazer": "blazer",
+    }
+    for kw, search_term in garment_types.items():
+        if re.search(rf"\b{kw}\b", raw):
+            return ("search_products", {"query": search_term, "limit": count})
+
+    # 7. Tendencias / Lo más nuevo / Destacadas / Explorar Catálogo
+    if any(k in raw for k in ("destacada", "destacadas", "explorar catalogo", "tendencia", "novedades", "lo mas nuevo", "ultimas prendas")):
+        return ("get_trending_pieces", {"limit": count})
 
     return None
 
@@ -315,6 +442,40 @@ async def run_scout_orchestrator(db, user, message, memory, gemma_complete, emit
         latest = observations[-1]
         tool = latest.get("tool", "")
         res = latest.get("result")
+
+        if tool == "combine_with_cart":
+            if isinstance(res, dict):
+                recs = res.get("recommendations") or []
+                base = res.get("base_item")
+                if not base:
+                    return "Tu perchero de compras está actualmente vacío. Agrega una prenda inicial desde el catálogo o showroom y con gusto te sugeriré piezas que armen una combinación de estilo perfecta."
+
+                b_name = base.get("nombre", "tu prenda")
+                b_color = base.get("color", "")
+                desc_base = f"**{b_name}**" + (f" ({b_color})" if b_color else "")
+
+                lines = [f"Para combinar con {desc_base} de tu perchero, seleccioné {len(recs)} prenda(s) clave de nuestro showroom atelier:\n"]
+                for idx, item in enumerate(recs, 1):
+                    name = item.get("nombre", "Prenda")
+                    precio = item.get("precio", 0)
+                    color = item.get("color", "")
+                    talla = item.get("talla", "")
+                    cat = item.get("categoria_complementaria", "")
+
+                    det_str = f"{name}" + (f" ({color}, Talla {talla})" if color or talla else "") + f" — Bs {precio:,.2f}"
+                    lines.append(f"{idx}. **{det_str}**")
+
+                    if cat in ("pantalon", "jean"):
+                        lines.append(f"   • *Por qué combina:* Su corte estructurado equilibra el diseño de {desc_base}, estiliza la silueta y eleva el outfit a una propuesta urbana contemporánea.")
+                    elif cat in ("zapato", "mocas", "sneaker"):
+                        lines.append(f"   • *Por qué combina:* El calzado aporta sobriedad y textura, completando la paleta cromática con elegancia minimalista.")
+                    elif cat in ("blazer", "chaqueta"):
+                        lines.append(f"   • *Por qué combina:* Una tercera capa arquitectónica versátil tanto para el día como para eventos nocturnos.")
+                    else:
+                        lines.append(f"   • *Por qué combina:* Pieza clave seleccionada para enriquecer la estética y proporción de {desc_base}.")
+
+                lines.append(f"\n💡 *Puedes pulsar el botón **AGREGAR** en las tarjetas de abajo para sumarlas directamente a tu perchero.*")
+                return "\n".join(lines)
 
         if tool == "get_my_cart":
             if isinstance(res, dict):
@@ -475,22 +636,74 @@ async def run_scout_orchestrator(db, user, message, memory, gemma_complete, emit
 
     fast_intent = resolve_fast_intent(message) if db is not None else None
     if fast_intent:
-        tool_name, arguments = fast_intent
-        reason = f"Consultando {tool_name}"
-        await emit({"type": "thought", "content": f"Altair está consultando {tool_name}..."})
-        await emit({
-            "type": "tool_start",
-            "name": tool_name,
-            "label": reason,
-            "arguments": arguments,
-        })
-        tool_start_time = time.perf_counter()
-        try:
-            from app.services.ai_tools import execute_tool, ToolContext, TOOLS
-            result_data = execute_tool(tool_name, arguments, ToolContext(db=db, user=user))
-        except Exception as exc:
-            result_data = {"error": str(exc)}
-        tool_duration_ms = (time.perf_counter() - tool_start_time) * 1000.0
+        if tool_name == "combine_with_cart":
+            count = arguments.get("count", 2)
+            reason = "Buscando combinaciones para tu perchero"
+            await emit({"type": "thought", "content": "Altair está buscando prendas del showroom que combinen con tu perchero..."})
+            await emit({
+                "type": "tool_start",
+                "name": "combine_with_cart",
+                "label": "Buscando combinaciones en showroom",
+                "arguments": arguments,
+            })
+            tool_start_time = time.perf_counter()
+            result_data = execute_combine_with_cart(db, user, count=count)
+            tool_duration_ms = (time.perf_counter() - tool_start_time) * 1000.0
+            base_n = (result_data.get("base_item") or {}).get("nombre", "tu selección")
+            cards = [
+                {
+                    "id": r["id"],
+                    "variante_id": r["variante_id"],
+                    "nombre": r["nombre"],
+                    "precio": r["precio"],
+                    "color": r["color"],
+                    "talla": r["talla"],
+                    "imagen": r.get("imagen"),
+                    "accion": "AGREGAR",
+                    "motivo": f"Combina con {base_n}",
+                    "sku": r.get("sku"),
+                }
+                for r in result_data.get("recommendations", [])
+            ]
+        elif tool_name == "search_products":
+            q_term = arguments.get("query", "")
+            limit_cnt = arguments.get("limit", 4)
+            reason = f"Buscando {q_term} en showroom"
+            await emit({"type": "thought", "content": f"Altair está buscando {q_term} en el showroom..."})
+            await emit({
+                "type": "tool_start",
+                "name": "search_products",
+                "label": reason,
+                "arguments": arguments,
+            })
+            tool_start_time = time.perf_counter()
+            from app.services.store import search_products
+            result_data = search_products(db, query=q_term, limit=limit_cnt, only_available=True)
+            tool_duration_ms = (time.perf_counter() - tool_start_time) * 1000.0
+            from app.services.ai_agent import _cards_from_tool
+            cards = _cards_from_tool(db, "search_products", arguments, result_data)
+        else:
+            reason = f"Consultando {tool_name}"
+            await emit({"type": "thought", "content": f"Altair está consultando {tool_name}..."})
+            await emit({
+                "type": "tool_start",
+                "name": tool_name,
+                "label": reason,
+                "arguments": arguments,
+            })
+            tool_start_time = time.perf_counter()
+            try:
+                from app.services.ai_tools import execute_tool, ToolContext, TOOLS
+                result_data = execute_tool(tool_name, arguments, ToolContext(db=db, user=user))
+            except Exception as exc:
+                result_data = {"error": str(exc)}
+            tool_duration_ms = (time.perf_counter() - tool_start_time) * 1000.0
+            from app.services.ai_agent import _cards_from_tool
+            definition = TOOLS.get(tool_name)
+            if definition and definition.card_renderer:
+                cards = definition.card_renderer(ToolContext(db=db, user=user), arguments, result_data)
+            else:
+                cards = _cards_from_tool(db, tool_name, arguments, result_data)
 
         ai_logger.log_tool_execution(
             chat_id=chat_id or getattr(user, "id", 0),
@@ -507,13 +720,6 @@ async def run_scout_orchestrator(db, user, message, memory, gemma_complete, emit
             "label": "Datos confirmados",
             "result": safe_result,
         })
-
-        from app.services.ai_agent import _cards_from_tool
-        definition = TOOLS.get(tool_name)
-        if definition and definition.card_renderer:
-            cards = definition.card_renderer(ToolContext(db=db, user=user), arguments, result_data)
-        else:
-            cards = _cards_from_tool(db, tool_name, arguments, result_data)
 
         if cards:
             await emit({"type": "results", "action_items": cards[:8]})
