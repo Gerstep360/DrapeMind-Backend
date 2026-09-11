@@ -325,6 +325,8 @@ async def run_gemma_tool_agent(
             break
 
         tool_name = str(decision.get("tool") or "")
+        state_before_decision = state
+        previous_constraints = dict(state.constraints)
         state = update_context(state, decision.get("context"))
         arguments = decision.get("arguments") if isinstance(decision.get("arguments"), dict) else {}
         reason = str(decision.get("reason") or f"Consultando {tool_name}")
@@ -333,6 +335,12 @@ async def run_gemma_tool_agent(
             json.dumps(arguments, ensure_ascii=False, sort_keys=True, default=str),
         )
         if call_key in seen_calls:
+            # Do not spend another planner inference asking it to stop repeating.
+            if delegate is not None:
+                observations = [{"tool": step["name"], "args": step["args"], "result": step["result"]} for step in steps]
+                answer = await delegate(message, state, observations)
+                final = {"type": "finish", "answer": answer}
+                break
             await send_event(
                 {
                     "type": "thought",
@@ -367,7 +375,17 @@ async def run_gemma_tool_agent(
         )
         tool_start_time = time.perf_counter()
         try:
-            result = execute_tool(tool_name, arguments, ToolContext(db=db, user=user))
+            from app.services.argument_grounding import unsupported_filters
+            definition = TOOLS.get(tool_name)
+            unsupported = unsupported_filters(definition.args_model.model_json_schema(), arguments, message,
+                                              previous_constraints) if definition else []
+            if unsupported:
+                state = state_before_decision
+                result = {"error": "Filtros sin respaldo en la petición o restricciones previas.",
+                          "unsupported_filters": unsupported,
+                          "next": "Corrige solo esos filtros o pide aclaración. No se ejecutó la búsqueda."}
+            else:
+                result = execute_tool(tool_name, arguments, ToolContext(db=db, user=user))
         except (ValidationError, ValueError) as exc:
             result = {"error": f"Argumentos rechazados: {exc}"}
         tool_duration_ms = (time.perf_counter() - tool_start_time) * 1000.0

@@ -19,11 +19,11 @@ class EmptyArgs(BaseModel):
 
 class SearchProductsArgs(BaseModel):
     query: str | None = Field(default=None, max_length=150)
-    category_id: int | None = None
+    category_id: int | None = Field(default=None, json_schema_extra={"x-context-only": True})
     min_price: Decimal | None = Field(default=None, ge=0)
     max_price: Decimal | None = Field(default=None, ge=0)
-    color: str | None = Field(default=None, max_length=60)
-    size: str | None = Field(default=None, max_length=20)
+    color: str | None = Field(default=None, max_length=60, json_schema_extra={"x-user-grounded": True})
+    size: str | None = Field(default=None, max_length=20, json_schema_extra={"x-user-grounded": True})
     limit: int = Field(default=12, ge=1, le=30)
 
 

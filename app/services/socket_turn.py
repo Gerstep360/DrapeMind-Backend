@@ -1,5 +1,4 @@
 import asyncio
-from contextlib import suppress
 from fastapi import WebSocketDisconnect
 
 
@@ -23,6 +22,5 @@ async def _connected_turn(socket, operation, send):
         for pending in (reader, task):
             if not pending.done():
                 pending.cancel()
-        for pending in (reader, task):
-            with suppress(asyncio.CancelledError, WebSocketDisconnect, RuntimeError):
-                await pending
+        # Drain both without replacing the original exception in the caller.
+        await asyncio.gather(reader, task, return_exceptions=True)

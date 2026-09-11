@@ -1,5 +1,7 @@
 import asyncio
 import unittest
+import json
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from fastapi import WebSocketDisconnect
 from app.services import scout_orchestrator as scout
@@ -9,6 +11,27 @@ from app.services.socket_turn import _connected_turn
 
 
 class LifecycleTests(unittest.IsolatedAsyncioTestCase):
+    def test_unrequested_filters_rejected(self):
+        from app.services.argument_grounding import unsupported_filters
+        from app.services.ai_tools import SearchProductsArgs
+        schema = SearchProductsArgs.model_json_schema()
+        self.assertEqual(unsupported_filters(schema, {'color': 'negro', 'category_id': 1},
+                                            'Quiero una chaqueta por 620 Bs', {}), ['category_id', 'color'])
+        self.assertEqual(unsupported_filters(schema, {'color': 'azul'}, 'Busco algo azul', {}), [])
+
+    async def test_duplicate_stops_planner_cycle(self):
+        from app.services import ai_agent
+        decision = {'type': 'tool', 'tool': 'search_products', 'arguments': {'query': 'chaqueta'}}
+        complete = AsyncMock(return_value={'choices': [{'message': {'content': json.dumps(decision)}}]})
+        delegate = AsyncMock(return_value='No hay coincidencias en esta búsqueda.')
+        with patch.object(ai_agent, 'execute_tool', return_value=[]) as execute, patch.object(ai_agent, '_cards_from_tool', return_value=[]):
+            result = await ai_agent.run_gemma_tool_agent(None, SimpleNamespace(id=1), 'Busca una chaqueta', {},
+                                                      complete, delegate=delegate)
+        self.assertEqual(complete.await_count, 2)
+        execute.assert_called_once()
+        delegate.assert_awaited_once()
+        self.assertIn('No hay coincidencias', result['direct_response'])
+
     async def test_disconnect_cancels_generation(self):
         started = asyncio.Event()
         cancelled = asyncio.Event()
