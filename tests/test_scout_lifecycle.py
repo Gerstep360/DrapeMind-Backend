@@ -143,61 +143,61 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
         messages = build_messages(prompt_sections(text, ChatContext(), [], []))
         self.assertEqual(messages[-1], {'role': 'user', 'content': text})
 
-    async def test_mini_mode_synthesizes_cart_response_without_gemma(self):
-        cart_obs = [{
-            'tool': 'get_my_cart',
-            'args': {},
-            'result': {
-                'total_items': 2,
-                'subtotal': 358.0,
-                'items': [
-                    {'nombre': 'Polera Gráfica', 'color': 'Blanco', 'talla': 'L', 'cantidad': 2, 'precio_unitario': 179.0, 'subtotal': 358.0}
-                ]
-            }
-        }]
+    async def test_mini_uses_generated_text_without_gemma(self):
+        generated = 'Texto único devuelto por el modelo de prueba.'
+        completion = AsyncMock(return_value={
+            'choices': [{'message': {'content': generated}, 'finish_reason': 'stop'}],
+            'usage': {'prompt_tokens': 21, 'completion_tokens': 9},
+        })
         async def fake_agent(*args, **kwargs):
-            after_tool = kwargs['after_tool']
-            result = await after_tool({'after': 'delegate'}, 'que tengo en el carrito', ChatContext(), cart_obs, [])
-            return {'response_meta': {}, 'notices': [], 'composite_sub_tools': [], 'direct_response': result['answer']}
+            answer = await kwargs['delegate']('Consulta completa', ChatContext(), [])
+            return {'response_meta': {}, 'notices': [], 'direct_response': answer}
+        gemma = AsyncMock()
+        with patch.object(scout, 'run_gemma_tool_agent', fake_agent), patch.object(scout, 'scout_text_completion', completion), patch.object(scout.model_runtime, 'lease') as main_lease:
+            result = await scout.run_scout_orchestrator(None, SimpleNamespace(id=1),
+                'Consulta completa', {}, gemma, AsyncMock(), 10, allow_delegation=False)
+        self.assertEqual(result['direct_response'], generated)
+        self.assertEqual(result['response_meta']['scout_calls'], 1)
+        self.assertEqual(result['response_meta']['gemma_calls'], 0)
+        self.assertEqual(completion.call_args.args[0][-1]['content'], 'Consulta completa')
+        gemma.assert_not_awaited()
+        main_lease.assert_not_called()
 
-        gemma_mock = AsyncMock()
+    async def test_mini_failure_is_not_replaced_with_template(self):
+        async def fake_agent(*args, **kwargs):
+            return await kwargs['delegate']('Consulta', ChatContext(), [])
+        with patch.object(scout, 'run_gemma_tool_agent', fake_agent), patch.object(scout, 'scout_text_completion', AsyncMock(side_effect=scout.ModelRuntimeError('fallo'))):
+            with self.assertRaises(scout.ModelRuntimeError):
+                await scout.run_scout_orchestrator(None, SimpleNamespace(id=1),
+                    'Consulta', {}, AsyncMock(), AsyncMock(), 10, allow_delegation=False)
+
+    async def test_mini_observe_can_continue_searching(self):
+        async def fake_agent(*args, **kwargs):
+            outcome = await kwargs['after_tool']({'after': 'observe'}, 'Consulta', ChatContext(),
+                [{'tool': 'get_my_cart', 'result': {'items': []}}], [])
+            self.assertIsNone(outcome)
+            return {'response_meta': {}, 'notices': []}
         with patch.object(scout, 'run_gemma_tool_agent', fake_agent):
-            res = await scout.run_scout_orchestrator(
-                None, SimpleNamespace(id=1, nombre='Test'), 'que tengo en el carrito', None,
-                gemma_mock, AsyncMock(), 10, allow_delegation=False
-            )
-            self.assertIn('Polera Gráfica', res['direct_response'])
-            self.assertIn('358', res['direct_response'])
-    def test_resolve_fast_intent_detects_cart_and_perchero(self):
-        self.assertEqual(
-            scout.resolve_fast_intent('Analiza las prendas de mi perchero y recomiéndame combinaciones de estilo.'),
-            ('combine_with_cart', {'count': 2})
-        )
-        self.assertEqual(
-            scout.resolve_fast_intent('dime 2 prendas que combine con la que esta en mi perchero'),
-            ('combine_with_cart', {'count': 2})
-        )
-        self.assertEqual(
-            scout.resolve_fast_intent('dime 2 prendas que combine con la que tengo en mi perchero'),
-            ('combine_with_cart', {'count': 2})
-        )
-        self.assertEqual(
-            scout.resolve_fast_intent('¿Qué tengo en el carrito actualmente?'),
-            ('get_my_cart', {})
-        )
-        self.assertEqual(
-            scout.resolve_fast_intent('Quiero ver mis pedidos'),
-            ('get_my_orders', {})
-        )
-        self.assertEqual(
-            scout.resolve_fast_intent('Look por presupuesto de Bs 400'),
-            ('recommend_outfit', {'max_budget': 400.0, 'occasion': 'casual'})
-        )
-        self.assertEqual(
-            scout.resolve_fast_intent('dime 2 pantalones'),
-            ('search_products', {'query': 'pantalon', 'limit': 2})
-        )
-        self.assertIsNone(scout.resolve_fast_intent('¿Quién diseñó la última colección?'))
+            await scout.run_scout_orchestrator(None, SimpleNamespace(id=1),
+                'Consulta', {}, AsyncMock(), AsyncMock(), 10, allow_delegation=False)
+
+    async def test_mini_prose_request_has_no_tool_schema(self):
+        import httpx
+        from contextlib import asynccontextmanager
+        @asynccontextmanager
+        async def lease():
+            yield
+        client = AsyncMock()
+        result = {'choices': [{'message': {'content': 'Texto generado'}, 'finish_reason': 'stop'}]}
+        client.__aenter__.return_value = client
+        client.post.return_value = httpx.Response(200, json=result, request=httpx.Request('POST', 'http://localhost/test'))
+        with patch.object(scout, 'scout_runtime', return_value=SimpleNamespace(lease=lease)), patch.object(scout.httpx, 'AsyncClient', return_value=client):
+            actual = await scout.scout_text_completion([{'role': 'user', 'content': 'Hola'}])
+        self.assertEqual(actual, result)
+        payload = client.post.call_args.kwargs['json']
+        self.assertNotIn('response_format', payload)
+        self.assertNotIn('tools', payload)
+        self.assertTrue(payload['cache_prompt'])
 
 
 if __name__ == '__main__':
