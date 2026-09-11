@@ -265,7 +265,7 @@ async def _completion(
         payload["response_format"] = response_format
     headers = {"Authorization": f"Bearer {settings.AI_API_KEY}"}
     client_timeout = max(settings.AI_AGENT_DEADLINE_SECONDS, settings.AI_FIRST_TOKEN_TIMEOUT_SECONDS, settings.AI_TIMEOUT_SECONDS) + 10.0
-    client = httpx.AsyncClient(timeout=client_timeout)
+    client = httpx.AsyncClient(timeout=client_timeout, trust_env=False)
     metrics = await context_metrics(client, messages, context_chat_id)
     if on_text is not None:
         content = ""
@@ -356,6 +356,7 @@ async def _completion(
             )
             await client.aclose()
     if not stream:
+        started = time.monotonic()
         try:
             response = await client.post(
                 f"{settings.AI_BASE_URL.rstrip('/')}/chat/completions",

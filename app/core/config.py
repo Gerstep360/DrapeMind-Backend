@@ -63,6 +63,7 @@ class Settings(BaseSettings):
     AI_CONTEXT_TOKEN_METRICS: bool = False
     # Opt-in: an independent local planner. Gemma settings remain unchanged.
     SCOUT_ENABLED: bool = False
+    SCOUT_COMPACT_CLARIFICATIONS: bool = True
     SCOUT_BASE_URL: str = "http://127.0.0.1:8089/v1"
     SCOUT_API_KEY: str = "local-no-key"
     SCOUT_MODEL: str = ""

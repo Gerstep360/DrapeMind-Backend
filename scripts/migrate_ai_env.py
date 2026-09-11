@@ -9,6 +9,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 MANAGED = frozenset({
+    "SCOUT_COMPACT_CLARIFICATIONS",
     "AI_CONTEXT_SIZE", "AI_PARALLEL_SLOTS", "AI_THREADS", "AI_MAX_AGENT_STEPS",
     "AI_TURN_TIMEOUT_SECONDS", "AI_TIMEOUT_SECONDS", "AI_MAX_TOKENS",
     "AI_AGENT_MAX_TOKENS", "AI_AGENT_DEADLINE_SECONDS", "AI_FIRST_TOKEN_TIMEOUT_SECONDS",
@@ -80,7 +81,7 @@ def migrate(path):
         shutil.copy2(path, backup)
         os.chmod(backup, 0o600)
         atomic_write(path, result)
-    # Contains only published numeric defaults, never secret/current account values.
+    # Contains only published tuning defaults, never secret/current account values.
     atomic_write(baseline_path, json.dumps(
         {key: defaults[key] for key in sorted(MANAGED & defaults.keys())}, indent=2
     ) + "\n")

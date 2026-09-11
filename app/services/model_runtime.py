@@ -87,7 +87,8 @@ class ModelRuntime:
         root_url = base[:-3] if base.endswith("/v1") else base
         try:
             # A loopback readiness probe must not spend seconds on TCP retries.
-            connect_timeout = 0.25 if httpx.URL(root_url).host in {"localhost", "127.0.0.1", "::1"} else 2.0
+            # Hostnames may need DNS and IPv6/IPv4 fallback; keep their full timeout.
+            connect_timeout = 0.25 if httpx.URL(root_url).host in {"127.0.0.1", "::1"} else 2.0
             async with httpx.AsyncClient(timeout=httpx.Timeout(2.0, connect=connect_timeout), trust_env=False) as client:
                 try:
                     resp = await client.get(f"{root_url}/health")

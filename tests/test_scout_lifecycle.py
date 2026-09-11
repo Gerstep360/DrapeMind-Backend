@@ -11,6 +11,52 @@ from app.services.socket_turn import _connected_turn
 
 
 class LifecycleTests(unittest.IsolatedAsyncioTestCase):
+    async def test_nonstream_completion_returns_generated_response(self):
+        import httpx
+        from app.services import ai
+        payload = {'choices': [{'message': {'content': 'Respuesta de prueba'}, 'finish_reason': 'stop'}]}
+        client = AsyncMock()
+        client.post.return_value = httpx.Response(200, json=payload, request=httpx.Request('POST', 'http://localhost/test'))
+        with patch.object(ai.httpx, 'AsyncClient', return_value=client), patch.object(ai, 'context_metrics', AsyncMock()), patch.object(ai.ai_logger, 'log_gemma_inference') as log:
+            result = await ai._completion([{'role': 'user', 'content': 'Consulta de prueba'}], stream=False)
+        self.assertEqual(result, payload)
+        self.assertGreaterEqual(log.call_args.kwargs['total_seconds'], 0)
+        client.aclose.assert_awaited_once()
+
+    async def test_missing_input_skips_scout_replanning(self):
+        completion = AsyncMock(return_value={'choices': [{'message': {'content': json.dumps({
+            'type': 'finish', 'answer': '¿Qué talla necesitas?'})}}]})
+        async def fake_agent(*args, **kwargs):
+            result = await kwargs['after_tool']({}, 'Necesito un conjunto', ChatContext(),
+                [{'tool': 'recommend_outfit', 'result': {'status': 'needs_input', 'missing_fields': ['size']}}], [])
+            return {'response_meta': {}, 'notices': [], 'composite_sub_tools': [], 'direct_response': result['answer']}
+        gemma = AsyncMock(return_value={'choices': [{'message': {'content': '¿Qué talla necesitas?'}}]})
+        from contextlib import asynccontextmanager
+        @asynccontextmanager
+        async def lease():
+            yield
+        with patch.object(scout, 'scout_completion', completion), patch.object(scout, 'run_gemma_tool_agent', fake_agent), patch.object(scout.model_runtime, 'lease', lease):
+            await scout.run_scout_orchestrator(None, SimpleNamespace(id=1), 'Necesito un conjunto', {}, gemma, AsyncMock(), 1)
+        completion.assert_not_awaited()
+        gemma.assert_awaited_once()
+        self.assertNotIn('get_my_cart(', gemma.call_args.args[0][0]['content'])
+
+    def test_deploy_migration_adds_flag_preserves_custom_values(self):
+        import tempfile
+        from pathlib import Path
+        from scripts.migrate_ai_env import migrate, parse
+        with tempfile.TemporaryDirectory() as directory:
+            env = Path(directory) / '.env'
+            env.write_text('SCOUT_THREADS=2\nJWT_SECRET=fixture-only\n', encoding='utf-8')
+            migrate(env)
+            values = parse(env.read_text(encoding='utf-8'))
+            self.assertEqual(values['SCOUT_COMPACT_CLARIFICATIONS'], 'true')
+            self.assertEqual(values['SCOUT_THREADS'], '2')
+            self.assertEqual(values['JWT_SECRET'], 'fixture-only')
+            env.write_text(env.read_text().replace('SCOUT_COMPACT_CLARIFICATIONS=true', 'SCOUT_COMPACT_CLARIFICATIONS=false'))
+            migrate(env)
+            self.assertEqual(parse(env.read_text())['SCOUT_COMPACT_CLARIFICATIONS'], 'false')
+
     def test_unrequested_filters_rejected(self):
         from app.services.argument_grounding import unsupported_filters
         from app.services.ai_tools import SearchProductsArgs
