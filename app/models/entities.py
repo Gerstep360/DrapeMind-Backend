@@ -313,7 +313,7 @@ class AIInteraction(Base):
     intent: Mapped[str | None] = mapped_column(String(40))
     mensaje_usuario: Mapped[str | None] = mapped_column(Text)
     respuesta: Mapped[str | None] = mapped_column(Text)
-    tool_principal: Mapped[str | None] = mapped_column(String(60))
+    tool_principal: Mapped[str | None] = mapped_column(String(255))
     duracion_ms: Mapped[int | None] = mapped_column(Integer)
     tokens_entrada: Mapped[int | None] = mapped_column(Integer)
     tokens_salida: Mapped[int | None] = mapped_column(Integer)

@@ -421,7 +421,7 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
     try:
         await send({
             "type": "thought",
-            "content": "Preparando a Altair para tu consulta..."
+            "content": "Preparando Altair Mini para tu consulta..." if mode == "mini" else "Preparando a Altair para tu consulta..."
         })
 
         memory = load_ai_memory(session.resumen_contexto)
@@ -581,7 +581,7 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
             }
         )
 
-        if not skill_res.get("requires_llm"):
+        if mode == "mini" or not skill_res.get("requires_llm"):
             direct_text = skill_res.get("direct_response") or skill_res.get("fallback_response") or ""
             if not direct_text:
                 if action_items:
@@ -739,16 +739,17 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
                 await send({"type": "token", "content": chunk})
 
         answer = "".join(answer_parts).strip()
+        clean_tools_str = (",".join(used_tools) or "skill:" + skill.name)[:250]
         interaction = _save_interaction(
             db,
             session,
             "CHAT",
             message,
             answer or f"[{presentation_mode}: {len(action_items)} cards]",
-            ",".join(used_tools) or "skill:" + skill.name,
+            clean_tools_str,
             started,
             {"prompt_tokens": None, "completion_tokens": None,
-             "model": response_meta.get("model_used", settings.AI_MODEL)},
+             "model": response_meta.get("model_used", settings.SCOUT_MODEL if mode == "mini" else settings.AI_MODEL)},
         )
         recommended_product_ids = [
             int(item["id"])
@@ -821,7 +822,7 @@ def _save_interaction(
     session.last_activity_at = datetime.now(timezone.utc)
     interaction = AIInteraction(
         sesion_id=session.id, tipo=kind, mensaje_usuario=message, respuesta=answer,
-        tool_principal=tool, duracion_ms=max(0, int((time.perf_counter() - started) * 1000)),
+        tool_principal=(tool or "")[:250], duracion_ms=max(0, int((time.perf_counter() - started) * 1000)),
         tokens_entrada=usage.get("prompt_tokens"), tokens_salida=usage.get("completion_tokens"),
         modelo=usage.get("model", settings.AI_MODEL), estado=status,
     )
