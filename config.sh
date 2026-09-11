@@ -134,6 +134,31 @@ run_web() {
     read -r
 }
 
+run_uninstall() {
+    local UNINSTALL_SCRIPT=""
+    for candidate in \
+        "${SCRIPT_DIR}/scripts/uninstall_drapemind.sh" \
+        "${ROOT_DIR}/scripts/uninstall_drapemind.sh" \
+        "${BACKEND_DIR}/scripts/deploy/uninstall_drapemind.sh"; do
+        if [[ -f "${candidate}" ]]; then
+            UNINSTALL_SCRIPT="${candidate}"
+            break
+        fi
+    done
+
+    if [[ -z "${UNINSTALL_SCRIPT}" ]]; then
+        echo -e "${COLOR_DANGER}ERROR: No se encontró uninstall_drapemind.sh.${NC}"
+        read -rp "Presiona Enter para continuar..."
+        return 1
+    fi
+
+    chmod +x "${UNINSTALL_SCRIPT}"
+    bash "${UNINSTALL_SCRIPT}"
+    echo ""
+    echo -e "${COLOR_MUTED}Presiona Enter para regresar al menú principal...${NC}"
+    read -r
+}
+
 run_install_all() {
     banner
     echo -e "${COLOR_PRIMARY}Iniciando instalación completa secuencial de Backend y Frontend...${NC}"
@@ -233,6 +258,7 @@ show_menu() {
     echo -e "${COLOR_PRIMARY}│${BOLD}  6 ${NC}${COLOR_PRIMARY}│${NC}  📜  ${BOLD}Ver Logs en Vivo de Backend${NC} (Journalctl drapemind-backend)       ${COLOR_PRIMARY}│${NC}"
     echo -e "${COLOR_PRIMARY}│${BOLD}  7 ${NC}${COLOR_PRIMARY}│${NC}  🧠  ${BOLD}Ver Logs de Llama / IA en Vivo${NC} (Tokens y Generación en vivo)     ${COLOR_PRIMARY}│${NC}"
     echo -e "${COLOR_PRIMARY}│${BOLD}  8 ${NC}${COLOR_PRIMARY}│${NC}  🛡️   ${BOLD}Sincronizar y Proteger .env${NC} (Actualizar variables de IA)         ${COLOR_PRIMARY}│${NC}"
+    echo -e "${COLOR_PRIMARY}│${BOLD}  9 ${NC}${COLOR_PRIMARY}│${NC}  🗑️   ${BOLD}Eliminar Servicio DrapeMind${NC} (Desinstalación Segura y Aislada)   ${COLOR_PRIMARY}│${NC}"
     echo -e "${COLOR_PRIMARY}│${BOLD}  0 ${NC}${COLOR_PRIMARY}│${NC}  🚪  ${BOLD}Salir${NC}                                                               ${COLOR_PRIMARY}│${NC}"
     echo -e "${COLOR_PRIMARY}╰────┴─────────────────────────────────────────────────────────────────────╯${NC}"
     echo ""
@@ -256,6 +282,9 @@ case "${1:-}" in
     --update|-u)
         run_update_all
         ;;
+    --uninstall|--remove)
+        run_uninstall
+        ;;
     --check|-c)
         verify_all
         ;;
@@ -278,21 +307,22 @@ case "${1:-}" in
         echo "Uso: sudo bash config.sh [OPCION]"
         echo ""
         echo "Opciones disponibles:"
-        echo "  --backend,  -b    Ejecuta el menú o tarea de Backend (DrapeMind-Backend/install.sh)"
-        echo "  --web,      -w    Ejecuta el menú o tarea de Frontend (DrapeMind-web/install.sh)"
-        echo "  --all,      -a    Instalación completa de Backend y Frontend"
-        echo "  --update,   -u    Actualiza ambos con Git, migra .env, compila y reinicia"
-        echo "  --check,    -c    Diagnóstico de salud y puertos del servidor"
-        echo "  --logs,     -l    Muestra logs en tiempo real del backend"
+        echo "  --backend,   -b    Ejecuta el menú o tarea de Backend (DrapeMind-Backend/install.sh)"
+        echo "  --web,       -w    Ejecuta el menú o tarea de Frontend (DrapeMind-web/install.sh)"
+        echo "  --all,       -a    Instalación completa de Backend y Frontend"
+        echo "  --update,    -u    Actualiza ambos con Git, migra .env, compila y reinicia"
+        echo "  --uninstall        Desinstala el servicio DrapeMind de forma segura y aislada"
+        echo "  --check,     -c    Diagnóstico de salud y puertos del servidor"
+        echo "  --logs,      -l    Muestra logs en tiempo real del backend"
         echo "  --logs-llama, -ll Muestra logs en tiempo real de llama-server (tokens y generación)"
-        echo "  --help,     -h    Muestra esta ayuda"
+        echo "  --help,      -h    Muestra esta ayuda"
         echo ""
         exit 0
         ;;
     *)
         while true; do
             show_menu
-            read -rp "  ${COLOR_ACCENT}➜${NC} ${BOLD}Selecciona una opción [0-8]:${NC} " opt
+            read -rp "  ${COLOR_ACCENT}➜${NC} ${BOLD}Selecciona una opción [0-9]:${NC} " opt
             case $opt in
                 1)
                     run_backend
@@ -332,6 +362,9 @@ case "${1:-}" in
                         echo -e "${COLOR_MUTED}Presiona Enter para regresar al menú principal...${NC}"
                         read -r
                     fi
+                    ;;
+                9)
+                    run_uninstall
                     ;;
                 0)
                     echo -e "  ${COLOR_MUTED}Saliendo...${NC}"
