@@ -2,7 +2,7 @@ import asyncio
 import unittest
 import json
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi import WebSocketDisconnect
 from app.services import scout_orchestrator as scout
 from app.services.chat_context import ChatContext
@@ -27,6 +27,67 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
             {'occasion': 'casual', 'shoe_size': '200', 'measurements': {'user_chest': 70}},
             'Un conjunto con calzado menor a 200bs', {})
         self.assertEqual(set(invalid), {'occasion', 'shoe_size', 'measurements'})
+
+    def test_outfit_args_supports_base_product_id(self):
+        from app.services.ai_tools import RecommendOutfitArgs
+        args = RecommendOutfitArgs(base_product_id=4, top_size="L", bottom_size="M")
+        self.assertEqual(args.base_product_id, 4)
+        self.assertEqual(args.top_size, "L")
+        self.assertEqual(args.bottom_size, "M")
+
+    async def test_outfit_sanitizes_unsupported_filters_without_aborting(self):
+        from app.services import ai_agent
+        decision = {'type': 'tool', 'tool': 'recommend_outfit', 'arguments': {
+            'occasion': 'casual', 'top_size': 'L', 'bottom_size': 'M', 'shoe_size': '44', 'max_budget': 1000
+        }}
+        complete = AsyncMock(side_effect=[
+            {'choices': [{'message': {'content': json.dumps(decision)}}]},
+            {'choices': [{'message': {'content': json.dumps({'type': 'finish', 'answer': 'Outfit listo'})}}]}
+        ])
+        mock_result = {
+            'ocasion': 'casual', 'tops_sugeridos': [{'id': 1, 'nombre': 'Polera', 'precio': 100}],
+            'inferiores_sugeridos': [{'id': 2, 'nombre': 'Pantalón', 'precio': 200}],
+            'calzado_sugerido': [{'id': 3, 'nombre': 'Calzado', 'precio': 300}],
+            'complementos_abrigos': [],
+        }
+        with patch.object(ai_agent, 'execute_tool', return_value=mock_result) as exec_mock, patch.object(ai_agent, '_cards_from_tool', return_value=[]):
+            # Message does not mention 'casual', so 'occasion' is ungrounded
+            result = await ai_agent.run_gemma_tool_agent(
+                MagicMock(), SimpleNamespace(id=1),
+                'polera en talla L, pantalon en talla M, calzado talla 44, presupuesto máximo de Bs 1000',
+                {}, complete, max_steps=2
+            )
+        exec_mock.assert_called_once()
+        called_args = exec_mock.call_args[0][1]
+        self.assertNotIn('occasion', called_args)
+        self.assertEqual(called_args.get('top_size'), 'L')
+    def test_recommend_outfit_execution_returns_complete_outfit(self):
+        from app.services.ai_tools import _recommend_outfit, RecommendOutfitArgs, ToolContext
+        db = MagicMock()
+        user = SimpleNamespace(id=1)
+        mock_candidates = [
+            {"id": 4, "nombre": "Polera Gráfica Edición Limitada Atelier", "precio": 179.0, "categoria_id": 1, "genero_objetivo": "UNISEX"},
+            {"id": 10, "nombre": "Pantalón Sastrero Atelier", "precio": 289.0, "categoria_id": 2, "genero_objetivo": "UNISEX"},
+            {"id": 20, "nombre": "Mocasín Cuero Atelier", "precio": 349.0, "categoria_id": 3, "genero_objetivo": "UNISEX"},
+        ]
+        var_top = SimpleNamespace(id=101, producto_id=4, color="Blanco Crudo", talla="L", imagen=None, stock_total=10, stock_reservado=0, activo=True)
+        var_bottom = SimpleNamespace(id=102, producto_id=10, color="Negro", talla="M", imagen=None, stock_total=5, stock_reservado=0, activo=True)
+        var_shoe = SimpleNamespace(id=103, producto_id=20, color="Negro", talla="44", imagen=None, stock_total=3, stock_reservado=0, activo=True)
+        
+        scalars_mock = MagicMock()
+        scalars_mock.all.return_value = [var_top, var_bottom, var_shoe]
+        db.scalars.return_value = scalars_mock
+
+        with patch("app.services.ai_tools.search_products", return_value=mock_candidates):
+            raw_args = RecommendOutfitArgs(top_size="L", bottom_size="M", shoe_size="44", max_budget=1000)
+            res = _recommend_outfit(ToolContext(db=db, user=user), raw_args)
+
+        self.assertIn("tops_sugeridos", res)
+        self.assertIn("inferiores_sugeridos", res)
+        self.assertIn("calzado_sugerido", res)
+        self.assertEqual(res["tops_sugeridos"][0]["nombre"], "Polera Gráfica Edición Limitada Atelier")
+        self.assertEqual(res["inferiores_sugeridos"][0]["nombre"], "Pantalón Sastrero Atelier")
+        self.assertEqual(res["calzado_sugerido"][0]["nombre"], "Mocasín Cuero Atelier")
 
     async def test_nonstream_completion_returns_generated_response(self):
         import httpx

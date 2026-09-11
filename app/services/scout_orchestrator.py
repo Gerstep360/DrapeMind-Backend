@@ -75,6 +75,9 @@ ScoutDecision.model_rebuild()
 
 SCOUT_SYSTEM = (
     'Selecciona una herramienta para cumplir la petición. Devuelve JSON con action y arguments. '
+    'Si el usuario menciona "perchero", "carrito" o "bolsa", la herramienta es get_my_cart. '
+    'Para completar un outfit a partir de un producto o prenda concreta (ej. producto 4), usa recommend_outfit indicando base_product_id. '
+    'Para armar, diseñar o sugerir outfits, looks o combinaciones de estilo, usa recommend_outfit con las tallas o presupuesto solicitados. '
     'Si el usuario solicita consultar, buscar o revisar información, action debe ser el nombre de una herramienta disponible. '
     'Las herramientas acceden a la cuenta autenticada. No repitas la petición ni pidas permiso para leer datos. '
     'Solo para charla sin consultas: action="reply",answer="respuesta breve en español". '

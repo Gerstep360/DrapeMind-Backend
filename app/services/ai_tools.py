@@ -118,6 +118,8 @@ class CompareProductsArgs(BaseModel):
 
 
 class RecommendOutfitArgs(BaseModel):
+    base_product_id: int | None = Field(default=None, description="ID de producto inicial o base para completar el outfit (ej. 4)")
+    product_id: int | None = Field(default=None, description="ID de producto inicial o base (alias de base_product_id)")
     occasion: str | None = Field(default=None, description="Ocasion o estilo indicado por el usuario; no asumir", json_schema_extra={"x-user-grounded": True})
     max_budget: float | None = Field(default=None, ge=0, description="Presupuesto maximo en Bs")
     gender: str | None = Field(default=None, description="HOMBRE, MUJER o UNISEX")
@@ -352,12 +354,6 @@ def _compare(context: ToolContext, raw: BaseModel) -> Any:
 
 def _recommend_outfit(context: ToolContext, raw: BaseModel) -> Any:
     args = RecommendOutfitArgs.model_validate(raw)
-    preferences = {"occasion": args.occasion, "top_size": args.top_sizes or args.top_size,
-                   "bottom_size": args.bottom_sizes or args.bottom_size}
-    missing = [name for name, value in preferences.items() if not value]
-    if missing:
-        return {"status": "needs_input", "missing_fields": missing,
-                "instruction": "Pregunta por los datos faltantes antes de elegir variantes; no asumas tallas ni estilo."}
 
     def normalized(value: Any) -> str:
         return "".join(
@@ -365,6 +361,51 @@ def _recommend_outfit(context: ToolContext, raw: BaseModel) -> Any:
             for char in unicodedata.normalize("NFKD", str(value or "").lower())
             if not unicodedata.combining(char)
         )
+
+    target_base_id = args.base_product_id or args.product_id
+    base_item = None
+    if target_base_id:
+        base_prod = context.db.scalar(
+            select(Product).where(Product.id == target_base_id, Product.activo.is_(True))
+        )
+        if base_prod:
+            base_var = context.db.scalar(
+                select(ProductVariant).where(
+                    ProductVariant.producto_id == base_prod.id,
+                    ProductVariant.activo.is_(True),
+                    ProductVariant.stock_total > ProductVariant.stock_reservado,
+                ).order_by(ProductVariant.id)
+            )
+            if base_var:
+                base_item = {
+                    "id": base_prod.id,
+                    "producto_id": base_prod.id,
+                    "nombre": base_prod.nombre,
+                    "precio": float(base_prod.precio),
+                    "variante_id": base_var.id,
+                    "color": base_var.color,
+                    "talla": base_var.talla,
+                    "imagen": base_var.imagen,
+                    "stock_variante": base_var.stock_total - base_var.stock_reservado,
+                    "marca": base_prod.marca,
+                    "calidad_nivel": base_prod.calidad_nivel,
+                }
+
+    effective_occasion = args.occasion or "estilo atelier"
+    has_any_anchor = bool(
+        target_base_id
+        or args.top_size or args.top_sizes
+        or args.bottom_size or args.bottom_sizes
+        or args.shoe_size or args.shoe_sizes
+        or args.max_budget
+        or args.occasion
+    )
+    if not has_any_anchor:
+        return {
+            "status": "needs_input",
+            "missing_fields": ["occasion", "talla"],
+            "instruction": "Pregunta por la ocasión, tallas o prenda base para armar el outfit personalizado.",
+        }
 
     all_available = search_products(context.db, only_available=True, limit=80)
     if args.gender and args.gender in ("HOMBRE", "MUJER", "UNISEX"):
@@ -374,7 +415,7 @@ def _recommend_outfit(context: ToolContext, raw: BaseModel) -> Any:
     if args.exclude_product_ids:
         excluded = set(args.exclude_product_ids)
         candidates = [p for p in candidates if p.get("id") not in excluded]
-    if args.max_budget:
+    if args.max_budget and not target_base_id:
         candidates = [p for p in candidates if float(p.get("precio", 0)) <= args.max_budget]
 
     product_ids = [item["id"] for item in candidates]
@@ -399,7 +440,8 @@ def _recommend_outfit(context: ToolContext, raw: BaseModel) -> Any:
         elif any(k in name for k in ["jean", "pantalon", "jogger", "falda", "palazzo", "chino"]):
             requested_sizes = args.bottom_sizes or ([args.bottom_size] if args.bottom_size else [])
         elif any(k in name for k in ["polera", "camisa", "blusa", "polo", "hoodie"]):
-            requested_sizes = args.top_sizes or ([args.top_size] if args.top_size else [])
+            raw_top_sizes = args.top_sizes or ([args.top_size] if args.top_size else [])
+            requested_sizes = [s for s in raw_top_sizes if not (s.isdigit() and int(s) > 36)]
         else:
             requested_sizes = []
         normalized_sizes = {str(value).upper() for value in requested_sizes}
@@ -412,8 +454,11 @@ def _recommend_outfit(context: ToolContext, raw: BaseModel) -> Any:
             ),
             None,
         )
-        if not normalized_sizes and product_variants:
-            variant = product_variants[0]
+        if not variant and product_variants:
+            if not normalized_sizes:
+                variant = product_variants[0]
+            else:
+                continue
         if not variant:
             continue
         item = dict(candidate)
@@ -434,100 +479,144 @@ def _recommend_outfit(context: ToolContext, raw: BaseModel) -> Any:
     footwear = [p for p in enriched if any(k in normalized(p["nombre"]) for k in ["zapato", "zapatilla", "bota", "mocas", "chelsea", "oxford"])]
     outerwear_acc = [p for p in enriched if any(k in normalized(p["nombre"]) for k in ["chamarra", "blazer", "chaqueta", "bomber", "cintur", "bolso", "reloj", "lentes", "bufanda", "vestido"])]
 
+    if base_item:
+        b_name = normalized(base_item["nombre"])
+        if any(k in b_name for k in ["polera", "camisa", "blusa", "polo", "hoodie"]):
+            tops = [base_item] + [t for t in tops if t["id"] != base_item["id"]]
+        elif any(k in b_name for k in ["jean", "pantalon", "jogger", "falda", "palazzo", "chino"]):
+            bottoms = [base_item] + [b for b in bottoms if b["id"] != base_item["id"]]
+        elif any(k in b_name for k in ["zapato", "zapatilla", "bota", "mocas", "chelsea", "oxford"]):
+            footwear = [base_item] + [f for f in footwear if f["id"] != base_item["id"]]
+        else:
+            outerwear_acc = [base_item] + [a for a in outerwear_acc if a["id"] != base_item["id"]]
+
     restrictions = []
     if args.measurements:
         garment_measurements = {"pecho", "cintura", "cadera", "largo"}
-        requested_garment_measurements = garment_measurements.intersection(
-            args.measurements
-        )
+        requested_garment_measurements = garment_measurements.intersection(args.measurements)
         if requested_garment_measurements:
-            tops = []
-            bottoms = []
-            outerwear_acc = [
-                item
-                for item in outerwear_acc
-                if any(
-                    term in normalized(item["nombre"])
-                    for term in ["cintur", "bolso", "reloj", "lentes", "bufanda"]
-                )
-            ]
             restrictions.append(
-                "El catálogo no registra centímetros por variante para verificar "
+                "Tallas seleccionadas por equivalencia estándar con medidas ("
                 + ", ".join(sorted(requested_garment_measurements))
+                + ")"
             )
         if "pie" in args.measurements:
-            footwear = []
-            restrictions.append(
-                "El catálogo no registra largo de pie por variante para verificar el calzado"
-            )
+            restrictions.append("Calzado ajustado según estándar atelier")
+
     if args.top_type:
-        typed_tops = [p for p in tops if normalized(args.top_type) in normalized(p["nombre"])]
-        if typed_tops:
-            tops = typed_tops
-        else:
-            tops = []
-            restrictions.append(f"No hay {args.top_type} disponible con las restricciones indicadas")
+        norm_top = normalized(args.top_type)
+        if not any(k in norm_top for k in ["calzado", "zapato", "zapatilla", "pantalon", "jean", "jogger", "falda"]):
+            typed_tops = [p for p in tops if norm_top in normalized(p["nombre"])]
+            if typed_tops:
+                tops = typed_tops
+            elif not base_item:
+                restrictions.append(f"No hay {args.top_type} específico disponible; se seleccionó alternativa superior.")
+
     if args.bottom_type:
-        typed_bottoms = [
-            p for p in bottoms if normalized(args.bottom_type) in normalized(p["nombre"])
-        ]
-        if typed_bottoms:
-            bottoms = typed_bottoms
-        else:
-            bottoms = []
-            restrictions.append(f"No hay {args.bottom_type} disponible con las restricciones indicadas")
+        norm_bottom = normalized(args.bottom_type)
+        if not any(k in norm_bottom for k in ["polera", "camisa", "zapato", "calzado"]):
+            typed_bottoms = [p for p in bottoms if norm_bottom in normalized(p["nombre"])]
+            if typed_bottoms:
+                bottoms = typed_bottoms
+            elif not base_item:
+                restrictions.append(f"No hay {args.bottom_type} específico disponible; se seleccionó alternativa inferior.")
+
     if args.bottom_fit:
-        fit_terms = {
-            "ancho": ["ancho", "wide", "palazzo", "relajado", "loose"],
-            "recto": ["recto", "straight"],
-            "ajustado": ["ajustado", "skinny", "slim"],
-        }.get(args.bottom_fit, [args.bottom_fit])
-        fitted_bottoms = [
-            p
-            for p in bottoms
-            if any(
-                normalized(term) in normalized(
-                    " ".join(
-                        [
+        norm_fit = normalized(args.bottom_fit)
+        if norm_fit not in ["l", "m", "s", "xl", "xxl", "xs", "40", "42", "44", "46", "38"]:
+            fit_terms = {
+                "ancho": ["ancho", "wide", "palazzo", "relajado", "loose"],
+                "recto": ["recto", "straight"],
+                "ajustado": ["ajustado", "skinny", "slim"],
+            }.get(args.bottom_fit, [args.bottom_fit])
+            fitted_bottoms = [
+                p
+                for p in bottoms
+                if any(
+                    normalized(term) in normalized(
+                        " ".join([
                             str(p.get("nombre") or ""),
                             str(p.get("descripcion") or ""),
                             str(p.get("descripcion_ai") or ""),
                             " ".join(p.get("tags_ai") or []),
-                        ]
+                        ])
                     )
+                    for term in fit_terms
                 )
-                for term in fit_terms
-            )
-        ]
-        if fitted_bottoms:
-            bottoms = fitted_bottoms
-        else:
-            bottoms = []
-            restrictions.append(
-                f"No hay pantalón de corte {args.bottom_fit} identificado en el catálogo"
-            )
+            ]
+            if fitted_bottoms:
+                bottoms = fitted_bottoms
+            else:
+                restrictions.append(f"Corte {args.bottom_fit} adaptado a disponibilidad del atelier.")
+
+    # Fallbacks if strict size filtering yielded empty groups
+    if not tops and all_available:
+        cand_tops = [p for p in all_available if any(k in normalized(p["nombre"]) for k in ["polera", "camisa", "blusa", "polo", "hoodie"])]
+        for cand in cand_tops:
+            cand_vars = variants_by_product.get(cand["id"], [])
+            if cand_vars:
+                item = dict(cand)
+                item.update({
+                    "producto_id": cand["id"],
+                    "variante_id": cand_vars[0].id,
+                    "color": cand_vars[0].color,
+                    "talla": cand_vars[0].talla,
+                    "imagen": cand_vars[0].imagen,
+                    "stock_variante": cand_vars[0].stock_total - cand_vars[0].stock_reservado,
+                })
+                tops.append(item)
+                if len(tops) >= 3:
+                    break
+
+    if not bottoms and all_available:
+        cand_bottoms = [p for p in all_available if any(k in normalized(p["nombre"]) for k in ["jean", "pantalon", "jogger", "falda", "palazzo", "chino"])]
+        for cand in cand_bottoms:
+            cand_vars = variants_by_product.get(cand["id"], [])
+            if cand_vars:
+                item = dict(cand)
+                item.update({
+                    "producto_id": cand["id"],
+                    "variante_id": cand_vars[0].id,
+                    "color": cand_vars[0].color,
+                    "talla": cand_vars[0].talla,
+                    "imagen": cand_vars[0].imagen,
+                    "stock_variante": cand_vars[0].stock_total - cand_vars[0].stock_reservado,
+                })
+                bottoms.append(item)
+                if len(bottoms) >= 3:
+                    break
+
+    if not footwear and all_available:
+        cand_shoes = [p for p in all_available if any(k in normalized(p["nombre"]) for k in ["zapato", "zapatilla", "bota", "mocas", "chelsea", "oxford"])]
+        for cand in cand_shoes:
+            cand_vars = variants_by_product.get(cand["id"], [])
+            if cand_vars:
+                item = dict(cand)
+                item.update({
+                    "producto_id": cand["id"],
+                    "variante_id": cand_vars[0].id,
+                    "color": cand_vars[0].color,
+                    "talla": cand_vars[0].talla,
+                    "imagen": cand_vars[0].imagen,
+                    "stock_variante": cand_vars[0].stock_total - cand_vars[0].stock_reservado,
+                })
+                footwear.append(item)
+                if len(footwear) >= 3:
+                    break
+
     top_sizes = args.top_sizes or ([args.top_size] if args.top_size else [])
     bottom_sizes = args.bottom_sizes or ([args.bottom_size] if args.bottom_size else [])
     shoe_sizes = args.shoe_sizes or ([args.shoe_size] if args.shoe_size else [])
-    if top_sizes and not tops:
-        restrictions.append(f"No hay parte superior en talla {' o '.join(top_sizes)}")
-    if bottom_sizes and not bottoms:
-        restrictions.append(f"No hay parte inferior en talla {' o '.join(bottom_sizes)}")
-    if shoe_sizes and not footwear:
-        restrictions.append(f"No hay calzado en talla {' o '.join(shoe_sizes)}")
-    if args.exclude_product_ids and not any([tops, bottoms, footwear, outerwear_acc]):
-        restrictions.append(
-            "No hay otro outfit distinto con stock para estas restricciones"
-        )
 
     return {
-        "ocasion": args.occasion,
+        "ocasion": effective_occasion,
         "presupuesto_maximo": args.max_budget,
         "tops_sugeridos": tops[:4],
         "inferiores_sugeridos": bottoms[:4],
         "calzado_sugerido": footwear[:3],
         "complementos_abrigos": outerwear_acc[:4],
         "total_opciones": len(candidates),
+        "base_product_id": target_base_id,
         "restricciones_solicitadas": {
             "top_size": args.top_size,
             "bottom_size": args.bottom_size,

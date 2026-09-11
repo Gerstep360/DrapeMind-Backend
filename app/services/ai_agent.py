@@ -380,10 +380,14 @@ async def run_gemma_tool_agent(
             unsupported = unsupported_filters(definition.args_model.model_json_schema(), arguments, message,
                                               previous_constraints) if definition else []
             if unsupported:
-                state = state_before_decision
-                result = {"error": "Filtros sin respaldo en la petición o restricciones previas.",
-                          "unsupported_filters": unsupported,
-                          "next": "Corrige solo esos filtros o pide aclaración. No se ejecutó la búsqueda."}
+                sanitized_arguments = {k: v for k, v in arguments.items() if k not in unsupported}
+                if tool_name == "recommend_outfit" or sanitized_arguments:
+                    result = execute_tool(tool_name, sanitized_arguments, ToolContext(db=db, user=user))
+                else:
+                    state = state_before_decision
+                    result = {"error": "Filtros sin respaldo en la petición o restricciones previas.",
+                              "unsupported_filters": unsupported,
+                              "next": "Corrige solo esos filtros o pide aclaración. No se ejecutó la búsqueda."}
             else:
                 result = execute_tool(tool_name, arguments, ToolContext(db=db, user=user))
         except (ValidationError, ValueError) as exc:
@@ -465,7 +469,9 @@ async def run_gemma_tool_agent(
         "agent_protocol_valid": protocol_valid,
     }
     if (outfit_step and isinstance(outfit_step["result"], dict)
-            and outfit_step["result"].get("status") != "needs_input"):
+            and outfit_step["result"].get("status") != "needs_input"
+            and not outfit_step["result"].get("error")
+            and outfit_step["result"].get("seleccion")):
         result = outfit_step["result"]
         notices.extend([
             {"type": "warning", "title": "Prenda no encontrada", "message": value}
