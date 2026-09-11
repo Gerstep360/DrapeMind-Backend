@@ -19,6 +19,7 @@ from app.services.ai_tools import tool_catalog
 from app.services.context_prompt import build_messages, prompt_sections
 from app.services.context_metrics import context_metrics
 from app.services.model_runtime import ModelRuntime, ModelRuntimeError, model_runtime
+from app.services.ai_logger import ai_logger
 
 logger = logging.getLogger("drapemind.ai.scout")
 # Admission control within one backend worker, not a distributed lock.
@@ -152,7 +153,7 @@ async def shutdown_scout():
         await _runtime.shutdown()
 
 
-async def scout_completion(messages, chat_id=None, **_):
+async def scout_completion(messages, chat_id=None, step=1, **_):
     """Strict structured planning. Never silently substitute a keyword router."""
     runtime = scout_runtime()
     started = time.monotonic()
@@ -205,6 +206,26 @@ async def scout_completion(messages, chat_id=None, **_):
         choice["message"]["content"] = decision.model_dump_json(exclude_none=True, exclude_defaults=True)
         usage = result.get("usage") or {}
         timings = result.get("timings") or {}
+        duration_ms = round((time.monotonic() - started) * 1000)
+
+        decision_detail = ""
+        if decision.type == "tool":
+            decision_detail = decision.tool or f"{len(decision.calls or [])} llamadas planificadas"
+        elif decision.type == "finish":
+            decision_detail = decision.answer[:80] if decision.answer else ""
+        elif decision.type == "delegate":
+            decision_detail = "Delegación a Gemma 4 para síntesis/razonamiento"
+
+        ai_logger.log_scout_decision(
+            chat_id=chat_id or 0,
+            step=step,
+            decision_type=decision.type,
+            decision_detail=decision_detail or decision.type,
+            usage=usage,
+            timings=timings,
+            duration_ms=duration_ms,
+        )
+
         logger.info("AI_SCOUT %s", json.dumps({
             "chat": chat_id, "route": decision.type,
             "prompt_characters": sum(len(m.get("content", "")) for m in messages),
@@ -212,7 +233,7 @@ async def scout_completion(messages, chat_id=None, **_):
             "completion_tokens": usage.get("completion_tokens"),
             "prefill_ms": timings.get("prompt_ms"),
             "cached_tokens": (usage.get("prompt_tokens_details") or {}).get("cached_tokens"),
-            "total_ms": round((time.monotonic() - started) * 1000),
+            "total_ms": duration_ms,
             "history_messages_sent": 0,
         }))
         return result
@@ -228,10 +249,16 @@ async def run_scout_orchestrator(db, user, message, memory, gemma_complete, emit
     scout_calls = 0
     budget = "normal"
     started = time.monotonic()
+    scout_tokens = {"prompt": 0, "completion": 0}
+    gemma_tokens = {"prompt": 0, "completion": 0}
+
     async def plan(messages, **kwargs):
         nonlocal scout_calls, budget
         scout_calls += 1
-        result = await scout_completion(messages, chat_id=chat_id, **kwargs)
+        result = await scout_completion(messages, chat_id=chat_id, step=scout_calls, **kwargs)
+        u = result.get("usage") or {}
+        scout_tokens["prompt"] += u.get("prompt_tokens", 0) or 0
+        scout_tokens["completion"] += u.get("completion_tokens", 0) or 0
         decision = json.loads(result["choices"][0]["message"]["content"])
         budget = decision.get("response_budget", "normal")
         # Route is the model's explicit decision. Missing/uncalibrated confidence
@@ -254,6 +281,9 @@ async def run_scout_orchestrator(db, user, message, memory, gemma_complete, emit
                     "deep": settings.AI_RESPONSE_DEEP_TOKENS,
                 }[budget] + settings.AI_REASONING_BUDGET, stream=False, allow_partial=True,
             )
+        u = result.get("usage") or {}
+        gemma_tokens["prompt"] += u.get("prompt_tokens", 0) or 0
+        gemma_tokens["completion"] += u.get("completion_tokens", 0) or 0
         truncated = result["choices"][0].get("finish_reason") == "length"
         answer = result["choices"][0]["message"].get("content") or ""
         if not answer.strip():
@@ -278,7 +308,7 @@ async def run_scout_orchestrator(db, user, message, memory, gemma_complete, emit
             result = await run_gemma_tool_agent(
                 db, user, message, memory, plan, emit=emit,
                 max_steps=settings.SCOUT_MAX_STEPS, prompt_factory=scout_prompt, delegate=delegate,
-                after_tool=continue_after_tool,
+                after_tool=continue_after_tool, chat_id=chat_id,
             )
     result["response_meta"]["agent_mode"] = "scout_tools_gemma_on_demand"
     result["response_meta"]["model_used"] = settings.AI_MODEL if delegated else settings.SCOUT_MODEL
@@ -292,9 +322,23 @@ async def run_scout_orchestrator(db, user, message, memory, gemma_complete, emit
             "type": "warning", "title": "Respuesta parcial",
             "message": "Se alcanzó el límite de extensión. Puedes pedir que continúe o amplíe la explicación.",
         })
+    turn_ms = round((time.monotonic() - started) * 1000)
+    user_name = getattr(user, "nombre", None) or getattr(user, "username", None) or "Cliente"
+    ai_logger.log_turn_summary(
+        chat_id=chat_id,
+        user_name=user_name,
+        duration_ms=turn_ms,
+        routing_mode="scout_delegated" if delegated else "scout_direct",
+        scout_calls=scout_calls,
+        gemma_calls=int(delegated),
+        tools_used=[st["name"] for st in result.get("composite_sub_tools", []) if isinstance(st, dict) and st.get("name")],
+        scout_tokens=scout_tokens,
+        gemma_tokens=gemma_tokens,
+        notices=result.get("notices"),
+    )
     logger.info("AI_TURN %s", json.dumps({
         "chat": chat_id, "scout_calls": scout_calls, "gemma_calls": int(delegated),
         "tools": len(result.get("composite_sub_tools", [])), "response_budget": budget,
-        "total_ms": round((time.monotonic() - started) * 1000),
+        "total_ms": turn_ms,
     }))
     return result

@@ -26,6 +26,7 @@ from app.services.ai_memory import build_session_summary, load_ai_memory, merge_
 from app.services.chat_sessions import owned_session
 from app.services.context_metrics import context_metrics
 from app.services.model_runtime import ModelRuntimeError, model_runtime
+from app.services.ai_logger import ai_logger
 
 logger = logging.getLogger("drapemind.ai")
 
@@ -336,12 +337,23 @@ async def _completion(
                 "puedes reintentar. Si se repite, revisa la carga y los logs de llama-server."
             ) from exc
         finally:
+            elapsed_s = time.monotonic() - started
             logger.info("agent_inference elapsed=%.2fs first_delta=%s answer_chars=%d reasoning_chars=%d finish=%s",
-                        time.monotonic() - started, first_delta, len(content), reasoning_chars, finish_reason)
+                        elapsed_s, first_delta, len(content), reasoning_chars, finish_reason)
             logger.info("AI_INFERENCE %s", json.dumps({"chat": context_chat_id,
-                "ttft_seconds": first_delta, "total_seconds": time.monotonic() - started,
+                "ttft_seconds": first_delta, "total_seconds": elapsed_s,
                 "prompt_tokens": usage.get("prompt_tokens"), "prefill_ms": timings.get("prompt_ms"),
                 "cached_tokens": (usage.get("prompt_tokens_details") or {}).get("cached_tokens")}))
+            ai_logger.log_gemma_inference(
+                chat_id=context_chat_id or 0,
+                ttft_seconds=first_delta,
+                total_seconds=elapsed_s,
+                usage=usage,
+                timings=timings,
+                reasoning_chars=reasoning_chars,
+                finish_reason=finish_reason or "stop",
+                model_name=settings.AI_MODEL,
+            )
             await client.aclose()
     if not stream:
         try:
@@ -361,7 +373,21 @@ async def _completion(
             if response.status_code >= 400:
                 logger.error("LLM Error %d: %s", response.status_code, response.text)
             response.raise_for_status()
-            return response.json()
+            res_json = response.json()
+            u = res_json.get("usage") or {}
+            t = res_json.get("timings") or {}
+            ch = res_json.get("choices", [{}])[0] if res_json.get("choices") else {}
+            ai_logger.log_gemma_inference(
+                chat_id=context_chat_id or 0,
+                ttft_seconds=None,
+                total_seconds=time.monotonic() - started,
+                usage=u,
+                timings=t,
+                reasoning_chars=0,
+                finish_reason=ch.get("finish_reason", "stop"),
+                model_name=settings.AI_MODEL,
+            )
+            return res_json
         finally:
             await client.aclose()
     return client, payload, headers
@@ -380,6 +406,14 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
         getattr(user, "nombre", None)
         or getattr(user, "username", None)
         or "Cliente"
+    )
+
+    ai_logger.log_new_message(
+        chat_id=session.id,
+        user_id=user.id,
+        user_name=user_name,
+        message=message,
+        scout_enabled=settings.SCOUT_ENABLED,
     )
 
     try:
@@ -424,13 +458,26 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
                         async with model_runtime.lease():
                             skill_res = await run_gemma_tool_agent(
                                 db, user, message, memory, agent_complete, emit=send,
-                                max_steps=settings.AI_MAX_AGENT_STEPS,
+                                max_steps=settings.AI_MAX_AGENT_STEPS, chat_id=session.id,
                             )
             except TimeoutError as exc:
                 raise ModelRuntimeError(
                     "La consulta superó el tiempo total permitido. Se canceló el turno; "
                     "el servidor está usando Gemma sin Scout. Revisa SCOUT_ENABLED."
                 ) from exc
+            legacy_ms = max(0, int((time.perf_counter() - started) * 1000))
+            ai_logger.log_turn_summary(
+                chat_id=session.id,
+                user_name=user_name,
+                duration_ms=legacy_ms,
+                routing_mode="legacy_gemma",
+                scout_calls=0,
+                gemma_calls=1,
+                tools_used=skill_res.get("composite_sub_tools") or ([skill_res["tool_name"]] if skill_res.get("tool_name") else []),
+                scout_tokens={"prompt": 0, "completion": 0},
+                gemma_tokens={"prompt": 0, "completion": 0},
+                notices=skill_res.get("notices"),
+            )
 
         skill = SimpleNamespace(name="gemma_tool_agent")
         tool_name = skill_res.get("tool_name")

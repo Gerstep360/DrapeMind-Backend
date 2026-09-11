@@ -1,6 +1,7 @@
 import asyncio
 import json
 import re
+import time
 from typing import Any, Awaitable, Callable
 
 from pydantic import ValidationError
@@ -14,6 +15,7 @@ from app.services.ai_tools import TOOLS, ToolContext, execute_tool, tool_catalog
 from app.services.store import get_product_detail
 from app.services.chat_context import read_context, update_context, observe_cards, serialize_observation
 from app.services.context_prompt import build_messages, prompt_sections
+from app.services.ai_logger import ai_logger
 
 
 CompleteFn = Callable[..., Awaitable[dict[str, Any]]]
@@ -224,6 +226,7 @@ async def run_gemma_tool_agent(
     prompt_factory=prompt_sections,
     delegate: Callable[..., Awaitable[str]] | None = None,
     after_tool: Callable[..., Awaitable[dict | None]] | None = None,
+    chat_id: int | str | None = None,
 ) -> dict[str, Any]:
     """Shared bounded tool loop: the configured planner chooses, services validate."""
     state = read_context(memory)
@@ -362,10 +365,21 @@ async def run_gemma_tool_agent(
                 "arguments": arguments,
             }
         )
+        tool_start_time = time.perf_counter()
         try:
             result = execute_tool(tool_name, arguments, ToolContext(db=db, user=user))
         except (ValidationError, ValueError) as exc:
             result = {"error": f"Argumentos rechazados: {exc}"}
+        tool_duration_ms = (time.perf_counter() - tool_start_time) * 1000.0
+        result_count = len(result) if isinstance(result, list) else (0 if isinstance(result, dict) and result.get("error") else 1)
+        ai_logger.log_tool_execution(
+            chat_id=chat_id or getattr(user, "id", 0),
+            tool_name=tool_name,
+            args=arguments,
+            results_count=result_count,
+            duration_ms=tool_duration_ms,
+            is_error=isinstance(result, dict) and bool(result.get("error")),
+        )
         steps.append({"name": tool_name, "args": arguments, "result": result, "reason": reason})
         definition = TOOLS.get(tool_name)
         if definition and definition.card_renderer:
