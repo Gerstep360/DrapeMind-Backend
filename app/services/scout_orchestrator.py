@@ -277,10 +277,110 @@ async def run_scout_orchestrator(db, user, message, memory, gemma_complete, emit
         result["choices"][0]["message"]["content"] = json.dumps(decision, ensure_ascii=False)
         return result
 
+    def synthesize_mini_stylist_answer(observations: list[dict], cards: list[dict], current_message: str) -> str:
+        """Fast, rich response synthesizer for Altair Mini. Avoids Gemma CPU load while providing full stylist answers."""
+        if not observations:
+            if cards:
+                return f"He seleccionado {len(cards)} pieza(s) de nuestro showroom atelier para tu consulta."
+            return "He revisado tu consulta en el showroom atelier. ¿En qué más puedo asistirte hoy?"
+
+        latest = observations[-1]
+        tool = latest.get("tool", "")
+        res = latest.get("result")
+
+        if tool == "get_my_cart":
+            if isinstance(res, dict):
+                items = res.get("items") or []
+                if not items:
+                    return "Tu perchero o carrito está actualmente vacío. Puedes explorar las colecciones de nuestro showroom para agregar prendas a tu selección."
+                total_items = res.get("total_items") or len(items)
+                subtotal = res.get("subtotal") or sum(it.get("subtotal", 0) for it in items)
+                lines = [f"En tu carrito tienes {total_items} artículo(s):\n"]
+                for idx, it in enumerate(items, 1):
+                    name = it.get("nombre", "Prenda")
+                    color = it.get("color", "")
+                    talla = it.get("talla", "")
+                    qty = it.get("cantidad", 1)
+                    precio = it.get("precio_unitario", 0)
+                    item_sub = it.get("subtotal", precio * qty)
+                    details = []
+                    if color: details.append(f"Color: {color}")
+                    if talla: details.append(f"Talla: {talla}")
+                    details.append(f"Cantidad: {qty}")
+                    details.append(f"Precio unitario: {precio}")
+                    lines.append(f"{idx}. **{name}** ({', '.join(details)}).\n   Subtotal del artículo: {item_sub}.")
+                lines.append(f"\nEl subtotal actual del carrito es de **Bs {subtotal:,.2f}**.")
+                return "\n".join(lines)
+
+        if tool == "recommend_outfit":
+            if isinstance(res, dict):
+                total = res.get("seleccion_total")
+                items = res.get("seleccion") or []
+                if items:
+                    lines = [f"Diseñé un outfit para ti con {len(items)} prendas verificadas en showroom:\n"]
+                    for idx, it in enumerate(items, 1):
+                        name = it.get("nombre") or it.get("producto_nombre", "Prenda")
+                        talla = it.get("talla", "")
+                        color = it.get("color", "")
+                        precio = it.get("precio", 0)
+                        desc = f"{name}" + (f" ({color}, {talla})" if color or talla else "") + f" — Bs {precio:,.2f}"
+                        lines.append(f"{idx}. **{desc}**")
+                    if total:
+                        lines.append(f"\n**Total del look:** Bs {total:,.2f}")
+                    return "\n".join(lines)
+
+        if tool in ("search_products", "get_trending_pieces", "get_new_arrivals", "find_alternatives"):
+            if isinstance(res, list) and res:
+                lines = [f"Encontré {len(res)} prenda(s) disponibles en showroom que encajan con tu estilo:\n"]
+                for idx, it in enumerate(res[:5], 1):
+                    name = it.get("nombre", "Prenda")
+                    precio = it.get("precio", 0)
+                    calidad = it.get("calidad_nivel", "")
+                    lines.append(f"{idx}. **{name}** — Bs {precio:,.2f}" + (f" · Calidad {calidad}/5" if calidad else ""))
+                return "\n".join(lines)
+
+        if tool == "get_stock":
+            if isinstance(res, list) and res:
+                lines = ["Disponibilidad de stock verificada en tienda:\n"]
+                for it in res[:6]:
+                    suc = it.get("sucursal", "Tienda Central")
+                    talla = it.get("talla", "")
+                    disp = it.get("disponible", 0)
+                    color = it.get("color", "")
+                    lines.append(f"• **{suc}**: Talla {talla}" + (f" ({color})" if color else "") + f" — {disp} unidad(es) disponible(s)")
+                return "\n".join(lines)
+            return "No hay unidades disponibles de esta prenda o talla en showroom en este momento."
+
+        if tool == "get_my_orders":
+            if isinstance(res, list) and res:
+                lines = [f"Tienes {len(res)} pedido(s) registrado(s):\n"]
+                for it in res[:5]:
+                    oid = it.get("id") or it.get("pedido_id")
+                    est = it.get("estado", "")
+                    tot = it.get("total", 0)
+                    lines.append(f"• **Pedido #{oid}** (Estado: {est}) — Total Bs {tot}")
+                return "\n".join(lines)
+            return "No tienes pedidos recientes registrados en tu cuenta."
+
+        if tool == "get_my_reservations":
+            if isinstance(res, list) and res:
+                lines = [f"Tienes {len(res)} reserva(s) activa(s) en tienda:\n"]
+                for it in res[:5]:
+                    rid = it.get("id")
+                    exp = it.get("expira_en") or it.get("fecha_expiracion", "")
+                    lines.append(f"• **Reserva #{rid}** (Vigencia: {exp})")
+                return "\n".join(lines)
+            return "No tienes reservas activas en este momento."
+
+        if cards:
+            return f"Encontré {len(cards)} prenda(s) en showroom que se ajustan a tu solicitud."
+
+        return "He procesado tu consulta con la selección disponible en showroom atelier."
+
     async def delegate(current_message, state, observations, *, clarification=False):
         nonlocal delegated, truncated
         if not allow_delegation:
-            return "Consulta completada con éxito por Altair Mini."
+            return synthesize_mini_stylist_answer(observations, [], current_message)
         if delegated:
             raise ModelRuntimeError("Este turno ya utilizó su respuesta de Gemma.")
         delegated = True
@@ -335,16 +435,11 @@ async def run_scout_orchestrator(db, user, message, memory, gemma_complete, emit
             return {"type": "finish", "answer": decision["intro"], "presentation": "mixed"}
         if route in {"cards", "delegate"}:
             if not allow_delegation:
-                # Altair Mini: nunca despertar a Gemma
+                # Altair Mini: sintetizar respuesta estilista rica de forma instantánea sin Gemma
                 if decision.get("intro", "").strip():
                     return {"type": "finish", "answer": decision["intro"], "presentation": "mixed" if cards else "text"}
-                if cards:
-                    return {
-                        "type": "finish",
-                        "answer": f"Encontré {len(cards)} prenda(s) en showroom que se ajustan a tu solicitud.",
-                        "presentation": "mixed"
-                    }
-                return {"type": "finish", "answer": "Listo, consulta procesada con éxito por Altair Mini.", "presentation": "text"}
+                ans = synthesize_mini_stylist_answer(observations, cards, current_message)
+                return {"type": "finish", "answer": ans, "presentation": "mixed" if cards else "text"}
             answer = await delegate(current_message, state, observations)
             return {"type": "finish", "answer": answer}
         return None

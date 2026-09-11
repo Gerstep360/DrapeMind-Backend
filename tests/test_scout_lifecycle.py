@@ -143,6 +143,33 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
         messages = build_messages(prompt_sections(text, ChatContext(), [], []))
         self.assertEqual(messages[-1], {'role': 'user', 'content': text})
 
+    async def test_mini_mode_synthesizes_cart_response_without_gemma(self):
+        cart_obs = [{
+            'tool': 'get_my_cart',
+            'args': {},
+            'result': {
+                'total_items': 2,
+                'subtotal': 358.0,
+                'items': [
+                    {'nombre': 'Polera Gráfica', 'color': 'Blanco', 'talla': 'L', 'cantidad': 2, 'precio_unitario': 179.0, 'subtotal': 358.0}
+                ]
+            }
+        }]
+        async def fake_agent(*args, **kwargs):
+            after_tool = kwargs['after_tool']
+            result = await after_tool({'after': 'delegate'}, 'que tengo en el carrito', ChatContext(), cart_obs, [])
+            return {'response_meta': {}, 'notices': [], 'composite_sub_tools': [], 'direct_response': result['answer']}
+
+        gemma_mock = AsyncMock()
+        with patch.object(scout, 'run_gemma_tool_agent', fake_agent):
+            res = await scout.run_scout_orchestrator(
+                None, SimpleNamespace(id=1, nombre='Test'), 'que tengo en el carrito', None,
+                gemma_mock, AsyncMock(), 10, allow_delegation=False
+            )
+            self.assertIn('Polera Gráfica', res['direct_response'])
+            self.assertIn('358', res['direct_response'])
+            gemma_mock.assert_not_called()
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -472,6 +472,15 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
                     "el servidor está usando Gemma. Prueba con el modo Altair Mini o Dinámico."
                 ) from exc
             legacy_ms = max(0, int((time.perf_counter() - started) * 1000))
+            raw_sub_tools = skill_res.get("composite_sub_tools") or []
+            clean_tools = [
+                str(st.get("name") if isinstance(st, dict) else st)
+                for st in raw_sub_tools
+                if (isinstance(st, dict) and st.get("name")) or (isinstance(st, str) and st)
+            ]
+            if not clean_tools and skill_res.get("tool_name"):
+                clean_tools = [str(skill_res["tool_name"])]
+
             ai_logger.log_turn_summary(
                 chat_id=session.id,
                 user_name=user_name,
@@ -479,7 +488,7 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
                 routing_mode="direct_gemma",
                 scout_calls=0,
                 gemma_calls=1,
-                tools_used=skill_res.get("composite_sub_tools") or ([skill_res["tool_name"]] if skill_res.get("tool_name") else []),
+                tools_used=clean_tools,
                 scout_tokens={"prompt": 0, "completion": 0},
                 gemma_tokens={"prompt": 0, "completion": 0},
                 notices=skill_res.get("notices"),

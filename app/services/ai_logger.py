@@ -326,7 +326,12 @@ class AILogger:
             route_label = "LEGACY GEMMA 4 (Sin orquestador Scout)"
             model_summary = "Gemma 4-E2B"
 
-        tools_str = ", ".join(tools_used) if tools_used else "Ninguna (Charla / Directo)"
+        clean_tools = [
+            str(t.get("name") if isinstance(t, dict) else t)
+            for t in (tools_used or [])
+            if t
+        ]
+        tools_str = ", ".join(clean_tools) if clean_tools else "Ninguna (Charla / Directo)"
 
         # Diagnostico general de rendimiento del turno
         if duration_s < 5.0:
