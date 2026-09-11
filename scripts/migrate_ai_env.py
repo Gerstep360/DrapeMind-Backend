@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import shutil
 import sys
 import tempfile
@@ -26,6 +27,14 @@ def parse(text):
         match = re.match(r"^\s*([A-Z][A-Z0-9_]*)=(.*)$", line)
         if match:
             key, value = match.groups()
+            try:
+                tokens = shlex.split(value, comments=True)
+            except ValueError as exc:
+                raise ValueError('Invalid quoting in configuration key: ' + key) from exc
+            if any(re.match(r'^[A-Z][A-Z0-9_]*=', token) for token in tokens[1:]):
+                raise ValueError('Multiple assignments on one line at key: ' + key)
+            if re.search(r'\[[^\]]*\]\(https?://', value):
+                raise ValueError('Markdown link instead of plain configuration value at key: ' + key)
             if key in values:
                 raise ValueError("Duplicate configuration key: " + key)
             values[key] = value.strip()
@@ -89,4 +98,8 @@ def migrate(path):
 
 
 if __name__ == "__main__":
-    migrate(Path(sys.argv[1]).resolve())
+    if sys.argv[1] == '--check':
+        parse(Path(sys.argv[2]).read_text(encoding='utf-8-sig'))
+        print('AI_ENV: syntax validated')
+    else:
+        migrate(Path(sys.argv[1]).resolve())

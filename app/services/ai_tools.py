@@ -118,19 +118,19 @@ class CompareProductsArgs(BaseModel):
 
 
 class RecommendOutfitArgs(BaseModel):
-    occasion: str | None = Field(default=None, description="Ocasion o estilo indicado por el usuario; no asumir")
+    occasion: str | None = Field(default=None, description="Ocasion o estilo indicado por el usuario; no asumir", json_schema_extra={"x-user-grounded": True})
     max_budget: float | None = Field(default=None, ge=0, description="Presupuesto maximo en Bs")
     gender: str | None = Field(default=None, description="HOMBRE, MUJER o UNISEX")
-    top_size: str | None = Field(default=None, max_length=20, description="Talla de camisa o polera")
-    bottom_size: str | None = Field(default=None, max_length=20, description="Talla del pantalón o falda")
-    shoe_size: str | None = Field(default=None, max_length=20, description="Talla del calzado")
-    top_sizes: list[str] = Field(default_factory=list, max_length=4)
-    bottom_sizes: list[str] = Field(default_factory=list, max_length=4)
-    shoe_sizes: list[str] = Field(default_factory=list, max_length=4)
+    top_size: str | None = Field(default=None, max_length=20, description="Talla de camisa o polera", json_schema_extra={"x-user-grounded": True})
+    bottom_size: str | None = Field(default=None, max_length=20, description="Talla del pantalón o falda", json_schema_extra={"x-user-grounded": True})
+    shoe_size: str | None = Field(default=None, max_length=20, description="Talla del calzado", json_schema_extra={"x-user-grounded": True})
+    top_sizes: list[str] = Field(default_factory=list, max_length=4, json_schema_extra={"x-user-grounded": True})
+    bottom_sizes: list[str] = Field(default_factory=list, max_length=4, json_schema_extra={"x-user-grounded": True})
+    shoe_sizes: list[str] = Field(default_factory=list, max_length=4, json_schema_extra={"x-user-grounded": True})
     top_type: str | None = Field(default=None, max_length=40)
     bottom_type: str | None = Field(default=None, max_length=40)
     bottom_fit: str | None = Field(default=None, max_length=40)
-    measurements: dict[str, float] = Field(default_factory=dict)
+    measurements: dict[str, float] = Field(default_factory=dict, json_schema_extra={"x-context-only": True})
     exclude_product_ids: list[int] = Field(default_factory=list, max_length=24)
 
 

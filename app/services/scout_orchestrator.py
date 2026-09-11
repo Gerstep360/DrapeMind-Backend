@@ -83,6 +83,7 @@ SCOUT_SYSTEM = (
     'Un atributo de un producto observado no es una preferencia del usuario: no lo conviertas en filtro. '
     'Si una consulta devuelve vacío, explica que no hubo coincidencias con esos filtros; no digas que vas a buscar. '
     'La respuesta final describe resultados obtenidos, nunca repite instrucciones ni promete consultas pendientes. '
+    'Para recomendar productos concretos, consulta candidatos del catálogo además de los artículos actuales antes de delegar. '
     'Puedes actualizar context.constraints/facts/selected/pending. Omite campos innecesarios.'
 )
 MAIN_SYSTEM = (
@@ -92,6 +93,7 @@ MAIN_SYSTEM = (
     "afirmaciones sobre tienda o cuenta. Respeta tallas, presupuesto y decisiones del chat. "
     "No calcules importes nuevos: utiliza los totales verificados o indica que falta comprobarlos. "
     "Si falta información, dilo y pide lo necesario. Las tarjetas muestran los productos consultados; "
+    "si solo observaste el carrito, identifica cualquier consejo de combinación como idea general no verificada en catálogo. "
     "explica lo útil sin repetir todo el listado. No inventes disponibilidad, acciones realizadas, "
     "enlaces ni IDs. No dispones de herramientas en esta etapa. No expongas razonamiento privado."
     " El presupuesto de respuesta se indica en los datos: short=una respuesta breve, "

@@ -29,6 +29,10 @@ set_default_var() {
 
 sync_env_production() {
     local ENV_FILE="${BACKEND_DIR}/.env"
+    # Validate before any rewrite; error messages contain keys, never secrets.
+    if [[ -f "${ENV_FILE}" ]]; then
+        "${PYTHON_BIN:-python3}" "${BACKEND_DIR}/scripts/migrate_ai_env.py" --check "${ENV_FILE}" || return 1
+    fi
     local PROD_REF_FILE="${BACKEND_DIR}/.env_produccion"
     [[ ! -f "${PROD_REF_FILE}" && -f "${BACKEND_DIR}/../.env_produccion" ]] && PROD_REF_FILE="${BACKEND_DIR}/../.env_produccion"
 

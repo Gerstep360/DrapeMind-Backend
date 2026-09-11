@@ -11,6 +11,23 @@ from app.services.socket_turn import _connected_turn
 
 
 class LifecycleTests(unittest.IsolatedAsyncioTestCase):
+    def test_env_rejects_pasted_assignments_without_leaking_values(self):
+        from scripts.migrate_ai_env import parse
+        for text in ('SCOUT_BASE_URL="http://localhost:8089/v1" SCOUT_API_KEY="private-fixture"',
+                     'AI_BASE_URL="[http://localhost](http://localhost)"'):
+            with self.assertRaises(ValueError) as error:
+                parse(text)
+            self.assertNotIn('private-fixture', str(error.exception))
+        self.assertEqual(parse('APP_NAME="A name with spaces"')['APP_NAME'], '"A name with spaces"')
+
+    def test_outfit_rejects_invented_sizes_and_measurements(self):
+        from app.services.argument_grounding import unsupported_filters
+        from app.services.ai_tools import RecommendOutfitArgs
+        invalid = unsupported_filters(RecommendOutfitArgs.model_json_schema(),
+            {'occasion': 'casual', 'shoe_size': '200', 'measurements': {'user_chest': 70}},
+            'Un conjunto con calzado menor a 200bs', {})
+        self.assertEqual(set(invalid), {'occasion', 'shoe_size', 'measurements'})
+
     async def test_nonstream_completion_returns_generated_response(self):
         import httpx
         from app.services import ai

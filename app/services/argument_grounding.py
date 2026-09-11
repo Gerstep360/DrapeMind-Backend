@@ -12,7 +12,7 @@ def unsupported_filters(schema, arguments, message, constraints):
     invalid = []
     for name, spec in schema.get('properties', {}).items():
         value = arguments.get(name)
-        if value is None:
+        if value is None or value == {} or value == []:
             continue
         context_value = constraints.get(name)
         if context_value is not None and normalized(context_value) == normalized(value):
@@ -21,6 +21,7 @@ def unsupported_filters(schema, arguments, message, constraints):
             invalid.append(name)
         elif spec.get('x-user-grounded'):
             # Exact evidence only; paraphrases require clarification, never a guessed filter.
-            if not re.search(r'(?<!\w)' + re.escape(normalized(value)) + r'(?!\w)', normalized(message)):
+            values = value if isinstance(value, list) else [value]
+            if any(not re.search(r'(?<!\w)' + re.escape(normalized(item)) + r'(?!\w)', normalized(message)) for item in values):
                 invalid.append(name)
     return invalid
