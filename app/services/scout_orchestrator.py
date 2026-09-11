@@ -389,7 +389,8 @@ async def run_scout_orchestrator(db, user, message, memory, gemma_complete, emit
         if (route == "cards" and cards and not failed
                 and decision.get("intro", "").strip()):
             return {"type": "finish", "answer": decision["intro"], "presentation": "mixed"}
-        if route in {"cards", "delegate"}:
+        last_tool = observations[-1].get("tool") if observations else ""
+        if (route in {"cards", "delegate"} or (last_tool == "recommend_outfit" and not failed)):
             answer = await delegate(current_message, state, observations)
             return {"type": "finish", "answer": answer}
         return None

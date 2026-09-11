@@ -4,7 +4,7 @@ from typing import Any, Callable, Literal
 import unicodedata
 
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -118,8 +118,8 @@ class CompareProductsArgs(BaseModel):
 
 
 class RecommendOutfitArgs(BaseModel):
-    base_product_id: int | None = Field(default=None, description="ID de producto inicial o base para completar el outfit (ej. 4)")
-    product_id: int | None = Field(default=None, description="ID de producto inicial o base (alias de base_product_id)")
+    base_product_id: int | None = Field(default=None, description="ID numerico de la prenda base unicamente si el usuario solicito completar un producto especifico")
+    product_id: int | None = Field(default=None, description="ID numerico de prenda base (alias de base_product_id)")
     occasion: str | None = Field(default=None, description="Ocasion o estilo indicado por el usuario; no asumir", json_schema_extra={"x-user-grounded": True})
     max_budget: float | None = Field(default=None, ge=0, description="Presupuesto maximo en Bs")
     gender: str | None = Field(default=None, description="HOMBRE, MUJER o UNISEX")
@@ -369,13 +369,33 @@ def _recommend_outfit(context: ToolContext, raw: BaseModel) -> Any:
             select(Product).where(Product.id == target_base_id, Product.activo.is_(True))
         )
         if base_prod:
-            base_var = context.db.scalar(
-                select(ProductVariant).where(
-                    ProductVariant.producto_id == base_prod.id,
-                    ProductVariant.activo.is_(True),
-                    ProductVariant.stock_total > ProductVariant.stock_reservado,
-                ).order_by(ProductVariant.id)
-            )
+            base_var = None
+            if args.top_size:
+                base_var = context.db.scalar(
+                    select(ProductVariant).where(
+                        ProductVariant.producto_id == base_prod.id,
+                        ProductVariant.activo.is_(True),
+                        ProductVariant.stock_total > ProductVariant.stock_reservado,
+                        func.upper(ProductVariant.talla) == args.top_size.strip().upper(),
+                    )
+                )
+            if not base_var and args.bottom_size:
+                base_var = context.db.scalar(
+                    select(ProductVariant).where(
+                        ProductVariant.producto_id == base_prod.id,
+                        ProductVariant.activo.is_(True),
+                        ProductVariant.stock_total > ProductVariant.stock_reservado,
+                        func.upper(ProductVariant.talla) == args.bottom_size.strip().upper(),
+                    )
+                )
+            if not base_var:
+                base_var = context.db.scalar(
+                    select(ProductVariant).where(
+                        ProductVariant.producto_id == base_prod.id,
+                        ProductVariant.activo.is_(True),
+                        ProductVariant.stock_total > ProductVariant.stock_reservado,
+                    ).order_by(ProductVariant.id)
+                )
             if base_var:
                 base_item = {
                     "id": base_prod.id,
@@ -407,9 +427,19 @@ def _recommend_outfit(context: ToolContext, raw: BaseModel) -> Any:
             "instruction": "Pregunta por la ocasión, tallas o prenda base para armar el outfit personalizado.",
         }
 
+    norm_gender = None
+    if args.gender:
+        g_val = normalized(args.gender)
+        if any(k in g_val for k in ["hombre", "masculin", "varon", "chico", "caballero"]):
+            norm_gender = "HOMBRE"
+        elif any(k in g_val for k in ["mujer", "femenin", "dama", "chica"]):
+            norm_gender = "MUJER"
+        elif "unisex" in g_val:
+            norm_gender = "UNISEX"
+
     all_available = search_products(context.db, only_available=True, limit=80)
-    if args.gender and args.gender in ("HOMBRE", "MUJER", "UNISEX"):
-        candidates = [p for p in all_available if p.get("genero_objetivo") in (args.gender, "UNISEX")]
+    if norm_gender:
+        candidates = [p for p in all_available if p.get("genero_objetivo") in (norm_gender, "UNISEX")]
     else:
         candidates = all_available
     if args.exclude_product_ids:
@@ -477,7 +507,7 @@ def _recommend_outfit(context: ToolContext, raw: BaseModel) -> Any:
     tops = [p for p in enriched if any(k in normalized(p["nombre"]) for k in ["polera", "camisa", "blusa", "polo", "hoodie"])]
     bottoms = [p for p in enriched if any(k in normalized(p["nombre"]) for k in ["jean", "pantalon", "jogger", "falda", "palazzo", "chino"])]
     footwear = [p for p in enriched if any(k in normalized(p["nombre"]) for k in ["zapato", "zapatilla", "bota", "mocas", "chelsea", "oxford"])]
-    outerwear_acc = [p for p in enriched if any(k in normalized(p["nombre"]) for k in ["chamarra", "blazer", "chaqueta", "bomber", "cintur", "bolso", "reloj", "lentes", "bufanda", "vestido"])]
+    outerwear_acc = [p for p in enriched if any(k in normalized(p["nombre"]) for k in ["chamarra", "blazer", "chaqueta", "bomber", "cintur", "bolso", "reloj", "lentes", "bufanda"])]
 
     if base_item:
         b_name = normalized(base_item["nombre"])
@@ -552,6 +582,8 @@ def _recommend_outfit(context: ToolContext, raw: BaseModel) -> Any:
     # Fallbacks if strict size filtering yielded empty groups
     if not tops and all_available:
         cand_tops = [p for p in all_available if any(k in normalized(p["nombre"]) for k in ["polera", "camisa", "blusa", "polo", "hoodie"])]
+        if norm_gender:
+            cand_tops = [p for p in cand_tops if p.get("genero_objetivo") in (norm_gender, "UNISEX")]
         for cand in cand_tops:
             cand_vars = variants_by_product.get(cand["id"], [])
             if cand_vars:
@@ -570,6 +602,8 @@ def _recommend_outfit(context: ToolContext, raw: BaseModel) -> Any:
 
     if not bottoms and all_available:
         cand_bottoms = [p for p in all_available if any(k in normalized(p["nombre"]) for k in ["jean", "pantalon", "jogger", "falda", "palazzo", "chino"])]
+        if norm_gender:
+            cand_bottoms = [p for p in cand_bottoms if p.get("genero_objetivo") in (norm_gender, "UNISEX")]
         for cand in cand_bottoms:
             cand_vars = variants_by_product.get(cand["id"], [])
             if cand_vars:
@@ -588,19 +622,25 @@ def _recommend_outfit(context: ToolContext, raw: BaseModel) -> Any:
 
     if not footwear and all_available:
         cand_shoes = [p for p in all_available if any(k in normalized(p["nombre"]) for k in ["zapato", "zapatilla", "bota", "mocas", "chelsea", "oxford"])]
+        if norm_gender:
+            cand_shoes = [p for p in cand_shoes if p.get("genero_objetivo") in (norm_gender, "UNISEX")]
         for cand in cand_shoes:
             cand_vars = variants_by_product.get(cand["id"], [])
             if cand_vars:
+                sorted_vars = sorted(cand_vars, key=lambda v: int(v.talla) if str(v.talla).isdigit() else 0, reverse=True)
+                chosen_var = sorted_vars[0]
                 item = dict(cand)
                 item.update({
                     "producto_id": cand["id"],
-                    "variante_id": cand_vars[0].id,
-                    "color": cand_vars[0].color,
-                    "talla": cand_vars[0].talla,
-                    "imagen": cand_vars[0].imagen,
-                    "stock_variante": cand_vars[0].stock_total - cand_vars[0].stock_reservado,
+                    "variante_id": chosen_var.id,
+                    "color": chosen_var.color,
+                    "talla": chosen_var.talla,
+                    "imagen": chosen_var.imagen,
+                    "stock_variante": chosen_var.stock_total - chosen_var.stock_reservado,
                 })
                 footwear.append(item)
+                if args.shoe_size:
+                    restrictions.append(f"Calzado seleccionado en talla {chosen_var.talla} (talla {args.shoe_size} agotada en catálogo)")
                 if len(footwear) >= 3:
                     break
 

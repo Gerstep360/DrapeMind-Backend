@@ -261,5 +261,58 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(payload['cache_prompt'])
 
 
+    def test_recommend_outfit_filters_gender_and_shoe_fallback(self):
+        from app.services.ai_tools import _recommend_outfit, RecommendOutfitArgs, ToolContext
+        db = MagicMock()
+        user = SimpleNamespace(id=1)
+        mock_candidates = [
+            {"id": 4, "nombre": "Polera Gráfica Atelier", "precio": 179.0, "genero_objetivo": "HOMBRE"},
+            {"id": 10, "nombre": "Joggers Urban Cargo", "precio": 199.0, "genero_objetivo": "HOMBRE"},
+            {"id": 20, "nombre": "Vestido Midi Floral", "precio": 399.0, "genero_objetivo": "MUJER"},
+            {"id": 30, "nombre": "Zapatillas Urbanas", "precio": 250.0, "genero_objetivo": "HOMBRE"},
+        ]
+        var_top_m = SimpleNamespace(id=101, producto_id=4, color="Blanco", talla="M", imagen=None, stock_total=10, stock_reservado=0, activo=True)
+        var_top_l = SimpleNamespace(id=102, producto_id=4, color="Blanco", talla="L", imagen=None, stock_total=10, stock_reservado=0, activo=True)
+        var_bottom = SimpleNamespace(id=103, producto_id=10, color="Negro", talla="L", imagen=None, stock_total=5, stock_reservado=0, activo=True)
+        var_shoe_42 = SimpleNamespace(id=104, producto_id=30, color="Negro", talla="42", imagen=None, stock_total=3, stock_reservado=0, activo=True)
+        
+        scalars_mock = MagicMock()
+        scalars_mock.all.return_value = [var_top_m, var_top_l, var_bottom, var_shoe_42]
+        db.scalars.return_value = scalars_mock
+
+        with patch("app.services.ai_tools.search_products", return_value=mock_candidates):
+            raw_args = RecommendOutfitArgs(gender="hombre", top_size="L", bottom_size="L", shoe_size="44", max_budget=1000)
+            res = _recommend_outfit(ToolContext(db=db, user=user), raw_args)
+
+        # Ensure women's dress is excluded completely
+        all_item_names = [p["nombre"] for group in ("tops_sugeridos", "inferiores_sugeridos", "calzado_sugerido", "complementos_abrigos") for p in res.get(group, [])]
+        self.assertNotIn("Vestido Midi Floral", all_item_names)
+
+        # Ensure top is size L
+        self.assertEqual(res["tops_sugeridos"][0]["talla"], "L")
+        # Ensure shoe fallback picked size 42 and added restriction note
+        self.assertTrue(len(res["calzado_sugerido"]) > 0)
+        self.assertEqual(res["calzado_sugerido"][0]["talla"], "42")
+        self.assertTrue(any("44 agotada" in note for note in res["restricciones_sin_stock"]))
+
+    def test_chat_context_omits_raw_outfit_arrays(self):
+        from app.services.chat_context import serialize_observation
+        obs = {
+            "ocasion": "fiesta",
+            "seleccion": [{"id": 4, "nombre": "Polera", "talla": "L"}],
+            "tops_sugeridos": [{"id": 4, "nombre": "Polera", "descripcion": "Larga descripcion"}],
+            "inferiores_sugeridos": [{"id": 10, "nombre": "Jogger"}],
+            "calzado_sugerido": [{"id": 30, "nombre": "Zapatillas"}],
+            "complementos_abrigos": [{"id": 40, "nombre": "Chamarra"}],
+        }
+        serialized = serialize_observation(obs)
+        self.assertIn("seleccion", serialized)
+        self.assertNotIn("tops_sugeridos", serialized)
+        self.assertNotIn("inferiores_sugeridos", serialized)
+        self.assertNotIn("calzado_sugerido", serialized)
+        self.assertNotIn("complementos_abrigos", serialized)
+
+
 if __name__ == '__main__':
     unittest.main()
+

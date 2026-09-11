@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, f
 MAX_ENTITIES = 8
 LLM_OMITTED_FIELDS = frozenset({
     "imagenes", "imagen", "image_url", "resumen_texto", "costo_referencia", "created_at",
+    "tops_sugeridos", "inferiores_sugeridos", "calzado_sugerido", "complementos_abrigos",
 })
 
 
