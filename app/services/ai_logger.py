@@ -322,6 +322,9 @@ class AILogger:
         elif scout_calls > 0 and gemma_calls == 0:
             route_label = "SCOUT DIRECTO (100% resuelto por Qwen 0.6B, Gemma 4 en reposo)"
             model_summary = "Qwen 0.6B (Ahorro de CPU)"
+        elif scout_calls == 0 and gemma_calls == 0:
+            route_label = "ALTAIR FAST PATH (Respuesta Instantánea en DB / Mini)"
+            model_summary = "Altair Mini (Ultra Rápido)"
         else:
             route_label = "LEGACY GEMMA 4 (Sin orquestador Scout)"
             model_summary = "Gemma 4-E2B"

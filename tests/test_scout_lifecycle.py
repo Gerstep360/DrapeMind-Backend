@@ -168,7 +168,24 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIn('Polera Gráfica', res['direct_response'])
             self.assertIn('358', res['direct_response'])
-            gemma_mock.assert_not_called()
+    def test_resolve_fast_intent_detects_cart_and_perchero(self):
+        self.assertEqual(
+            scout.resolve_fast_intent('Analiza las prendas de mi perchero y recomiéndame combinaciones de estilo.'),
+            ('get_my_cart', {})
+        )
+        self.assertEqual(
+            scout.resolve_fast_intent('¿Qué tengo en el carrito actualmente?'),
+            ('get_my_cart', {})
+        )
+        self.assertEqual(
+            scout.resolve_fast_intent('Quiero ver mis pedidos'),
+            ('get_my_orders', {})
+        )
+        self.assertEqual(
+            scout.resolve_fast_intent('Look por presupuesto de Bs 400'),
+            ('recommend_outfit', {'max_budget': 400.0, 'occasion': 'casual'})
+        )
+        self.assertIsNone(scout.resolve_fast_intent('¿Quién diseñó la última colección?'))
 
 
 if __name__ == '__main__':

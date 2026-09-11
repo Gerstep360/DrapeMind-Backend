@@ -712,7 +712,7 @@ TOOLS = {
         ),
         ReadToolDefinition(
             "get_my_cart",
-            "Lee todas las prendas que el usuario tiene actualmente en su carrito (nombre, talla, color, precio y total). Usar siempre que el usuario pregunte por su carrito, bolsa o qué tiene guardado.",
+            "Lee todas las prendas que el usuario tiene actualmente en su perchero o carrito de compras (nombre, talla, color, precio y total). Usar siempre que el usuario pregunte por su perchero, carrito, bolsa, selección o qué tiene guardado.",
             EmptyArgs,
             _cart,
         ),

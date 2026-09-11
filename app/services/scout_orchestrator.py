@@ -5,7 +5,9 @@ No language routing rules, global conversation memory or direct database access.
 import asyncio
 import json
 import logging
+import re
 import time
+import unicodedata
 from contextlib import asynccontextmanager
 from typing import Any, Literal
 from urllib.parse import urlsplit
@@ -169,6 +171,8 @@ async def scout_completion(messages, chat_id=None, step=1, **_):
         'type': 'string', 'enum': [t['name'] for t in tool_catalog()] + ['reply', 'analyze'],
     }
     decision_schema['required'] = ['action']
+    for unused in ('suggested_actions', 'ui', 'context', 'calls', 'confidence'):
+        decision_schema['properties'].pop(unused, None)
     payload = {
         "model": settings.SCOUT_MODEL,
         "messages": messages,
@@ -254,6 +258,44 @@ async def scout_completion(messages, chat_id=None, step=1, **_):
         raise ModelRuntimeError("Scout no devolvió una decisión válida. Revisa su configuración y compatibilidad JSON Schema.") from exc
 
 
+def resolve_fast_intent(message: str) -> tuple[str, dict] | None:
+    """Zero-latency deterministic intent router for common queries and commands.
+    
+    Skips CPU-heavy Scout prompt evaluation for unambiguous intents (cart/wardrobe, trending, orders).
+    """
+    if not message:
+        return None
+    raw = unicodedata.normalize("NFKD", message).encode("ASCII", "ignore").decode("utf-8").lower().strip()
+    
+    # 1. Perchero / Carrito / Bolsa / Selección
+    if any(k in raw for k in ("perchero", "carrito", "bolsa", "mi seleccion", "mis compras")):
+        return ("get_my_cart", {})
+
+    # 2. Mis Pedidos
+    if any(k in raw for k in ("mis pedidos", "ver pedidos", "estado de mi pedido", "que pedidos tengo")):
+        return ("get_my_orders", {})
+
+    # 3. Mis Reservas
+    if any(k in raw for k in ("mis reservas", "ver reservas", "reservas activas", "que reservas tengo")):
+        return ("get_my_reservations", {})
+
+    # 4. Tendencias / Lo más nuevo / Destacadas / Explorar Catálogo
+    if any(k in raw for k in ("destacada", "destacadas", "explorar catalogo", "tendencia", "novedades", "lo mas nuevo", "ultimas prendas")):
+        return ("get_trending_pieces", {})
+
+    # 5. Look por Presupuesto con cifra explícita
+    budget_m = re.search(r"(?:menos de|presupuesto de|hasta|por)\s*(?:bs\.?|bob)?\s*(\d+(?:\.\d+)?)", raw)
+    if ("outfit" in raw or "look" in raw or "combinacion" in raw) and budget_m:
+        try:
+            val = float(budget_m.group(1))
+            if val > 0:
+                return ("recommend_outfit", {"max_budget": val, "occasion": "casual"})
+        except ValueError:
+            pass
+
+    return None
+
+
 async def run_scout_orchestrator(db, user, message, memory, gemma_complete, emit, chat_id, allow_delegation: bool = True):
     delegated = False
     truncated = False
@@ -262,20 +304,6 @@ async def run_scout_orchestrator(db, user, message, memory, gemma_complete, emit
     started = time.monotonic()
     scout_tokens = {"prompt": 0, "completion": 0}
     gemma_tokens = {"prompt": 0, "completion": 0}
-
-    async def plan(messages, **kwargs):
-        nonlocal scout_calls, budget
-        scout_calls += 1
-        result = await scout_completion(messages, chat_id=chat_id, step=scout_calls, **kwargs)
-        u = result.get("usage") or {}
-        scout_tokens["prompt"] += u.get("prompt_tokens", 0) or 0
-        scout_tokens["completion"] += u.get("completion_tokens", 0) or 0
-        decision = json.loads(result["choices"][0]["message"]["content"])
-        budget = decision.get("response_budget", "normal")
-        # Route is the model's explicit decision. Missing/uncalibrated confidence
-        # must not wake another model after Scout already produced an answer.
-        result["choices"][0]["message"]["content"] = json.dumps(decision, ensure_ascii=False)
-        return result
 
     def synthesize_mini_stylist_answer(observations: list[dict], cards: list[dict], current_message: str) -> str:
         """Fast, rich response synthesizer for Altair Mini. Avoids Gemma CPU load while providing full stylist answers."""
@@ -292,10 +320,13 @@ async def run_scout_orchestrator(db, user, message, memory, gemma_complete, emit
             if isinstance(res, dict):
                 items = res.get("items") or []
                 if not items:
-                    return "Tu perchero o carrito está actualmente vacío. Puedes explorar las colecciones de nuestro showroom para agregar prendas a tu selección."
+                    return "Tu perchero de compras está actualmente vacío. Puedes explorar las colecciones de nuestro showroom para agregar prendas a tu selección."
                 total_items = res.get("total_items") or len(items)
                 subtotal = res.get("subtotal") or sum(it.get("subtotal", 0) for it in items)
-                lines = [f"En tu carrito tienes {total_items} artículo(s):\n"]
+
+                is_styling = any(w in current_message.lower() for w in ("analiza", "combina", "combinacion", "estilo", "outfit", "recomienda", "quitar"))
+
+                lines = [f"En tu **Perchero de Compras** tienes {total_items} artículo(s) seleccionados:\n"]
                 for idx, it in enumerate(items, 1):
                     name = it.get("nombre", "Prenda")
                     color = it.get("color", "")
@@ -307,9 +338,25 @@ async def run_scout_orchestrator(db, user, message, memory, gemma_complete, emit
                     if color: details.append(f"Color: {color}")
                     if talla: details.append(f"Talla: {talla}")
                     details.append(f"Cantidad: {qty}")
-                    details.append(f"Precio unitario: {precio}")
-                    lines.append(f"{idx}. **{name}** ({', '.join(details)}).\n   Subtotal del artículo: {item_sub}.")
-                lines.append(f"\nEl subtotal actual del carrito es de **Bs {subtotal:,.2f}**.")
+                    details.append(f"Precio unitario: Bs {precio:,.2f}")
+                    lines.append(f"{idx}. **{name}** ({', '.join(details)}).\n   Subtotal: Bs {item_sub:,.2f}.")
+
+                lines.append(f"\n**Subtotal del Perchero:** Bs {subtotal:,.2f}")
+
+                if is_styling:
+                    lines.append("\n### 💡 Recomendaciones de Estilismo y Combinación Atelier:")
+                    for it in items:
+                        name = it.get("nombre", "").lower()
+                        p_name = it.get("nombre", "Prenda")
+                        if any(k in name for k in ("polera", "remera", "t-shirt", "top", "camisa")):
+                            lines.append(f"• **Para {p_name}:** Su silueta contemporánea combina de forma impecable con pantalones sastreros en tono de contraste o jeans rectos oscuros. Puedes sumar unos mocasines sutiles o zapatillas de piel limpia, y una sobrecamisa estructurada para una estética moderna y elevada.")
+                        elif any(k in name for k in ("pantalon", "jean", "jogger", "falda")):
+                            lines.append(f"• **Para {p_name}:** Combina con tops de corte limpio en colores monocromáticos o neutros, y añade calzado estructurado para balancear proporciones.")
+                        elif any(k in name for k in ("zapato", "sneaker", "calzado", "bota")):
+                            lines.append(f"• **Para {p_name}:** El calzado define el tono del conjunto: acompáñalo de prendas sobrias donde el protagonista sea la textura del calzado.")
+                        else:
+                            lines.append(f"• **Para {p_name}:** Una pieza distintiva del atelier que aporta personalidad y equilibrio al look general.")
+
                 return "\n".join(lines)
 
         if tool == "recommend_outfit":
@@ -414,6 +461,134 @@ async def run_scout_orchestrator(db, user, message, memory, gemma_complete, emit
             raise ModelRuntimeError("Gemma no devolvió una respuesta.")
         return answer
 
+    async def plan(messages, **kwargs):
+        nonlocal scout_calls, budget
+        scout_calls += 1
+        result = await scout_completion(messages, chat_id=chat_id, step=scout_calls, **kwargs)
+        u = result.get("usage") or {}
+        scout_tokens["prompt"] += u.get("prompt_tokens", 0) or 0
+        scout_tokens["completion"] += u.get("completion_tokens", 0) or 0
+        decision = json.loads(result["choices"][0]["message"]["content"])
+        budget = decision.get("response_budget", "normal")
+        result["choices"][0]["message"]["content"] = json.dumps(decision, ensure_ascii=False)
+        return result
+
+    fast_intent = resolve_fast_intent(message) if db is not None else None
+    if fast_intent:
+        tool_name, arguments = fast_intent
+        reason = f"Consultando {tool_name}"
+        await emit({"type": "thought", "content": f"Altair está consultando {tool_name}..."})
+        await emit({
+            "type": "tool_start",
+            "name": tool_name,
+            "label": reason,
+            "arguments": arguments,
+        })
+        tool_start_time = time.perf_counter()
+        try:
+            from app.services.ai_tools import execute_tool, ToolContext, TOOLS
+            result_data = execute_tool(tool_name, arguments, ToolContext(db=db, user=user))
+        except Exception as exc:
+            result_data = {"error": str(exc)}
+        tool_duration_ms = (time.perf_counter() - tool_start_time) * 1000.0
+
+        ai_logger.log_tool_execution(
+            chat_id=chat_id or getattr(user, "id", 0),
+            tool_name=tool_name,
+            args=arguments,
+            results_count=len(result_data) if isinstance(result_data, list) else 1,
+            duration_ms=tool_duration_ms,
+            is_error=isinstance(result_data, dict) and bool(result_data.get("error")),
+        )
+        safe_result = json.loads(json.dumps(result_data, ensure_ascii=False, default=str))
+        await emit({
+            "type": "tool_result",
+            "name": tool_name,
+            "label": "Datos confirmados",
+            "result": safe_result,
+        })
+
+        from app.services.ai_agent import _cards_from_tool
+        definition = TOOLS.get(tool_name)
+        if definition and definition.card_renderer:
+            cards = definition.card_renderer(ToolContext(db=db, user=user), arguments, result_data)
+        else:
+            cards = _cards_from_tool(db, tool_name, arguments, result_data)
+
+        if cards:
+            await emit({"type": "results", "action_items": cards[:8]})
+
+        observations = [{"tool": tool_name, "args": arguments, "result": result_data, "reason": reason}]
+        user_name = getattr(user, "nombre", None) or getattr(user, "username", None) or "Cliente"
+
+        if not allow_delegation:
+            # Modo Altair Mini: Ultra rápido (< 15ms), respuesta estilista rica sin CPU Gemma/Qwen
+            answer = synthesize_mini_stylist_answer(observations, cards, message)
+            turn_ms = max(1, round((time.monotonic() - started) * 1000))
+            ai_logger.log_turn_summary(
+                chat_id=chat_id,
+                user_name=user_name,
+                duration_ms=turn_ms,
+                routing_mode="scout_fast_path",
+                scout_calls=0,
+                gemma_calls=0,
+                tools_used=[tool_name],
+                scout_tokens=scout_tokens,
+                gemma_tokens=gemma_tokens,
+                notices=[],
+            )
+            return {
+                "direct_response": answer,
+                "action_items": cards,
+                "response_meta": {
+                    "agent_mode": "scout_mini_fast_path",
+                    "model_used": "Altair Mini (Fast Path)",
+                    "delegated_to_main": False,
+                    "scout_calls": 0,
+                    "gemma_calls": 0,
+                    "response_budget": "normal",
+                },
+                "notices": [],
+                "composite_sub_tools": [{"name": tool_name, "args": arguments}],
+            }
+        else:
+            # Modo Dynamic / Gemma: Si es consulta compleja de estilismo, redacta Gemma; si no, sintetiza directo
+            from app.services.chat_context import read_context
+            state = read_context(memory)
+            is_analysis = any(w in message.lower() for w in ("analiza", "combina", "combinacion", "recomienda", "estilo", "asesor"))
+            if is_analysis:
+                answer = await delegate(message, state, observations)
+            else:
+                answer = synthesize_mini_stylist_answer(observations, cards, message)
+
+            turn_ms = max(1, round((time.monotonic() - started) * 1000))
+            ai_logger.log_turn_summary(
+                chat_id=chat_id,
+                user_name=user_name,
+                duration_ms=turn_ms,
+                routing_mode="scout_fast_path" if not is_analysis else "scout_delegated",
+                scout_calls=0,
+                gemma_calls=int(is_analysis),
+                tools_used=[tool_name],
+                scout_tokens=scout_tokens,
+                gemma_tokens=gemma_tokens,
+                notices=[],
+            )
+            return {
+                "direct_response": answer,
+                "action_items": cards,
+                "response_meta": {
+                    "agent_mode": "scout_fast_path_gemma" if is_analysis else "scout_fast_path_direct",
+                    "model_used": settings.AI_MODEL if is_analysis else "Altair Mini (Fast Path)",
+                    "delegated_to_main": is_analysis,
+                    "scout_calls": 0,
+                    "gemma_calls": int(is_analysis),
+                    "response_budget": budget,
+                },
+                "notices": [],
+                "composite_sub_tools": [{"name": tool_name, "args": arguments}],
+            }
+
     async def continue_after_tool(decision, current_message, state, observations, cards):
         latest = observations[-1]["result"] if observations else None
         if (settings.SCOUT_COMPACT_CLARIFICATIONS and isinstance(latest, dict)
@@ -433,9 +608,9 @@ async def run_scout_orchestrator(db, user, message, memory, gemma_complete, emit
         if (route == "cards" and cards and not failed
                 and decision.get("intro", "").strip()):
             return {"type": "finish", "answer": decision["intro"], "presentation": "mixed"}
-        if route in {"cards", "delegate"}:
+        if route in {"cards", "delegate"} or not allow_delegation:
             if not allow_delegation:
-                # Altair Mini: sintetizar respuesta estilista rica de forma instantánea sin Gemma
+                # Altair Mini: sintetizar respuesta estilista rica de forma instantánea sin Gemma y NUNCA volver a llamar al modelo
                 if decision.get("intro", "").strip():
                     return {"type": "finish", "answer": decision["intro"], "presentation": "mixed" if cards else "text"}
                 ans = synthesize_mini_stylist_answer(observations, cards, current_message)
