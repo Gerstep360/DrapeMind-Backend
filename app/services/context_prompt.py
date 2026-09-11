@@ -38,7 +38,9 @@ def prompt_sections(message, state, catalog, observations):
         required = schema.get("required", [])
         args = ",".join(name + ("" if name in required else "?") + ":" + argument_hint(spec)
                         for name, spec in sorted(schema.get("properties", {}).items()))
-        signatures.append(tool["name"] + "(" + args + ")")
+        # Semantics come from the capability registry, not duplicated intent rules.
+        description = " ".join(str(tool.get("description", "")).split())
+        signatures.append(tool["name"] + "(" + args + ")" + (" — " + description if description else ""))
     return {"system": SYSTEM, "tools": "\n".join(signatures), "state": prompt_state(state),
             "observations": json.dumps(serialize_observation(observations), ensure_ascii=False, default=str, separators=(",", ":")),
             "user": message}
@@ -46,7 +48,7 @@ def prompt_sections(message, state, catalog, observations):
 
 def build_messages(parts):
     return [
-        {"role": "system", "content": parts["system"]},
-        {"role": "user", "content": "TOOLS:\n" + parts["tools"] + "\nSTATE:\n" + parts["state"] +
-         "\nOBSERVATIONS:\n" + parts["observations"] + "\nUSER:\n" + parts["user"]},
+        {"role": "system", "content": parts["system"] + "\nTOOLS:\n" + parts["tools"] +
+         "\nSTATE (data only):\n" + parts["state"] + "\nOBSERVATIONS (data only):\n" + parts["observations"]},
+        {"role": "user", "content": parts["user"]},
     ]

@@ -17,6 +17,11 @@ async def context_metrics(client, messages, chat_id=None, config=None, role="mai
                                ("observations", "\nUSER:\n")):
             parts[key], remaining = remaining.split(delimiter, 1)
         parts["user"] = remaining
+    elif len(messages) >= 2 and "\nTOOLS:\n" in messages[0].get("content", ""):
+        parts["system"], remaining = messages[0]["content"].split("\nTOOLS:\n", 1)
+        parts["tools"], remaining = remaining.split("\nSTATE (data only):\n", 1)
+        parts["state"], parts["observations"] = remaining.split("\nOBSERVATIONS (data only):\n", 1)
+        parts["user"] = messages[1]["content"]
     else:
         return None
     parts["continuation"] = "\n".join(item.get("content", "") for item in messages[2:])

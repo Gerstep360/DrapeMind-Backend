@@ -3,6 +3,7 @@ Paquete: Inteligencia artificial y asistencia de moda (PK-05).
 """
 import asyncio
 import logging
+from app.services.socket_turn import _connected_turn
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
@@ -18,6 +19,8 @@ from app.services.realtime import websocket_origin_allowed
 router = APIRouter()
 ws_router = APIRouter()
 logger = logging.getLogger("drapemind.ws")
+
+
 
 
 @router.post(
@@ -120,13 +123,16 @@ async def ai_socket(socket: WebSocket) -> None:
                 try:
                     from app.services.model_runtime import ModelRuntimeError
                     from fastapi import HTTPException
-                    await run_agent_socket(
+                    await _connected_turn(socket, run_agent_socket(
                         db,
                         user,
                         message,
                         data.get("session_id"),
                         safe_send,
-                    )
+                    ), safe_send)
+                except WebSocketDisconnect:
+                    db.rollback()
+                    return
                 except Exception as exc:
                     db.rollback()
                     logger.exception("Error procesando mensaje de IA en WebSocket: %s", exc)

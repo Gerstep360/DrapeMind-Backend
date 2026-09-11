@@ -20,7 +20,7 @@ from app.models import (
 from app.services.store import cart_payload, replace_cart_item, search_products
 from app.services.ai_tools import TOOLS
 from app.services.ai_agent import run_gemma_tool_agent
-from app.services.scout_orchestrator import run_scout_orchestrator, turn_lock
+from app.services.scout_orchestrator import run_scout_orchestrator, inference_turn
 from app.services.agent_stream import partial_answer
 from app.services.ai_memory import build_session_summary, load_ai_memory, merge_ai_memory
 from app.services.chat_sessions import owned_session
@@ -420,7 +420,7 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
         else:
             try:
                 async with asyncio.timeout(settings.AI_TURN_TIMEOUT_SECONDS):
-                    async with turn_lock:
+                    async with inference_turn():
                         async with model_runtime.lease():
                             skill_res = await run_gemma_tool_agent(
                                 db, user, message, memory, agent_complete, emit=send,
