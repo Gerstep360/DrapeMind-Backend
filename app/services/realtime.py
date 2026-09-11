@@ -12,12 +12,18 @@ def websocket_origin_allowed(origin: str | None) -> bool:
     if not origin or settings.ENVIRONMENT == "development":
         return True
     normalized = origin.rstrip("/")
-    if normalized in settings.CORS_ORIGINS:
+    if "*" in settings.CORS_ORIGINS or normalized in settings.CORS_ORIGINS:
         return True
-    return bool(
-        settings.CORS_ORIGIN_REGEX
-        and re.fullmatch(settings.CORS_ORIGIN_REGEX, normalized)
-    )
+    if settings.CORS_ORIGIN_REGEX and re.fullmatch(settings.CORS_ORIGIN_REGEX, normalized):
+        return True
+    from urllib.parse import urlparse
+    parsed = urlparse(normalized)
+    origin_host = parsed.hostname
+    for allowed in settings.CORS_ORIGINS:
+        allowed_host = urlparse(allowed).hostname
+        if allowed_host and allowed_host == origin_host:
+            return True
+    return False
 
 
 
