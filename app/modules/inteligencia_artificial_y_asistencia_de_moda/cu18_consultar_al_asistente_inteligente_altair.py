@@ -129,6 +129,7 @@ async def ai_socket(socket: WebSocket) -> None:
                         message,
                         data.get("session_id"),
                         safe_send,
+                        mode=data.get("mode", "dynamic"),
                     ), safe_send)
                 except WebSocketDisconnect:
                     db.rollback()

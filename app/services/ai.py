@@ -395,13 +395,14 @@ async def _completion(
 
 
 
-async def run_agent_socket(db: Session, user: User, message: str, session_id: int | None, send) -> None:
-    """Let Gemma select tools under a runtime lease and stream real execution events."""
+async def run_agent_socket(db: Session, user: User, message: str, session_id: int | None, send, mode: str = "dynamic") -> None:
+    """Execute AI turns based on selected model mode: 'mini' (Scout only), 'dynamic' (hybrid), or 'gemma' (Gemma only)."""
     started = time.perf_counter()
     session = get_ai_session(db, user.id, session_id)
     tool_results: list[dict] = []
     used_tools: list[str] = []
     answer_parts: list[str] = []
+    mode = str(mode or "dynamic").lower()
 
     user_name = (
         getattr(user, "nombre", None)
@@ -424,13 +425,15 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
         })
 
         memory = load_ai_memory(session.resumen_contexto)
-        was_ready = False if settings.SCOUT_ENABLED else await model_runtime.is_healthy()
+        use_gemma_direct = (mode == "gemma") or (not settings.SCOUT_ENABLED and mode != "mini")
+        was_ready = False if not use_gemma_direct else await model_runtime.is_healthy()
         await send(
             {
                 "type": "model_status",
                 "status": "ready" if was_ready else "loading",
                 "session_id": session.id,
-                "model_role": "scout" if settings.SCOUT_ENABLED else "main",
+                "model_role": "main" if use_gemma_direct else "scout",
+                "mode": mode,
             }
         )
         streamed_text = ""
@@ -448,9 +451,11 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
         async def agent_complete(messages, **kwargs):
             return await _completion(messages, **kwargs, on_text=on_agent_text, context_chat_id=session.id)
 
-        if settings.SCOUT_ENABLED:
+        if not use_gemma_direct:
+            allow_delegation = (mode != "mini")
             skill_res = await run_scout_orchestrator(
                 db, user, message, memory, agent_complete, send, session.id,
+                allow_delegation=allow_delegation,
             )
         else:
             try:
@@ -464,14 +469,14 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
             except TimeoutError as exc:
                 raise ModelRuntimeError(
                     "La consulta superó el tiempo total permitido. Se canceló el turno; "
-                    "el servidor está usando Gemma sin Scout. Revisa SCOUT_ENABLED."
+                    "el servidor está usando Gemma. Prueba con el modo Altair Mini o Dinámico."
                 ) from exc
             legacy_ms = max(0, int((time.perf_counter() - started) * 1000))
             ai_logger.log_turn_summary(
                 chat_id=session.id,
                 user_name=user_name,
                 duration_ms=legacy_ms,
-                routing_mode="legacy_gemma",
+                routing_mode="direct_gemma",
                 scout_calls=0,
                 gemma_calls=1,
                 tools_used=skill_res.get("composite_sub_tools") or ([skill_res["tool_name"]] if skill_res.get("tool_name") else []),

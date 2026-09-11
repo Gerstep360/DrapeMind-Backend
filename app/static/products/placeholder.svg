@@ -1,16 +1,72 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="800" height="1000" viewBox="0 0 800 1000" role="img" aria-labelledby="title description">
   <title id="title">DrapeMind Atelier</title>
-  <desc id="description">Imagen temporal para una prenda sin fotografía.</desc>
+  <desc id="description">Fotografía de prenda en preparación editorial.</desc>
   <defs>
-    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#10281f"/>
-      <stop offset="1" stop-color="#244d3e"/>
+    <linearGradient id="editorial-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FAFBF5"/>
+      <stop offset="50%" stop-color="#F4F5EA"/>
+      <stop offset="100%" stop-color="#ECEEE2"/>
     </linearGradient>
+    <radialGradient id="soft-glow" cx="50%" cy="42%" r="48%">
+      <stop offset="0%" stop-color="#C9EEF0" stop-opacity="0.35"/>
+      <stop offset="60%" stop-color="#DFFF3F" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#F4F5EA" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="soft-shadow" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#10110F" flood-opacity="0.06"/>
+    </filter>
   </defs>
-  <rect width="800" height="1000" fill="url(#background)"/>
-  <circle cx="400" cy="410" r="168" fill="none" stroke="#c5ff3d" stroke-width="5"/>
-  <path d="M310 330l90-48 90 48 72 110-73 44-24-43v221H335V441l-24 43-73-44z" fill="#f4f0e7" opacity=".96"/>
-  <text x="400" y="760" text-anchor="middle" fill="#f4f0e7" font-family="Georgia,serif" font-size="62">DrapeMind</text>
-  <text x="400" y="820" text-anchor="middle" fill="#c5ff3d" font-family="Arial,sans-serif" font-size="24" letter-spacing="8">ATELIER</text>
-  <text x="400" y="900" text-anchor="middle" fill="#cbd3ce" font-family="Arial,sans-serif" font-size="22">Fotografía en preparación</text>
+
+  <!-- Background Canvas -->
+  <rect width="800" height="1000" fill="url(#editorial-bg)"/>
+  <rect width="800" height="1000" fill="url(#soft-glow)"/>
+
+  <!-- Subtle Couture Tailoring Stitch Seams -->
+  <rect x="36" y="36" width="728" height="928" rx="36" fill="none" stroke="#E1E3DA" stroke-width="1.5" stroke-dasharray="8 8"/>
+  <circle cx="400" cy="410" r="230" fill="none" stroke="#E6E8DD" stroke-width="1.5"/>
+  <circle cx="400" cy="410" r="175" fill="none" stroke="#DFFF3F" stroke-width="2" stroke-opacity="0.65" stroke-dasharray="5 5"/>
+
+  <!-- Centered Floating Minimalist Garment Art Card -->
+  <g filter="url(#soft-shadow)">
+    <!-- Atelier Card Base -->
+    <rect x="250" y="240" width="300" height="340" rx="32" fill="#FFFFFF" stroke="#E1E3DA" stroke-width="1.5"/>
+
+    <!-- Subtle Brand Pill Badge -->
+    <rect x="325" y="268" width="150" height="26" rx="13" fill="#F4F5EA"/>
+    <circle cx="342" cy="281" r="4" fill="#DFFF3F"/>
+    <text x="408" y="285" text-anchor="middle" fill="#7B7F75" font-family="'Manrope', 'DM Sans', system-ui, sans-serif" font-size="10.5" font-weight="800" letter-spacing="2">ATELIER CURATED</text>
+
+    <!-- Refined Minimalist Coat Hanger Art -->
+    <g transform="translate(400, 360)">
+      <!-- Hook -->
+      <path d="M0 -36 A14 14 0 0 1 14 -22 C14 -12 0 -8 0 0" fill="none" stroke="#10110F" stroke-width="3" stroke-linecap="round"/>
+      <!-- Hanger Beam -->
+      <path d="M-68 28 L0 0 L68 28" fill="none" stroke="#10110F" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <line x1="-58" y1="28" x2="58" y2="28" stroke="#10110F" stroke-width="2.5" stroke-linecap="round"/>
+      <!-- Tailored Dress/Blazer Silhouette Draft -->
+      <path d="M-42 30 L-50 120 A8 8 0 0 0 -42 128 L42 128 A8 8 0 0 0 50 120 L42 30" fill="none" stroke="#10110F" stroke-width="2" stroke-dasharray="5 4" stroke-opacity="0.85"/>
+      <!-- Center Placket & Lapels -->
+      <line x1="0" y1="30" x2="0" y2="128" stroke="#10110F" stroke-width="1.8" stroke-dasharray="4 4" stroke-opacity="0.6"/>
+      <path d="M-18 30 L0 65 L18 30" fill="none" stroke="#10110F" stroke-width="2.2" stroke-linecap="round"/>
+      <!-- Lime Fashion Tag -->
+      <rect x="18" y="75" width="16" height="24" rx="4" fill="#DFFF3F" stroke="#10110F" stroke-width="1.2"/>
+      <circle cx="26" cy="80" r="1.5" fill="#10110F"/>
+    </g>
+  </g>
+
+  <!-- Editorial Brand Typography Section -->
+  <g transform="translate(400, 710)" text-anchor="middle">
+    <!-- Main Logo Type -->
+    <text y="0" fill="#10110F" font-family="'Manrope', 'DM Sans', system-ui, sans-serif" font-size="44" font-weight="900" letter-spacing="-1.5">DrapeMind</text>
+    
+    <!-- Sub-brand Tag -->
+    <text y="38" fill="#7B7F75" font-family="'Manrope', 'DM Sans', system-ui, sans-serif" font-size="13" font-weight="800" letter-spacing="6">STUDIO &amp; SHOWROOM</text>
+
+    <!-- Divider Bar -->
+    <rect x="-35" y="65" width="70" height="2" rx="1" fill="#DFFF3F"/>
+
+    <!-- Fashion Notice -->
+    <text y="105" fill="#40433D" font-family="'Manrope', 'DM Sans', system-ui, sans-serif" font-size="18" font-weight="700">Fotografía en preparación</text>
+    <text y="132" fill="#7B7F75" font-family="'Manrope', 'DM Sans', system-ui, sans-serif" font-size="14" font-weight="500">Muestra física disponible en showroom</text>
+  </g>
 </svg>

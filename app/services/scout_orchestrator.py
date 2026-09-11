@@ -254,7 +254,7 @@ async def scout_completion(messages, chat_id=None, step=1, **_):
         raise ModelRuntimeError("Scout no devolvió una decisión válida. Revisa su configuración y compatibilidad JSON Schema.") from exc
 
 
-async def run_scout_orchestrator(db, user, message, memory, gemma_complete, emit, chat_id):
+async def run_scout_orchestrator(db, user, message, memory, gemma_complete, emit, chat_id, allow_delegation: bool = True):
     delegated = False
     truncated = False
     scout_calls = 0
@@ -279,6 +279,8 @@ async def run_scout_orchestrator(db, user, message, memory, gemma_complete, emit
 
     async def delegate(current_message, state, observations, *, clarification=False):
         nonlocal delegated, truncated
+        if not allow_delegation:
+            return "Consulta completada con éxito por Altair Mini."
         if delegated:
             raise ModelRuntimeError("Este turno ya utilizó su respuesta de Gemma.")
         delegated = True
@@ -332,6 +334,17 @@ async def run_scout_orchestrator(db, user, message, memory, gemma_complete, emit
                 and decision.get("intro", "").strip()):
             return {"type": "finish", "answer": decision["intro"], "presentation": "mixed"}
         if route in {"cards", "delegate"}:
+            if not allow_delegation:
+                # Altair Mini: nunca despertar a Gemma
+                if decision.get("intro", "").strip():
+                    return {"type": "finish", "answer": decision["intro"], "presentation": "mixed" if cards else "text"}
+                if cards:
+                    return {
+                        "type": "finish",
+                        "answer": f"Encontré {len(cards)} prenda(s) en showroom que se ajustan a tu solicitud.",
+                        "presentation": "mixed"
+                    }
+                return {"type": "finish", "answer": "Listo, consulta procesada con éxito por Altair Mini.", "presentation": "text"}
             answer = await delegate(current_message, state, observations)
             return {"type": "finish", "answer": answer}
         return None
@@ -344,7 +357,7 @@ async def run_scout_orchestrator(db, user, message, memory, gemma_complete, emit
                 max_steps=settings.SCOUT_MAX_STEPS, prompt_factory=scout_prompt, delegate=delegate,
                 after_tool=continue_after_tool, chat_id=chat_id,
             )
-    result["response_meta"]["agent_mode"] = "scout_tools_gemma_on_demand"
+    result["response_meta"]["agent_mode"] = "scout_mini_only" if not allow_delegation else "scout_tools_gemma_on_demand"
     result["response_meta"]["model_used"] = settings.AI_MODEL if delegated else settings.SCOUT_MODEL
     result["response_meta"]["delegated_to_main"] = delegated
     result["response_meta"]["scout_calls"] = scout_calls

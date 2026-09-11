@@ -92,13 +92,14 @@ STATIC_DIR.mkdir(parents=True, exist_ok=True)
 PLACEHOLDER_SVG_FALLBACK = (
     '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1000" viewBox="0 0 800 1000" role="img">'
     '<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">'
-    '<stop offset="0" stop-color="#10281f"/><stop offset="1" stop-color="#244d3e"/></linearGradient></defs>'
+    '<stop offset="0" stop-color="#FAFBF5"/><stop offset="1" stop-color="#ECEEE2"/></linearGradient></defs>'
     '<rect width="800" height="1000" fill="url(#bg)"/>'
-    '<circle cx="400" cy="410" r="168" fill="none" stroke="#c5ff3d" stroke-width="5"/>'
-    '<path d="M310 330l90-48 90 48 72 110-73 44-24-43v221H335V441l-24 43-73-44z" fill="#f4f0e7" opacity=".96"/>'
-    '<text x="400" y="760" text-anchor="middle" fill="#f4f0e7" font-family="Georgia,serif" font-size="62">DrapeMind</text>'
-    '<text x="400" y="820" text-anchor="middle" fill="#c5ff3d" font-family="Arial,sans-serif" font-size="24" letter-spacing="8">ATELIER</text>'
-    '<text x="400" y="900" text-anchor="middle" fill="#cbd3ce" font-family="Arial,sans-serif" font-size="22">Prenda en exhibición</text>'
+    '<circle cx="400" cy="410" r="175" fill="none" stroke="#DFFF3F" stroke-width="3" stroke-dasharray="6 6"/>'
+    '<path d="M330 380 L400 340 L470 380" fill="none" stroke="#10110F" stroke-width="3" stroke-linecap="round"/>'
+    '<path d="M350 380 L340 500 A8 8 0 0 0 348 508 L452 508 A8 8 0 0 0 460 500 L450 380" fill="none" stroke="#10110F" stroke-width="2" stroke-dasharray="5 5"/>'
+    '<text x="400" y="720" text-anchor="middle" fill="#10110F" font-family="Arial,sans-serif" font-size="44" font-weight="bold">DrapeMind</text>'
+    '<text x="400" y="765" text-anchor="middle" fill="#7B7F75" font-family="Arial,sans-serif" font-size="14" letter-spacing="4">ATELIER STUDIO</text>'
+    '<text x="400" y="820" text-anchor="middle" fill="#7B7F75" font-family="Arial,sans-serif" font-size="16">Fotografía en preparación</text>'
     '</svg>'
 )
 
