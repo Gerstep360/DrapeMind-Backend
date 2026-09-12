@@ -803,6 +803,27 @@ def run_full_seed(log_fn: Callable[[str], None] = print) -> None:
     log_fn("====================================================================")
 
     with SessionLocal() as db:
+        prod_count = db.scalar(select(func.count(Product.id))) or 0
+        is_force = ("--force" in sys.argv)
+        is_reset = ("--reset" in sys.argv)
+
+        if prod_count > 0 and not is_force and not is_reset:
+            log_fn(f"\n⚠️  [SEEDER OMITIDO] La base de datos ya contiene {prod_count} productos.")
+            log_fn("    El sembrado ha sido omitido para preservar tus datos y evitar duplicados.")
+            log_fn("    (Para forzar el sembrado explícitamente usa: python -m scripts.db.seed_data --force)")
+            log_fn("    (Para reiniciar y sembrar limpio usa:       python -m scripts.db.seed_data --reset)\n")
+            return
+
+        if is_reset:
+            log_fn("\n⚠️  [MODO RESET] Limpiando tablas de catálogo, stock y pedidos antes del sembrado...")
+            try:
+                db.execute(text("TRUNCATE TABLE items_pedido, items_reserva, pagos, pedidos, reservas, stock_sucursal, variantes_producto, productos CASCADE;"))
+                db.commit()
+                log_fn("  ✓ Tablas de productos y pedidos reseteadas a cero.")
+            except Exception as exc:
+                db.rollback()
+                log_fn(f"  ! Aviso al resetear tablas: {exc}")
+
         log_fn("\n🏬 1. Ciudades y Sucursales (Showrooms)...")
         central, north = seed_cities_and_branches(db, log_fn)
         db.commit()

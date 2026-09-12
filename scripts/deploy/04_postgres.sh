@@ -69,6 +69,24 @@ setup_postgresql() {
     log_success "Base de datos y permisos de PostgreSQL listos."
 }
 
+run_migrations_only() {
+    cd "${BACKEND_DIR}"
+
+    if [[ "${INSTALL_FLOW:-false}" != "true" ]]; then
+        echo -e "${COLOR_PRIMARY}╭── [MIGRACIONES DE ESQUEMA ALEMBIC] ───────────────────────────────────────╮${NC}"
+        echo -e "${COLOR_PRIMARY}│${NC}  ${BOLD}${ICON_DATABASE} Aplicando Migraciones de Esquema (Sin Sembrado de Datos)${NC}"
+        echo -e "${COLOR_PRIMARY}╰───────────────────────────────────────────────────────────────────────────╯${NC}"
+    fi
+
+    if [[ -x "${BACKEND_DIR}/.venv/bin/python" ]]; then
+        tui_spin_cmd "Ejecutando migraciones de base de datos Alembic (upgrade head)" \
+            "${BACKEND_DIR}/.venv/bin/python" -m alembic upgrade head
+        log_success "Migraciones Alembic aplicadas exitosamente (datos preservados intactos)."
+    else
+        log_warn "Entorno virtual .venv no encontrado; omite migraciones hasta crear el entorno."
+    fi
+}
+
 run_migrations_and_seed() {
     cd "${BACKEND_DIR}"
 

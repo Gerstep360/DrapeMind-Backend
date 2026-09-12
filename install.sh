@@ -90,8 +90,8 @@ update_backend_code() {
     tui_step 3 5 "Sincronizando Nuevas Variables en .env (Preservando Secretos)"
     sync_env_production
 
-    tui_step 4 5 "Aplicando Migraciones de Base de Datos Alembic"
-    run_migrations_and_seed
+    tui_step 4 5 "Aplicando Migraciones de Base de Datos Alembic (Sin Sembrado)"
+    run_migrations_only
 
     tui_step 5 5 "Reiniciando Servicio Systemd drapemind-backend"
     restart_service
@@ -163,7 +163,7 @@ case "${1:-}" in
     --db)
         setup_postgresql
         sync_env_production
-        run_migrations_and_seed
+        run_migrations_only
         ;;
     --seed)
         run_seeder_only
@@ -220,7 +220,7 @@ case "${1:-}" in
             7)
                 setup_postgresql
                 sync_env_production
-                run_migrations_and_seed
+                run_migrations_only
                 ;;
             8)
                 install_llama_server true
