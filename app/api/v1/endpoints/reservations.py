@@ -141,9 +141,34 @@ def validate_qr(
     db: Session = Depends(get_db),
 ) -> Reservation:
     expire_due_reservations(db)
-    reservation = db.scalar(select(Reservation).where(Reservation.qr_token == payload.qr_token).with_for_update())
+    import uuid
+    from sqlalchemy import cast, String, or_
+    raw_token = str(payload.qr_token).strip()
+    filters = [
+        cast(Reservation.qr_token, String).ilike(f"{raw_token}%"),
+        cast(Reservation.codigo_publico, String).ilike(f"{raw_token}%"),
+    ]
+    try:
+        token_uuid = uuid.UUID(raw_token)
+        filters.append(Reservation.qr_token == token_uuid)
+        filters.append(Reservation.codigo_publico == token_uuid)
+    except Exception:
+        pass
+
+    clean_digits = "".join(c for c in raw_token if c.isdigit())
+    if clean_digits:
+        try:
+            filters.append(Reservation.id == int(clean_digits))
+        except Exception:
+            pass
+
+    reservation = db.scalar(
+        select(Reservation)
+        .where(or_(*filters))
+        .with_for_update()
+    )
     if not reservation:
-        raise HTTPException(404, "QR invalido")
+        raise HTTPException(404, f"Reserva no encontrada con el código '{raw_token}'")
     if reservation.vence_at <= datetime.now(timezone.utc) or reservation.estado == "VENCIDA":
         raise HTTPException(410, "La reserva vencio")
     if reservation.estado not in {"PENDIENTE", "CONFIRMADA", "LISTA"}:

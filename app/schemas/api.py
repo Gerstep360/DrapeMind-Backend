@@ -306,7 +306,7 @@ class ReservationDetail(ReservationOut):
 
 
 class QRValidationRequest(BaseModel):
-    qr_token: UUID
+    qr_token: str
 
 
 class CheckoutRequest(BaseModel):

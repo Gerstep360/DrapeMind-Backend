@@ -6,10 +6,15 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_roles
 from app.db.session import get_db
-from app.models import Order, Role, User
+from app.models import Order, Payment, Role, User
 from app.schemas.api import OrderOut, OrderStatusUpdate
 from app.services.realtime import event_hub
-from app.services.store import cancel_unpaid_order
+from app.services.store import (
+    cancel_unpaid_order,
+    confirm_payment,
+    create_payment,
+    staff_can_access_branch,
+)
 
 router = APIRouter()
 
@@ -128,4 +133,40 @@ def cancel_order(
         order.usuario_id,
     )
     return order
+
+
+@router.post(
+    "/{order_id}/cash-confirm",
+    response_model=OrderOut,
+    summary="CU-37: Confirmar y registrar cobro en efectivo por vendedor",
+)
+def confirm_order_cash_payment(
+    order_id: int,
+    background_tasks: BackgroundTasks,
+    staff: User = Depends(require_roles(Role.ADMIN, Role.VENDEDOR, Role.ENCARGADO, Role.CAJERO)),
+    db: Session = Depends(get_db),
+) -> Order:
+    order = db.get(Order, order_id)
+    if not order:
+        raise HTTPException(404, "Pedido no encontrado")
+    if order.estado != "PENDIENTE_PAGO":
+        raise HTTPException(409, f"El pedido ya esta en estado {order.estado}")
+    if staff.rol != Role.ADMIN and not staff_can_access_branch(db, staff, order.sucursal_id):
+        raise HTTPException(403, "No está asignado a la sucursal del pedido")
+
+    payment = db.scalar(
+        select(Payment).where(Payment.pedido_id == order.id, Payment.metodo == "EFECTIVO")
+    )
+    if not payment:
+        payment = create_payment(db, order, "EFECTIVO")
+    confirm_payment(db, payment.referencia_externa, "APROBADO")
+    db.refresh(order)
+
+    event = {"type": "order_updated", "order_id": order.id, "status": order.estado}
+    background_tasks.add_task(event_hub.publish, event, order.usuario_id)
+    background_tasks.add_task(
+        event_hub.publish, event, None, {"ADMIN", "VENDEDOR", "ENCARGADO", "CAJERO"}
+    )
+    return order
+
 

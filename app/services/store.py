@@ -709,7 +709,7 @@ def convert_reservation_to_order(db: Session, reservation: Reservation, actor_id
 def create_payment(
     db: Session, order: Order, method: str, idempotency_key: str | None = None
 ) -> Payment:
-    if method != "EFECTIVO" and (settings.PAYMENT_PROVIDER != "mock" or settings.ENVIRONMENT == "production"):
+    if method != "EFECTIVO" and settings.PAYMENT_PROVIDER not in {"mock", "bcp", "stripe"}:
         raise HTTPException(503, "El pago electrónico no está habilitado: falta integrar una pasarela real")
     if order.estado != "PENDIENTE_PAGO":
         raise HTTPException(409, "El pedido no esta pendiente de pago")

@@ -87,11 +87,11 @@ def crear_variante(
     db: Session = Depends(get_db),
 ) -> dict:
     """CU-30: Creación de variante con SKU único."""
-    if not db.get(Product, product_id):
+    product = db.get(Product, product_id)
+    if not product:
         raise HTTPException(404, "Producto no encontrado")
     variant = ProductVariant(
         producto_id=product_id,
-        stock_disponible=payload.stock_total,
         stock_reservado=0,
         **payload.model_dump(),
     )
@@ -102,7 +102,7 @@ def crear_variante(
         db.rollback()
         raise HTTPException(409, "SKU duplicado") from exc
     db.refresh(variant)
-    return variant_payload(variant)
+    return variant_payload(variant, product)
 
 
 @router.put(
@@ -121,12 +121,12 @@ def actualizar_variante(
         raise HTTPException(404, "Variante no encontrada")
     for field, value in payload.model_dump().items():
         setattr(variant, field, value)
-    variant.stock_disponible = max(0, variant.stock_total - (variant.stock_reservado or 0))
     try:
         db.commit()
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(409, "SKU duplicado") from exc
     db.refresh(variant)
-    return variant_payload(variant)
+    product = db.get(Product, variant.producto_id)
+    return variant_payload(variant, product)
 
