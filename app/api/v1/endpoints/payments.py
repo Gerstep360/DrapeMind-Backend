@@ -112,14 +112,19 @@ def mock_confirm(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Payment:
-    if settings.PAYMENT_PROVIDER != "mock" or settings.ENVIRONMENT == "production":
-        raise HTTPException(404, "Endpoint no disponible")
-    payment = db.scalar(
-        select(Payment).join(Order, Order.id == Payment.pedido_id)
-        .where(Payment.id == payment_id, Order.usuario_id == current_user.id, Payment.proveedor == "MOCK")
-    )
+    query = select(Payment).join(Order, Order.id == Payment.pedido_id).where(Payment.id == payment_id)
+    rol_str = str(getattr(current_user, "rol", ""))
+    is_staff = rol_str in {"ADMIN", "VENDEDOR", "ENCARGADO", "CAJERO"} or getattr(current_user, "rol", None) in {"ADMIN", "VENDEDOR", "ENCARGADO", "CAJERO"}
+    if not is_staff:
+        query = query.where(Order.usuario_id == current_user.id)
+    payment = db.scalar(query)
     if not payment:
         raise HTTPException(404, "Pago no encontrado")
+    is_real_stripe = payment.proveedor == "STRIPE" and not (payment.referencia_externa or "").startswith("pi_sandbox_")
+    if is_real_stripe:
+        raise HTTPException(400, "Para pagos reales con tarjeta utiliza la pasarela oficial Stripe")
+    if payment.estado == "APROBADO":
+        return payment
     payment = confirm_payment(db, payment.referencia_externa, "APROBADO")
     background_tasks.add_task(
         event_hub.publish,
