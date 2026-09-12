@@ -68,14 +68,16 @@ def update_status(
     order_id: int,
     payload: OrderStatusUpdate,
     background_tasks: BackgroundTasks,
-    staff: User = Depends(require_roles(Role.ADMIN, Role.VENDEDOR)),
+    staff: User = Depends(require_roles(Role.ADMIN, Role.VENDEDOR, Role.ENCARGADO, Role.CAJERO)),
     db: Session = Depends(get_db),
 ) -> Order:
     order = db.get(Order, order_id)
     if not order:
         raise HTTPException(404, "Pedido no encontrado")
+    if staff.rol != Role.ADMIN and not staff_can_access_branch(db, staff, order.sucursal_id):
+        raise HTTPException(403, "No está asignado a la sucursal del pedido")
     allowed = {
-        "PENDIENTE_PAGO": {"PAGADO", "CANCELADO"},
+        "PENDIENTE_PAGO": {"CANCELADO"},
         "PAGADO": {"PREPARANDO"},
         "PREPARANDO": {"LISTO", "CANCELADO"},
         "LISTO": {"ENVIADO", "ENTREGADO"},
@@ -311,6 +313,5 @@ def download_receipt(
             "Content-Disposition": f'attachment; filename="comprobante-pedido-{order_id}.txt"'
         },
     )
-
 
 

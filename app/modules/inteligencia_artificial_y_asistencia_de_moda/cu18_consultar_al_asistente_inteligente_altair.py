@@ -56,30 +56,27 @@ async def onboarding_greeting(
     )
 
     t0 = asyncio.get_event_loop().time()
+    from fastapi import HTTPException
+    from app.services.scout_orchestrator import scout_text_completion, inference_turn
+    from app.core.config import settings
+    if not settings.SCOUT_ENABLED:
+        raise HTTPException(503, 'Altair mini no está habilitado.')
     try:
-        from app.services.model_runtime import model_runtime
-        raw_text = await model_runtime.generate_text(
-            prompt,
-            system_instruction="Eres Altair, el Personal Stylist de DrapeMind Atelier en Bolivia. Habla con elegancia, calidez y brevedad.",
-            temperature=0.7,
-            max_tokens=150,
-        )
-        greeting_text = raw_text.strip().strip('"').strip("'")
-        if len(greeting_text) < 20:
-            raise ValueError("Greeting too short")
+        async with asyncio.timeout(settings.SCOUT_TIMEOUT_SECONDS):
+            async with inference_turn():
+                result = await scout_text_completion([
+                    {'role': 'system', 'content': 'Da una bienvenida breve. No afirmes haber consultado inventario ni analizado preferencias todavía.'},
+                    {'role': 'user', 'content': prompt},
+                ])
+        greeting_text = result['choices'][0]['message']['content']
     except Exception as exc:
-        logger.info("Fallback greeting used for %s: %s", user.id, exc)
-        greeting_text = (
-            f"¡Te doy una cálida bienvenida a DrapeMind, {nombre}! Soy Altair, tu Personal Stylist impulsado por inteligencia artificial, "
-            f"conectado en tiempo real al inventario físico de nuestras boutiques en Bolivia. "
-            f"Acompáñame en este breve recorrido para calibrar tu ADN de estilo, tus medidas y descubrir tu primer outfit exclusivo."
-        )
+        raise HTTPException(503, 'Altair no pudo generar la bienvenida. Puedes continuar con el formulario.') from exc
 
     latency_ms = round((asyncio.get_event_loop().time() - t0) * 1000, 1)
     return {
         "greeting": greeting_text,
         "stylist_name": "Altair",
-        "model": "Altair Mini (Gemma 2B)",
+        "model": settings.SCOUT_MODEL,
         "user_name": nombre,
         "latency_ms": latency_ms,
         "tips": [

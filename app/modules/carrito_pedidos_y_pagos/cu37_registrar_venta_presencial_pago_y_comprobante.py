@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import require_roles
 from app.db.session import get_db
-from app.models import BranchStock, Order, OrderItem, Payment, Product, ProductVariant, Role, User
+from app.models import Branch, BranchStock, Order, OrderItem, Payment, Product, ProductVariant, Role, User
+from app.services.store import staff_can_access_branch
 
 router = APIRouter()
 
@@ -40,6 +41,33 @@ def registrar_venta_pos(
     db: Session = Depends(get_db),
 ) -> dict:
     """CU-37: Venta en mostrador / POS."""
+    if not staff_can_access_branch(db, vendedor, payload.sucursal_id):
+        raise HTTPException(403, 'No está asignado a la sucursal de venta')
+    branch = db.get(Branch, payload.sucursal_id)
+    if not branch or not branch.activo:
+        raise HTTPException(404, 'Sucursal no disponible')
+    if payload.cliente_id and not db.get(User, payload.cliente_id):
+        raise HTTPException(404, 'Cliente no encontrado')
+    if payload.metodo_pago.upper() not in {'EFECTIVO', 'QR', 'TARJETA', 'TRANSFERENCIA'}:
+        raise HTTPException(422, 'Método de pago no válido')
+    ids = [item.variante_id for item in payload.items]
+    if len(ids) != len(set(ids)):
+        raise HTTPException(422, 'Agrupa la cantidad de cada variante en una sola línea')
+    # Lock in stable order and validate the entire sale before writing any order.
+    for line in sorted(payload.items, key=lambda item: item.variante_id):
+        variant = db.scalar(select(ProductVariant).where(ProductVariant.id == line.variante_id).with_for_update())
+        product = db.get(Product, variant.producto_id) if variant else None
+        stock = db.scalar(select(BranchStock).where(
+            BranchStock.sucursal_id == payload.sucursal_id,
+            BranchStock.variante_id == line.variante_id,
+        ).with_for_update())
+        if not variant or not variant.activo or not product or not product.activo:
+            raise HTTPException(404, 'Prenda no disponible')
+        if line.precio_unitario != product.precio:
+            raise HTTPException(409, 'El precio cambió. Actualiza la selección antes de cobrar')
+        if not stock or min(stock.stock_total - stock.stock_reservado,
+                            variant.stock_total - variant.stock_reservado) < line.cantidad:
+            raise HTTPException(409, 'Stock insuficiente en la sucursal seleccionada')
     total = sum((item.precio_unitario * item.cantidad for item in payload.items), Decimal("0.00"))
 
     order = Order(

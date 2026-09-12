@@ -9,6 +9,7 @@ from app.db.session import get_db
 from app.models import User
 from app.schemas.api import CartOut, RecommendationApply
 from app.services.ai import apply_recommendation
+from app.services.store import replace_cart_items_batch
 
 router = APIRouter()
 
@@ -25,4 +26,8 @@ def aplicar_recomendacion_carrito(
     db: Session = Depends(get_db),
 ) -> dict:
     """CU-24: Aplica cambio sugerido por Altair."""
+    if payload.items is not None:
+        return replace_cart_items_batch(db, user.id, [
+            (item.variante_id, item.cantidad) for item in payload.items
+        ])
     return apply_recommendation(db, user.id, payload.recomendacion_id)

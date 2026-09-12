@@ -1,13 +1,13 @@
 """CU-39: Gestionar pedidos, ventas y entregas.
 Paquete: Carrito, pedidos y pagos (PK-03).
 """
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_roles
 from app.db.session import get_db
-from app.models import Order, Role, User
+from app.models import BranchStaff, Order, Role, User
 from app.schemas.api import OrderOut, OrderStatusUpdate
 
 router = APIRouter()
@@ -26,6 +26,10 @@ def listar_pedidos_admin(
     db: Session = Depends(get_db),
 ) -> list[Order]:
     stmt = select(Order)
+    if _staff.rol != Role.ADMIN:
+        stmt = stmt.where(Order.sucursal_id.in_(select(BranchStaff.sucursal_id).where(
+            BranchStaff.usuario_id == _staff.id, BranchStaff.activo.is_(True),
+        )))
     if state:
         stmt = stmt.where(Order.estado == state)
     if sucursal_id:
@@ -42,13 +46,9 @@ def listar_pedidos_admin(
 def actualizar_estado_pedido(
     order_id: int,
     payload: OrderStatusUpdate,
+    background_tasks: BackgroundTasks,
     _staff: User = Depends(require_roles(Role.ADMIN, Role.ENCARGADO, Role.VENDEDOR, Role.CAJERO)),
     db: Session = Depends(get_db),
 ) -> Order:
-    order = db.get(Order, order_id)
-    if not order:
-        raise HTTPException(status_code=404, detail="Pedido no encontrado")
-    order.estado = payload.estado
-    db.commit()
-    db.refresh(order)
-    return order
+    from .cu12_consultar_pedidos_e_historial_de_compras import update_status
+    return update_status(order_id, payload, background_tasks, _staff, db)

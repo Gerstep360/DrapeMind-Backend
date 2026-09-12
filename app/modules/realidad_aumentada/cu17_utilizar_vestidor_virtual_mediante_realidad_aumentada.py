@@ -16,7 +16,7 @@ def capabilities() -> dict:
     return {
         "mode": "2d-overlay",
         "backend": ["asset-validation", "size-recommendation", "fabric-parameters"],
-        "mobile": ["camera", "pose-tracking", "rendering"],
+        "mobile": ["camera", "manual-2d-overlay"],
         "requires": ["camera_permission", "person_in_frame", "ar_asset"],
         "supports_3d": False,
     }
@@ -77,9 +77,6 @@ def try_on_config(
         if v.activo and v.talla and v.talla not in available_sizes:
             available_sizes.append(v.talla)
 
-    if not available_sizes:
-        available_sizes = ["S", "M", "L", "XL"]
-
     nombre_l = product.nombre.lower()
     material_l = (product.material or "").lower()
 
@@ -122,22 +119,27 @@ def try_on_config(
                 recommended_size = sz
                 break
 
+    if asset_url and 'placeholder' in asset_url.lower():
+        asset_url = None
+    metrics = {
+        size: {'chest': dims['chest_cm'], 'waist': dims['waist_cm'],
+               'length': dims['length_cm'], 'shoulders': 45.0, 'hip': 100.0, 'foot': 26.0}
+        for size, dims in size_matrix.items() if size in available_sizes
+    }
+    if recommended_size not in available_sizes:
+        recommended_size = None
     return ARConfig(
-        product_id=product.id,
-        nombre=product.nombre,
-        categoria_id=product.categoria_id,
-        asset_2d_url=asset_url or "/static/ar/default_garment.png",
-        mesh_type="upper_body",
-        anchors=["left_shoulder", "right_shoulder", "left_hip", "right_hip"],
-        available_sizes=available_sizes,
-        size_matrix=size_matrix,
-        recommended_size=recommended_size,
+        producto_id=product.id,
+        supported=bool(asset_url),
+        mode='2d-overlay',
+        asset_url=asset_url,
+        instructions='Vista orientativa 2D. Ajusta la posición frente a la cámara; no hay seguimiento corporal automático.',
+        size_metrics=metrics,
+        fabric_elasticity=elasticity,
         fit_category=fit_cat,
-        fabric_physics={
-            "stiffness": 0.65,
-            "damping": 0.8,
-            "elasticity": elasticity,
-            "weight_gsm": 180,
-        },
+        available_sizes=available_sizes,
+        recommended_size=recommended_size,
+        material=product.material,
+        tracking={'automatic': False},
+        limitations=['No simula caída textil real.', 'Medidas genéricas estimadas, no medidas verificadas de esta prenda.'],
     )
-

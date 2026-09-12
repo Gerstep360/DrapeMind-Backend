@@ -401,7 +401,19 @@ class CartAnalysisRequest(BaseModel):
 
 
 class RecommendationApply(BaseModel):
-    recomendacion_id: int
+    recomendacion_id: int | None = Field(default=None, gt=0)
+    items: list[CartItemInput] | None = Field(default=None, min_length=1, max_length=8)
+    replace_cart: bool = False
+
+    @model_validator(mode='after')
+    def validate_target(self):
+        if (self.recomendacion_id is None) == (self.items is None):
+            raise ValueError('Envía una recomendación o una selección, no ambas')
+        if self.items is not None and not self.replace_cart:
+            raise ValueError('Confirma explícitamente el reemplazo del carrito')
+        if self.recomendacion_id is not None and self.replace_cart:
+            raise ValueError('Una recomendación individual no reemplaza todo el carrito')
+        return self
 
 
 class AIResponse(BaseModel):
