@@ -52,6 +52,12 @@ def iniciar_sesion(payload: LoginRequest, db: Session = Depends(get_db)) -> dict
             detail="Usuario inactivo o bloqueado",
         )
 
+    user.has_style_profile = (
+        db.scalar(
+            select(UserStyleProfile.id).where(UserStyleProfile.usuario_id == user.id)
+        )
+        is not None
+    )
     token, expires_in = create_access_token(user.id, user.rol.value)
     return {
         "access_token": token,
