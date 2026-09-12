@@ -156,10 +156,10 @@ def _generate_style_dna(payload: StyleProfileInput, outfit_result: dict | None) 
         parts.append(f"Tallas verificadas: {', '.join(tallas)}.")
 
     if outfit_result and outfit_result.get("items"):
-        total = outfit_result.get("total_price", 0)
+        total = float(outfit_result.get("total_price", 0))
         count = len(outfit_result.get("items", []))
         parts.append(
-            f"Altair ha sintetizado tu primer look de bienvenida con {count} piezas verificadas en showroom por Bs {total:.2f}."
+            f"Altair ha seleccionado tu primer look de bienvenida con {count} piezas verificadas en showroom por Bs {total:.2f}."
         )
     else:
         parts.append("Altair mantendrá estas proporciones para todas tus recomendaciones futuras en el atelier.")
@@ -240,6 +240,8 @@ def guardar_perfil_estilo_me(
             )
             outfit_data = _recommend_outfit(ToolContext(db=db, user=current_user), tool_args)
             if isinstance(outfit_data, dict):
+                from app.services.ai import sanitize_for_json
+                outfit_data = sanitize_for_json(outfit_data)
                 profile.primer_outfit_ia = outfit_data
         except Exception:
             # En caso de que no haya prendas que coincidan exactamente, guardamos perfil sin bloquear
@@ -247,6 +249,7 @@ def guardar_perfil_estilo_me(
 
     profile.adn_estilo_ia = _generate_style_dna(payload, outfit_data)
 
+    current_user.has_style_profile = True
     db.commit()
     db.refresh(profile)
     return profile

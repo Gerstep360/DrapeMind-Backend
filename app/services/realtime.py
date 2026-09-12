@@ -9,7 +9,7 @@ from app.core.config import settings
 
 
 def websocket_origin_allowed(origin: str | None) -> bool:
-    if not origin or settings.ENVIRONMENT == "development":
+    if not origin:
         return True
     normalized = origin.rstrip("/")
     if "*" in settings.CORS_ORIGINS or normalized in settings.CORS_ORIGINS:
@@ -19,6 +19,11 @@ def websocket_origin_allowed(origin: str | None) -> bool:
     from urllib.parse import urlparse
     parsed = urlparse(normalized)
     origin_host = parsed.hostname
+    if not origin_host:
+        return True
+    # Permitir localhost, servidores VPS de DrapeMind e IPs locales
+    if origin_host in ("localhost", "127.0.0.1", "167.86.106.105", "157.173.102.129") or origin_host.startswith("192.168.") or origin_host.startswith("10."):
+        return True
     for allowed in settings.CORS_ORIGINS:
         allowed_host = urlparse(allowed).hostname
         if allowed_host and allowed_host == origin_host:
