@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user
 from app.core.security import create_access_token, hash_password, verify_password
 from app.db.session import get_db
-from app.models import Role, User, UserStatus
+from app.models import Role, User, UserStatus, UserStyleProfile
 from app.schemas.api import ForgotPasswordRequest, LoginRequest, Message, TokenResponse, UserOut
 
 router = APIRouter()
@@ -67,8 +67,16 @@ def iniciar_sesion(payload: LoginRequest, db: Session = Depends(get_db)) -> dict
     summary="CU-02: Consultar usuario autenticado",
     description="Retorna el perfil del usuario activo en la sesión actual.",
 )
-def obtener_usuario_actual(user: User = Depends(get_current_user)) -> User:
+def obtener_usuario_actual(
+    user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> User:
     """CU-02: Valida y devuelve el usuario de la sesión actual."""
+    user.has_style_profile = (
+        db.scalar(
+            select(UserStyleProfile.id).where(UserStyleProfile.usuario_id == user.id)
+        )
+        is not None
+    )
     return user
 
 

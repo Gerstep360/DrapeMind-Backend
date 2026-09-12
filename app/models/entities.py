@@ -66,6 +66,7 @@ class User(TimestampMixin, Base):
     telefono: Mapped[str | None] = mapped_column(String(30))
     rol: Mapped[Role] = mapped_column(role_enum, default=Role.CLIENTE)
     estado: Mapped[UserStatus] = mapped_column(user_status_enum, default=UserStatus.ACTIVO)
+    has_style_profile: bool = False
 
 
 class Address(TimestampMixin, Base):
@@ -340,3 +341,21 @@ class AIRecommendation(Base):
     aplicada: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class UserStyleProfile(TimestampMixin, Base):
+    __tablename__ = "perfiles_estilo_usuario"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id", ondelete="CASCADE"), unique=True, index=True)
+    genero: Mapped[str | None] = mapped_column(String(30))
+    estilos_preferidos: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    talla_superior: Mapped[str | None] = mapped_column(String(20))
+    talla_inferior: Mapped[str | None] = mapped_column(String(20))
+    talla_calzado: Mapped[str | None] = mapped_column(String(20))
+    colores_favoritos: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    ocasiones_frecuentes: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    presupuesto_habitual: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+    silueta_preferida: Mapped[str | None] = mapped_column(String(50))
+    adn_estilo_ia: Mapped[str | None] = mapped_column(Text)
+    primer_outfit_ia: Mapped[dict | None] = mapped_column(JSONB)
+    completado: Mapped[bool] = mapped_column(Boolean, default=True)

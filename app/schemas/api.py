@@ -47,6 +47,39 @@ class UserOut(ORMModel):
     rol: Role
     estado: UserStatus
     created_at: datetime
+    has_style_profile: bool = False
+
+
+class StyleProfileInput(BaseModel):
+    genero: str | None = Field(default=None, max_length=30)
+    estilos_preferidos: list[str] = Field(default_factory=list)
+    talla_superior: str | None = Field(default=None, max_length=20)
+    talla_inferior: str | None = Field(default=None, max_length=20)
+    talla_calzado: str | None = Field(default=None, max_length=20)
+    colores_favoritos: list[str] = Field(default_factory=list)
+    ocasiones_frecuentes: list[str] = Field(default_factory=list)
+    presupuesto_habitual: Decimal | None = Field(default=None, ge=0)
+    silueta_preferida: str | None = Field(default=None, max_length=50)
+    infer_outfit: bool = True
+
+
+class StyleProfileOut(ORMModel):
+    id: int
+    usuario_id: int
+    genero: str | None
+    estilos_preferidos: list[str]
+    talla_superior: str | None
+    talla_inferior: str | None
+    talla_calzado: str | None
+    colores_favoritos: list[str]
+    ocasiones_frecuentes: list[str]
+    presupuesto_habitual: Decimal | None
+    silueta_preferida: str | None
+    adn_estilo_ia: str | None
+    primer_outfit_ia: dict | None
+    completado: bool
+    created_at: datetime
+    updated_at: datetime
 
 
 class UserUpdate(BaseModel):

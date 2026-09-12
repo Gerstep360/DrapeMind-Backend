@@ -7,8 +7,11 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.db.session import get_db
-from app.models import Address, User
-from app.schemas.api import AddressInput, AddressOut, UserOut, UserUpdate
+from app.models import Address, User, UserStyleProfile
+from app.schemas.api import (
+    AddressInput, AddressOut, StyleProfileInput, StyleProfileOut, UserOut, UserUpdate,
+)
+from app.services.ai_tools import ToolContext, _recommend_outfit, RecommendOutfitArgs
 
 router = APIRouter()
 
@@ -130,4 +133,122 @@ def eliminar_direccion_me(
             replacement.es_principal = True
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+def _generate_style_dna(payload: StyleProfileInput, outfit_result: dict | None) -> str:
+    estilo_txt = ", ".join(payload.estilos_preferidos) if payload.estilos_preferidos else "Atelier Contemporáneo"
+    colores_txt = ", ".join(payload.colores_favoritos) if payload.colores_favoritos else "tonos neutros y tierra"
+    silueta_txt = payload.silueta_preferida or "Regular"
+    genero_txt = payload.genero.capitalize() if payload.genero else "Unisex"
+
+    parts = [
+        f"Perfil estilístico curado en base a estética {estilo_txt} con silueta {silueta_txt} ({genero_txt}).",
+        f"Paleta cromática predilecta: {colores_txt}.",
+    ]
+    tallas = []
+    if payload.talla_superior:
+        tallas.append(f"superior {payload.talla_superior}")
+    if payload.talla_inferior:
+        tallas.append(f"inferior {payload.talla_inferior}")
+    if payload.talla_calzado:
+        tallas.append(f"calzado {payload.talla_calzado}")
+    if tallas:
+        parts.append(f"Tallas verificadas: {', '.join(tallas)}.")
+
+    if outfit_result and outfit_result.get("items"):
+        total = outfit_result.get("total_price", 0)
+        count = len(outfit_result.get("items", []))
+        parts.append(
+            f"Altair ha sintetizado tu primer look de bienvenida con {count} piezas verificadas en showroom por Bs {total:.2f}."
+        )
+    else:
+        parts.append("Altair mantendrá estas proporciones para todas tus recomendaciones futuras en el atelier.")
+
+    return " ".join(parts)
+
+
+@router.get(
+    "/me/style-profile",
+    response_model=StyleProfileOut,
+    summary="Consultar perfil de estilo de usuario",
+    description="Retorna las respuestas de la encuesta de estilo y el primer look generado por IA si existe.",
+)
+def obtener_perfil_estilo_me(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> UserStyleProfile:
+    profile = db.scalar(
+        select(UserStyleProfile).where(UserStyleProfile.usuario_id == current_user.id)
+    )
+    if not profile:
+        raise HTTPException(404, "El usuario aún no ha completado su perfil de estilo.")
+    return profile
+
+
+@router.post(
+    "/me/style-profile",
+    response_model=StyleProfileOut,
+    summary="Guardar encuesta de estilo y generar inferencia IA",
+    description="Registra las respuestas del onboarding de estilo, ejecuta inferencia en tiempo real con Altair y guarda el primer outfit.",
+)
+def guardar_perfil_estilo_me(
+    payload: StyleProfileInput,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> UserStyleProfile:
+    profile = db.scalar(
+        select(UserStyleProfile).where(UserStyleProfile.usuario_id == current_user.id)
+    )
+    if not profile:
+        profile = UserStyleProfile(usuario_id=current_user.id)
+        db.add(profile)
+
+    profile.genero = payload.genero
+    profile.estilos_preferidos = payload.estilos_preferidos
+    profile.talla_superior = payload.talla_superior
+    profile.talla_inferior = payload.talla_inferior
+    profile.talla_calzado = payload.talla_calzado
+    profile.colores_favoritos = payload.colores_favoritos
+    profile.ocasiones_frecuentes = payload.ocasiones_frecuentes
+    profile.presupuesto_habitual = payload.presupuesto_habitual
+    profile.silueta_preferida = payload.silueta_preferida
+    profile.completado = True
+
+    outfit_data = None
+    if payload.infer_outfit:
+        try:
+            # Inferencia en tiempo real usando herramientas internas de Altair
+            occ = payload.ocasiones_frecuentes[0] if payload.ocasiones_frecuentes else "casual"
+            budget_val = float(payload.presupuesto_habitual) if payload.presupuesto_habitual else None
+            gen_val = None
+            if payload.genero:
+                g_upper = payload.genero.upper()
+                if "FEM" in g_upper or "MUJ" in g_upper:
+                    gen_val = "MUJER"
+                elif "MASC" in g_upper or "HOMB" in g_upper:
+                    gen_val = "HOMBRE"
+                else:
+                    gen_val = "UNISEX"
+
+            tool_args = RecommendOutfitArgs(
+                occasion=occ,
+                max_budget=budget_val,
+                gender=gen_val,
+                top_size=payload.talla_superior,
+                bottom_size=payload.talla_inferior,
+                shoe_size=payload.talla_calzado,
+            )
+            outfit_data = _recommend_outfit(ToolContext(db=db, user=current_user), tool_args)
+            if isinstance(outfit_data, dict):
+                profile.primer_outfit_ia = outfit_data
+        except Exception:
+            # En caso de que no haya prendas que coincidan exactamente, guardamos perfil sin bloquear
+            pass
+
+    profile.adn_estilo_ia = _generate_style_dna(payload, outfit_data)
+
+    db.commit()
+    db.refresh(profile)
+    return profile
+
 

@@ -426,6 +426,28 @@ async def run_agent_socket(db: Session, user: User, message: str, session_id: in
         })
 
         memory = load_ai_memory(session.resumen_contexto)
+        try:
+            from app.models.entities import UserStyleProfile
+            from sqlalchemy import select
+            sp = db.scalar(select(UserStyleProfile).where(UserStyleProfile.usuario_id == user.id))
+            if sp and sp.completado:
+                facts = memory.setdefault("facts", {})
+                if "talla_superior" not in facts and sp.talla_superior:
+                    facts["talla_superior"] = sp.talla_superior
+                if "talla_inferior" not in facts and sp.talla_inferior:
+                    facts["talla_inferior"] = sp.talla_inferior
+                if "talla_calzado" not in facts and sp.talla_calzado:
+                    facts["talla_calzado"] = sp.talla_calzado
+                if "genero" not in facts and sp.genero:
+                    facts["genero"] = sp.genero
+                if "estilo_favorito" not in facts and sp.estilos_preferidos:
+                    facts["estilo_favorito"] = sp.estilos_preferidos[0]
+                if "silueta" not in facts and sp.silueta_preferida:
+                    facts["silueta"] = sp.silueta_preferida
+                if "presupuesto_habitual" not in facts and sp.presupuesto_habitual:
+                    facts["presupuesto_habitual"] = float(sp.presupuesto_habitual)
+        except Exception:
+            pass
         use_gemma_direct = (mode == "gemma") or (not settings.SCOUT_ENABLED and mode != "mini")
         was_ready = False if not use_gemma_direct else await model_runtime.is_healthy()
         await send(
