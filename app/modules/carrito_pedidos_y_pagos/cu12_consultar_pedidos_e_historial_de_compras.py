@@ -1,12 +1,14 @@
 from datetime import datetime, timezone
+from decimal import Decimal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi.responses import PlainTextResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_roles
 from app.db.session import get_db
-from app.models import Order, Payment, Role, User
+from app.models import Order, OrderItem, Payment, Role, User
 from app.schemas.api import OrderOut, OrderStatusUpdate
 from app.services.realtime import event_hub
 from app.services.store import (
@@ -168,5 +170,90 @@ def confirm_order_cash_payment(
         event_hub.publish, event, None, {"ADMIN", "VENDEDOR", "ENCARGADO", "CAJERO"}
     )
     return order
+
+
+@router.get(
+    "/{order_id}/receipt",
+    response_class=PlainTextResponse,
+    summary="CU-12: Descargar comprobante de compra (no fiscal)",
+)
+def download_receipt(
+    order_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    order = db.get(Order, order_id)
+    if not order or (
+        order.usuario_id != current_user.id
+        and current_user.rol not in (Role.ADMIN, Role.VENDEDOR, Role.ENCARGADO, Role.CAJERO)
+    ):
+        raise HTTPException(404, "Pedido no encontrado")
+
+    if order.estado not in {"PAGADO", "PREPARANDO", "LISTO", "ENVIADO", "ENTREGADO"}:
+        payments = list(
+            db.scalars(
+                select(Payment).where(
+                    Payment.pedido_id == order_id, Payment.estado == "APROBADO"
+                )
+            )
+        )
+        if not payments:
+            raise HTTPException(409, "El pedido todavía no tiene un pago aprobado o confirmado")
+
+    payments = list(
+        db.scalars(
+            select(Payment).where(Payment.pedido_id == order_id).order_by(Payment.id)
+        )
+    )
+    items = list(
+        db.scalars(
+            select(OrderItem).where(OrderItem.pedido_id == order_id).order_by(OrderItem.id)
+        )
+    )
+
+    lines = [
+        "==================================================",
+        "              DRAPEMIND ATELIER MODA              ",
+        "         Comprobante de Venta y Entrega           ",
+        "==================================================",
+        "",
+        f"Código de Pedido : {order.codigo_publico}",
+        f"Fecha y Hora     : {order.created_at.strftime('%Y-%m-%d %H:%M:%S') if order.created_at else ''}",
+        f"Sucursal         : {'Showroom Central' if not order.sucursal_id or order.sucursal_id == 1 else f'Showroom #{order.sucursal_id}'}",
+        f"Modalidad        : {order.tipo_entrega}",
+        f"Estado del Pedido: {order.estado}",
+        "",
+        "--------------------------------------------------",
+        "DETALLE DE PRENDAS:",
+        "--------------------------------------------------",
+    ]
+    for item in items:
+        lines.append(
+            f"{item.cantidad}x {item.nombre_snapshot} ({item.color_snapshot}, Talla {item.talla_snapshot})"
+        )
+        lines.append(
+            f"   SKU: {item.sku_snapshot} | Precio: Bs {item.precio_unitario:.2f} | Subtotal: Bs {item.subtotal:.2f}"
+        )
+
+    lines.extend([
+        "--------------------------------------------------",
+        f"Subtotal Prendas : Bs {sum((i.subtotal for i in items), Decimal('0')):.2f}",
+        f"Costo de Envío   : Bs {order.costo_envio:.2f}",
+        f"TOTAL PAGADO     : Bs {order.total:.2f} BOB",
+        "--------------------------------------------------",
+        f"Método de Pago   : {', '.join(p.metodo for p in payments) if payments else 'PAGO EN TIENDA / EFECTIVO'}",
+        "",
+        "¡Gracias por confiar en el estilo y confección DrapeMind!",
+        "Documento interno informativo y comprobante de entrega.",
+        "==================================================",
+    ])
+
+    return PlainTextResponse(
+        "\n".join(lines),
+        headers={
+            "Content-Disposition": f'attachment; filename="comprobante-pedido-{order_id}.txt"'
+        },
+    )
+
 
 
