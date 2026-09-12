@@ -299,13 +299,17 @@ def seed_users(db, central_branch: Branch, north_branch: Branch, log_fn: Callabl
         if not style:
             style = UserStyleProfile(
                 usuario_id=vip_client.id,
-                estilo_predilecto="Casual Elegante / Minimalista",
+                genero="FEMENINO",
+                estilos_preferidos=["Casual Elegante", "Minimalista"],
                 colores_favoritos=["Negro", "Azul Marino", "Blanco", "Beige"],
+                ocasiones_frecuentes=["Cena", "Trabajo", "Fin de semana"],
                 talla_superior="M",
                 talla_inferior="30",
                 talla_calzado="38",
-                presupuesto_estimado=Decimal("500.00"),
-                notas_adicionales="Prefiere tejidos naturales de algodón y lino para clima cálido.",
+                presupuesto_habitual=Decimal("500.00"),
+                silueta_preferida="Regular / Relajada",
+                adn_estilo_ia="Preferencia por tejidos naturales de algodón y lino para clima cálido.",
+                completado=True,
             )
             db.add(style)
             db.flush()
@@ -634,9 +638,8 @@ def seed_test_orders_and_reservations(db, users: dict[str, User], central: Branc
             estado="LISTA",
             codigo_publico=uuid.uuid4(),
             qr_token=test_qr_token,
-            qr_payload=f"drapemind:reserva:{test_qr_token}",
             vence_at=datetime.now(timezone.utc) + timedelta(days=2),
-            observaciones="Reserva de prueba lista en Showroom Central para prueba de escaneo QR y POS.",
+            observacion="Reserva de prueba lista en Showroom Central para prueba de escaneo QR y POS.",
         )
         db.add(reserva)
         db.flush()
