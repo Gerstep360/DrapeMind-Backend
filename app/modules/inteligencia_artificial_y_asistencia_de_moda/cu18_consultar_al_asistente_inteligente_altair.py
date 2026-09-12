@@ -38,6 +38,58 @@ async def chat_http(
     return await run_ai_action(db, user, "chat", payload.mensaje, payload.sesion_id)
 
 
+@router.get(
+    "/onboarding-greeting",
+    summary="CU-18: Saludo inicial de onboarding con Altair Mini",
+    description="Genera un saludo interactivo y personalizado de Altair para guiar al usuario nuevo en el atelier.",
+)
+async def onboarding_greeting(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    nombre = user.nombre.split()[0] if user.nombre else "amante de la moda"
+    prompt = (
+        f"Genera un saludo breve, cálido y elegante para dar la bienvenida a {nombre} al atelier DrapeMind. "
+        f"Preséntate como Altair, su Personal Stylist con IA conectado al inventario físico en Bolivia. "
+        f"Invítalo a calibrar su perfil de estilo y tallas en este breve recorrido para recomendarle su primer outfit exclusivo. "
+        f"Respuesta directa en español, en 2 o 3 oraciones memorables, sin markdown técnico ni comillas."
+    )
+
+    t0 = asyncio.get_event_loop().time()
+    try:
+        from app.services.model_runtime import model_runtime
+        raw_text = await model_runtime.generate_text(
+            prompt,
+            system_instruction="Eres Altair, el Personal Stylist de DrapeMind Atelier en Bolivia. Habla con elegancia, calidez y brevedad.",
+            temperature=0.7,
+            max_tokens=150,
+        )
+        greeting_text = raw_text.strip().strip('"').strip("'")
+        if len(greeting_text) < 20:
+            raise ValueError("Greeting too short")
+    except Exception as exc:
+        logger.info("Fallback greeting used for %s: %s", user.id, exc)
+        greeting_text = (
+            f"¡Te doy una cálida bienvenida a DrapeMind, {nombre}! Soy Altair, tu Personal Stylist impulsado por inteligencia artificial, "
+            f"conectado en tiempo real al inventario físico de nuestras boutiques en Bolivia. "
+            f"Acompáñame en este breve recorrido para calibrar tu ADN de estilo, tus medidas y descubrir tu primer outfit exclusivo."
+        )
+
+    latency_ms = round((asyncio.get_event_loop().time() - t0) * 1000, 1)
+    return {
+        "greeting": greeting_text,
+        "stylist_name": "Altair",
+        "model": "Altair Mini (Gemma 2B)",
+        "user_name": nombre,
+        "latency_ms": latency_ms,
+        "tips": [
+            "Consultamos stock real en Bolivianos (Bs) antes de recomendarte cualquier prenda.",
+            "Tus tallas y gustos quedarán registrados para tus futuras sesiones de asesoría.",
+            "Podrás reservar tus looks favoritos directamente en el showroom."
+        ]
+    }
+
+
 async def _authenticate(socket: WebSocket) -> dict:
     origin = socket.headers.get("origin")
     if not websocket_origin_allowed(origin):
