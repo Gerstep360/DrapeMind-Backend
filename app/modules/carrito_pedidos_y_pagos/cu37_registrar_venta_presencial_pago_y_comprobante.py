@@ -110,6 +110,15 @@ def registrar_venta_pos(
     if payment_method not in {"EFECTIVO", "QR", "TARJETA", "TRANSFERENCIA"}:
         payment_method = "EFECTIVO"
 
+    import uuid
+    ref = payload.numero_factura.strip() if payload.numero_factura else None
+    if ref:
+        existing_pay = db.scalar(select(Payment).where(Payment.referencia_externa == ref))
+        if existing_pay:
+            ref = f"{ref}-{order.id}"
+    else:
+        ref = f"POS-{order.id}-{uuid.uuid4().hex[:6]}"
+
     payment = Payment(
         pedido_id=order.id,
         monto=total,
@@ -117,7 +126,7 @@ def registrar_venta_pos(
         proveedor="CAJA_POS",
         moneda="BOB",
         estado="APROBADO",
-        referencia_externa=payload.numero_factura or f"POS-{order.id}",
+        referencia_externa=ref,
     )
     db.add(payment)
     db.commit()
