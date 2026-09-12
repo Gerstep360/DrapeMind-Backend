@@ -32,6 +32,7 @@ def _stock_payload(row: BranchStock, variant: ProductVariant, product: Product) 
         "color": variant.color, "talla": variant.talla, "stock_total": row.stock_total,
         "stock_reservado": row.stock_reservado,
         "stock_disponible": row.stock_total - row.stock_reservado,
+        "precio": product.precio,
         "activo": row.activo and variant.activo and product.activo,
     }
 

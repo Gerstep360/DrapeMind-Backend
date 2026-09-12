@@ -1,79 +1,136 @@
 """
-DrapeMind - Módulo de Seeding de Datos Iniciales Extendido
-Inserta categorías de moda, catálogo amplio de productos (30+) con variantes de color/talla/stock,
-usuarios base (ADMIN, VENDEDOR, CLIENTE), direcciones y datos de prueba.
+DrapeMind - Módulo de Seeding Integral y Catálogo Población
+=========================================================
+Carga:
+1. Sedes y Ciudades (Santa Cruz Central, Norte, La Paz Sopocachi).
+2. Usuarios para todos los roles (Admin, Encargado, Vendedor, Cajero, Cliente),
+   asignación a sucursales (BranchStaff), direcciones y perfil de estilo IA.
+3. Catálogo completo desde CSVs de población (67 categorías, 887 productos, 4,296 variantes),
+   con tags de IA, imágenes JSONB, precios y resolución de jerarquías.
+4. Distribución de inventario por sucursal (BranchStock) garantizando stock activo.
+5. Datos de prueba operativos (reservas activas con QR para tienda, pedidos con comprobante emitido).
+6. Reseteo de secuencias PostgreSQL (setval).
 """
 
+from __future__ import annotations
+
+import csv
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
+import json
+from pathlib import Path
 import sys
+from typing import Any, Callable
+import uuid
+
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-from decimal import Decimal
-from pathlib import Path
-from typing import Callable
-
 BACKEND_DIR = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(BACKEND_DIR))
 
-
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, text
 from app.core.security import hash_password
 from app.db.session import SessionLocal
 from app.models.entities import (
-    Address, Branch, BranchStaff, BranchStock, Category, City, Gender, Product,
-    ProductVariant, Role, User, UserStatus,
+    Address, Branch, BranchStaff, BranchStock, Category, City, Gender, Order,
+    OrderItem, Payment, Product, ProductVariant, Reservation, ReservationItem,
+    Role, User, UserStatus, UserStyleProfile,
 )
 
+DATA_DIR = Path(__file__).resolve().parent / "data"
+SEED_PREFIX = "seed:poblacion:"
 
-def seed_categories(db, log_fn: Callable[[str], None] = print) -> dict[str, Category]:
-    """Crea las categorías principales de moda."""
-    categories_data = [
-        {"nombre": "Poleras & Camisetas", "slug": "poleras-camisetas", "desc": "Poleras básicas, gráficas, oversize y camisetas de algodón suave."},
-        {"nombre": "Camisas & Blusas", "slug": "camisas-blusas", "desc": "Camisas casuales, formales, de lino y blusas elegantes."},
-        {"nombre": "Pantalones & Jeans", "slug": "pantalones-jeans", "desc": "Jeans, pantalones chinos, de vestir, joggers y bermudas."},
-        {"nombre": "Vestidos & Faldas", "slug": "vestidos-faldas", "desc": "Vestidos de fiesta, cóctel, midi, casuales y faldas modernas."},
-        {"nombre": "Chaquetas & Abrigos", "slug": "chaquetas-abrigos", "desc": "Blazers, parkas térmicas, chamarras de cuero y gabardinas."},
-        {"nombre": "Calzado & Zapatos", "slug": "calzado-zapatos", "desc": "Zapatos formales, zapatillas urbanas, botas chelsea y mocasines."},
-        {"nombre": "Accesorios & Bolsos", "slug": "accesorios-bolsos", "desc": "Cinturones de cuero, bufandas, bolsos, relojes y gafas de sol."},
-        {"nombre": "Deportes & Athleisure", "slug": "deportes-athleisure", "desc": "Prendas deportivas cómodas, licras, hoodies y conjuntos aerodinámicos."},
+
+def parse_pg_text_array(value: str) -> list[str]:
+    """Convierte cadenas estilo PostgreSQL '{foo,bar}' a lista Python."""
+    val = (value or "").strip()
+    if not val or val == "{}":
+        return []
+    if val.startswith("{") and val.endswith("}"):
+        inner = val[1:-1]
+        if not inner:
+            return []
+        reader = csv.reader([inner], delimiter=",", quotechar='"', escapechar="\\")
+        return [item.strip() for item in next(reader) if item.strip()]
+    return [val]
+
+
+def parse_json_array(value: str) -> list[str]:
+    """Parsea un arreglo JSON de strings."""
+    if not value:
+        return []
+    try:
+        res = json.loads(value)
+        return res if isinstance(res, list) else [str(res)]
+    except Exception:
+        return []
+
+
+def seed_cities_and_branches(db, log_fn: Callable[[str], None] = print) -> tuple[Branch, Branch]:
+    """Crea ciudades principales y sucursales (Showrooms) de DrapeMind."""
+    # 1. Santa Cruz
+    scz_city = db.scalar(
+        select(City).where(
+            City.nombre == "Santa Cruz de la Sierra",
+            City.departamento == "Santa Cruz",
+        )
+    )
+    if not scz_city:
+        scz_city = City(nombre="Santa Cruz de la Sierra", departamento="Santa Cruz", activo=True)
+        db.add(scz_city)
+        db.flush()
+
+    # 2. La Paz
+    lpz_city = db.scalar(
+        select(City).where(
+            City.nombre == "La Paz",
+            City.departamento == "La Paz",
+        )
+    )
+    if not lpz_city:
+        lpz_city = City(nombre="La Paz", departamento="La Paz", activo=True)
+        db.add(lpz_city)
+        db.flush()
+
+    branch_specs = [
+        ("SCZ-CENTRAL", "DrapeMind Showroom Central", "Av. San Martín #450, Equipetrol, Santa Cruz", "70011221", scz_city.id),
+        ("SCZ-NORTE", "DrapeMind Showroom Norte", "Av. Banzer esq. 4to Anillo, Santa Cruz", "70011222", scz_city.id),
+        ("LPZ-SOPOCACHI", "DrapeMind Atelier La Paz", "Av. 20 de Octubre #2100, Sopocachi, La Paz", "70011223", lpz_city.id),
     ]
 
-    cat_map = {}
-    for cdata in categories_data:
-        existing = db.scalar(select(Category).where(Category.slug == cdata["slug"]))
-        if not existing:
-            cat = Category(
-                nombre=cdata["nombre"],
-                slug=cdata["slug"],
-                descripcion=cdata["desc"],
+    branches: list[Branch] = []
+    for code, name, address, phone, city_id in branch_specs:
+        b = db.scalar(select(Branch).where(Branch.codigo == code))
+        if not b:
+            b = Branch(
+                ciudad_id=city_id,
+                codigo=code,
+                nombre=name,
+                direccion=address,
+                telefono=phone,
                 activo=True,
             )
-            db.add(cat)
+            db.add(b)
             db.flush()
-            cat_map[cdata["slug"]] = cat
-            log_fn(f"  + Categoría creada: {cdata['nombre']}")
+            log_fn(f"  + Sucursal creada: {name} [{code}]")
         else:
-            existing.nombre = cdata["nombre"]
-            existing.descripcion = cdata["desc"]
-            cat_map[cdata["slug"]] = existing
-            log_fn(f"  = Categoría existente: {cdata['nombre']}")
+            b.nombre = name
+            b.direccion = address
+            b.telefono = phone
+            b.activo = True
+            log_fn(f"  = Sucursal verificada: {name} [{code}]")
+        branches.append(b)
 
-    return cat_map
+    return branches[0], branches[1]
 
 
-def seed_users(db, log_fn: Callable[[str], None] = print) -> list[User]:
-    """Crea usuarios base iniciales (Admin, Vendedor, Cliente)."""
+def seed_users(db, central_branch: Branch, north_branch: Branch, log_fn: Callable[[str], None] = print) -> dict[str, User]:
+    """Crea cuentas completas para todos los roles con credenciales y direcciones."""
     users_data = [
-        {
-            "nombre": "German Rojas (Administrador)",
-            "email": "rojascruzgermanlino@gmail.com",
-            "password": "Password123!",
-            "rol": Role.ADMIN,
-            "telefono": "63014529",
-            "direccion": "Av. Las Américas #780, Equipetrol, Santa Cruz",
-        },
+        # Administradores
         {
             "nombre": "Admin DrapeMind",
             "email": "admin@drapemind.com",
@@ -81,48 +138,112 @@ def seed_users(db, log_fn: Callable[[str], None] = print) -> list[User]:
             "rol": Role.ADMIN,
             "telefono": "70011223",
             "direccion": "Calle 21 de Calacoto #1200, La Paz",
+            "branch": None,
         },
         {
-            "nombre": "Carlos Vendedor",
-            "email": "vendedor@drapemind.com",
-            "password": "Vendedor12345!",
-            "rol": Role.VENDEDOR,
-            "telefono": "71122334",
-            "direccion": "Av. San Martín #450, Santa Cruz",
+            "nombre": "German Rojas (SuperAdmin)",
+            "email": "rojascruzgermanlino@gmail.com",
+            "password": "Password123!",
+            "rol": Role.ADMIN,
+            "telefono": "63014529",
+            "direccion": "Av. Las Américas #780, Equipetrol, Santa Cruz",
+            "branch": None,
         },
+        # Encargados de Tienda (Store Managers)
         {
-            "nombre": "Elena Encargada",
+            "nombre": "Elena Encargada Central",
             "email": "encargado@drapemind.com",
             "password": "Encargado12345!",
             "rol": Role.ENCARGADO,
             "telefono": "73344556",
-            "direccion": "Av. Banzer #1000, Santa Cruz",
+            "direccion": "Av. San Martín #450, Equipetrol, Santa Cruz",
+            "branch": central_branch,
         },
         {
-            "nombre": "Mateo Cajero",
+            "nombre": "Roberto Encargado Norte",
+            "email": "encargado.norte@drapemind.com",
+            "password": "Encargado12345!",
+            "rol": Role.ENCARGADO,
+            "telefono": "73344557",
+            "direccion": "Av. Banzer esq. 4to Anillo, Santa Cruz",
+            "branch": north_branch,
+        },
+        # Vendedores (Sales Representatives)
+        {
+            "nombre": "Carlos Vendedor Central",
+            "email": "vendedor@drapemind.com",
+            "password": "Vendedor12345!",
+            "rol": Role.VENDEDOR,
+            "telefono": "71122334",
+            "direccion": "Calle Rene Moreno #120, Santa Cruz",
+            "branch": central_branch,
+        },
+        {
+            "nombre": "Lucia Vendedora Norte",
+            "email": "vendedora@drapemind.com",
+            "password": "Vendedor12345!",
+            "rol": Role.VENDEDOR,
+            "telefono": "71122335",
+            "direccion": "Av. Cristo Redentor #300, Santa Cruz",
+            "branch": north_branch,
+        },
+        # Cajeros (Cashiers)
+        {
+            "nombre": "Mateo Cajero Central",
             "email": "cajero@drapemind.com",
             "password": "Cajero12345!",
             "rol": Role.CAJERO,
             "telefono": "74455667",
-            "direccion": "Av. Banzer #1000, Santa Cruz",
+            "direccion": "Av. Monseñor Rivero #500, Santa Cruz",
+            "branch": central_branch,
         },
+        {
+            "nombre": "Valeria Cajera Norte",
+            "email": "cajera@drapemind.com",
+            "password": "Cajero12345!",
+            "rol": Role.CAJERO,
+            "telefono": "74455668",
+            "direccion": "Av. Beni #800, Santa Cruz",
+            "branch": north_branch,
+        },
+        # Clientes
         {
             "nombre": "Maria Cliente VIP",
             "email": "cliente@drapemind.com",
             "password": "Cliente12345!",
             "rol": Role.CLIENTE,
             "telefono": "72233445",
+            "direccion": "Av. Las Palmas #230, Santa Cruz",
+            "branch": None,
+        },
+        {
+            "nombre": "Sofia Montes (Cliente Frecuente)",
+            "email": "sofia.montes@gmail.com",
+            "password": "Cliente12345!",
+            "rol": Role.CLIENTE,
+            "telefono": "76655443",
+            "direccion": "Calle 9 de Calacoto #45, La Paz",
+            "branch": None,
+        },
+        {
+            "nombre": "Lucas Paredes (Cliente Casual)",
+            "email": "lucas.paredes@gmail.com",
+            "password": "Cliente12345!",
+            "rol": Role.CLIENTE,
+            "telefono": "78899001",
             "direccion": "Av. Ballivián #340, Cochabamba",
+            "branch": None,
         },
     ]
 
-    created = []
+    user_map: dict[str, User] = {}
     for udata in users_data:
-        user = db.scalar(select(User).where(func.lower(User.email) == udata["email"].lower()))
+        email = udata["email"].lower()
+        user = db.scalar(select(User).where(func.lower(User.email) == email))
         if not user:
             user = User(
                 nombre=udata["nombre"],
-                email=udata["email"].lower(),
+                email=email,
                 password_hash=hash_password(udata["password"]),
                 rol=udata["rol"],
                 estado=UserStatus.ACTIVO,
@@ -130,12 +251,18 @@ def seed_users(db, log_fn: Callable[[str], None] = print) -> list[User]:
             )
             db.add(user)
             db.flush()
-            created.append(user)
-            log_fn(f"  + Usuario creado: {udata['email']} [{udata['rol'].value}] (Pass: {udata['password']})")
+            log_fn(f"  + Usuario creado: {email} [{udata['rol'].value}] (Pass: {udata['password']})")
         else:
-            log_fn(f"  = Usuario existente: {udata['email']} [{user.rol.value}]")
+            user.nombre = udata["nombre"]
+            user.rol = udata["rol"]
+            user.estado = UserStatus.ACTIVO
+            user.password_hash = hash_password(udata["password"])
+            db.flush()
+            log_fn(f"  = Usuario sincronizado: {email} [{udata['rol'].value}]")
 
-        # Asegurar dirección principal para cada usuario
+        user_map[email] = user
+
+        # 1. Dirección principal
         addr = db.scalar(select(Address).where(Address.usuario_id == user.id))
         if not addr:
             addr = Address(
@@ -143,730 +270,571 @@ def seed_users(db, log_fn: Callable[[str], None] = print) -> list[User]:
                 alias="Dirección Principal",
                 departamento="Santa Cruz",
                 ciudad="Santa Cruz de la Sierra",
-                zona="Centro / Equipetrol",
+                zona="Equipetrol / Centro",
                 direccion=udata["direccion"],
                 telefono_contacto=udata["telefono"],
                 es_principal=True,
             )
             db.add(addr)
             db.flush()
-            log_fn(f"    - Dirección creada para: {user.email}")
 
-    return created
-
-
-def seed_products(db, cat_map: dict[str, Category], log_fn: Callable[[str], None] = print):
-    """Crea un catálogo diverso y realista de productos (30+) con variantes de talla, color y stock."""
-    products_data = [
-        # POLERAS & CAMISETAS
-        {
-            "cat": "poleras-camisetas",
-            "nombre": "Polera Básica Heavyweight Algodón Peruano",
-            "marca": "Urban Draper",
-            "material": "100% Algodón Peinado 240gsm",
-            "precio": Decimal("119.00"),
-            "costo": Decimal("45.00"),
-            "calidad": 4,
-            "genero": Gender.UNISEX,
-            "desc": "Polera de corte regular con cuello acanalado reforzado y textura suave de alta durabilidad.",
-            "desc_ai": "Prenda básica imprescindible, cómoda, transpirable y versátil para cualquier conjunto casual.",
-            "tags_ai": ["polera", "camiseta", "basico", "casual", "algodon", "verano", "economico"],
-            "variants": [
-                {"sku": "POL-BAS-BLA-S", "color": "Blanco Puro", "codigo_color": "#FFFFFF", "talla": "S", "stock": 25},
-                {"sku": "POL-BAS-BLA-M", "color": "Blanco Puro", "codigo_color": "#FFFFFF", "talla": "M", "stock": 35},
-                {"sku": "POL-BAS-BLA-L", "color": "Blanco Puro", "codigo_color": "#FFFFFF", "talla": "L", "stock": 20},
-                {"sku": "POL-BAS-NEG-M", "color": "Negro Profundo", "codigo_color": "#111111", "talla": "M", "stock": 40},
-                {"sku": "POL-BAS-NEG-L", "color": "Negro Profundo", "codigo_color": "#111111", "talla": "L", "stock": 30},
-                {"sku": "POL-BAS-BEI-M", "color": "Arena Cálido", "codigo_color": "#E3DAC9", "talla": "M", "stock": 20},
-            ]
-        },
-        {
-            "cat": "poleras-camisetas",
-            "nombre": "Polera Oversize Minimalist Studio",
-            "marca": "Drape Street",
-            "material": "100% Algodón Orgánico Lavado",
-            "precio": Decimal("149.00"),
-            "costo": Decimal("60.00"),
-            "calidad": 5,
-            "genero": Gender.UNISEX,
-            "desc": "Polera con hombros caídos y silueta holgada streetwear contemporánea.",
-            "desc_ai": "Estilo relajado moderno, ideal para looks urbanos con jeans o joggers.",
-            "tags_ai": ["polera", "oversize", "urbano", "streetwear", "moda", "cena", "casual", "comodo"],
-            "variants": [
-                {"sku": "POL-OVR-GRI-M", "color": "Gris Jaspe", "codigo_color": "#808080", "talla": "M", "stock": 22},
-                {"sku": "POL-OVR-GRI-L", "color": "Gris Jaspe", "codigo_color": "#808080", "talla": "L", "stock": 25},
-                {"sku": "POL-OVR-VER-M", "color": "Verde Salvia", "codigo_color": "#9EAA8F", "talla": "M", "stock": 18},
-                {"sku": "POL-OVR-VER-L", "color": "Verde Salvia", "codigo_color": "#9EAA8F", "talla": "L", "stock": 15},
-            ]
-        },
-        {
-            "cat": "poleras-camisetas",
-            "nombre": "Polo Piqué Clásico Cuello Mao",
-            "marca": "Urban Draper",
-            "material": "95% Algodón, 5% Elastano",
-            "precio": Decimal("159.00"),
-            "costo": Decimal("65.00"),
-            "calidad": 4,
-            "genero": Gender.HOMBRE,
-            "desc": "Polo ligero con textura piqué y cuello estructurado moderno.",
-            "desc_ai": "Prenda deportiva elegante ideal para días cálidos, cenas informales y fines de semana.",
-            "tags_ai": ["polo", "polera", "casual", "verano", "cuello-mao", "comodo", "cena"],
-            "variants": [
-                {"sku": "POL-MAO-NEG-M", "color": "Negro Total", "codigo_color": "#000000", "talla": "M", "stock": 30},
-                {"sku": "POL-MAO-NEG-L", "color": "Negro Total", "codigo_color": "#000000", "talla": "L", "stock": 22},
-                {"sku": "POL-MAO-AZU-M", "color": "Azul Marino", "codigo_color": "#0B1D3A", "talla": "M", "stock": 20},
-                {"sku": "POL-MAO-VER-M", "color": "Verde Oliva", "codigo_color": "#556B2F", "talla": "M", "stock": 15},
-            ]
-        },
-        {
-            "cat": "poleras-camisetas",
-            "nombre": "Polera Gráfica Edición Limitada Atelier",
-            "marca": "Drape Studio",
-            "material": "100% Algodón Peinado",
-            "precio": Decimal("179.00"),
-            "costo": Decimal("70.00"),
-            "calidad": 5,
-            "genero": Gender.UNISEX,
-            "desc": "Estampado serigráfico de arte botánico minimalista en la espalda y tipografía frontal.",
-            "desc_ai": "Polera de diseño de autor para quienes buscan distinción en conjuntos informales.",
-            "tags_ai": ["polera", "grafica", "diseno", "exclusivo", "casual", "verano"],
-            "variants": [
-                {"sku": "POL-GRA-BLA-M", "color": "Blanco Crudo", "codigo_color": "#FDFBF7", "talla": "M", "stock": 18},
-                {"sku": "POL-GRA-BLA-L", "color": "Blanco Crudo", "codigo_color": "#FDFBF7", "talla": "L", "stock": 14},
-                {"sku": "POL-GRA-NEG-L", "color": "Negro Lavado", "codigo_color": "#2A2A2A", "talla": "L", "stock": 16},
-            ]
-        },
-
-        # CAMISAS & BLUSAS
-        {
-            "cat": "camisas-blusas",
-            "nombre": "Camisa Oxford Slim Fit Algodón Pima",
-            "marca": "Drape Studio",
-            "material": "100% Algodón Pima Peruano",
-            "precio": Decimal("249.00"),
-            "costo": Decimal("110.00"),
-            "calidad": 5,
-            "genero": Gender.HOMBRE,
-            "desc": "Camisa de vestir formal y casual, tejido suave y transpirable de alta durabilidad.",
-            "desc_ai": "Camisa clásica elegante de tono versátil para oficina, cenas formales o eventos smart-casual.",
-            "tags_ai": ["camisa", "formal", "oficina", "algodon", "slim-fit", "atemporal", "cena", "elegante"],
-            "variants": [
-                {"sku": "CAM-OXF-BLA-S", "color": "Blanco", "codigo_color": "#FFFFFF", "talla": "S", "stock": 15},
-                {"sku": "CAM-OXF-BLA-M", "color": "Blanco", "codigo_color": "#FFFFFF", "talla": "M", "stock": 25},
-                {"sku": "CAM-OXF-BLA-L", "color": "Blanco", "codigo_color": "#FFFFFF", "talla": "L", "stock": 20},
-                {"sku": "CAM-OXF-AZU-M", "color": "Azul Cielo", "codigo_color": "#87CEEB", "talla": "M", "stock": 18},
-                {"sku": "CAM-OXF-AZU-L", "color": "Azul Cielo", "codigo_color": "#87CEEB", "talla": "L", "stock": 14},
-            ]
-        },
-        {
-            "cat": "camisas-blusas",
-            "nombre": "Camisa de Lino Fresco Manga Larga",
-            "marca": "Linen & Co",
-            "material": "100% Lino Natural Europeo",
-            "precio": Decimal("299.00"),
-            "costo": Decimal("130.00"),
-            "calidad": 5,
-            "genero": Gender.UNISEX,
-            "desc": "Camisa ligera y transpirable, corte relajado con botones de nácar natural.",
-            "desc_ai": "Ideal para climas cálidos, cenas al aire libre y eventos casual-chic de verano.",
-            "tags_ai": ["camisa", "lino", "verano", "fresco", "elegante", "cena", "casual-chic"],
-            "variants": [
-                {"sku": "CAM-LIN-BEI-S", "color": "Lino Natural", "codigo_color": "#E6DEC8", "talla": "S", "stock": 12},
-                {"sku": "CAM-LIN-BEI-M", "color": "Lino Natural", "codigo_color": "#E6DEC8", "talla": "M", "stock": 20},
-                {"sku": "CAM-LIN-BEI-L", "color": "Lino Natural", "codigo_color": "#E6DEC8", "talla": "L", "stock": 15},
-                {"sku": "CAM-LIN-BLA-M", "color": "Blanco Nieve", "codigo_color": "#FFFFFF", "talla": "M", "stock": 18},
-            ]
-        },
-        {
-            "cat": "camisas-blusas",
-            "nombre": "Blusa Seda Satinada Cuello Halter",
-            "marca": "Aura Elegance",
-            "material": "Seda Satén y Elastano",
-            "precio": Decimal("289.00"),
-            "costo": Decimal("120.00"),
-            "calidad": 5,
-            "genero": Gender.MUJER,
-            "desc": "Blusa fluida con brillo sutil, espalda descubierta y lazo elegante al cuello.",
-            "desc_ai": "Perfecta para cenas románticas, cócteles nocturnos y eventos de gala.",
-            "tags_ai": ["blusa", "seda", "saten", "fiesta", "cena", "elegante", "gala", "mujer"],
-            "variants": [
-                {"sku": "BLU-SED-NEG-S", "color": "Negro Satinado", "codigo_color": "#1A1A1A", "talla": "S", "stock": 10},
-                {"sku": "BLU-SED-NEG-M", "color": "Negro Satinado", "codigo_color": "#1A1A1A", "talla": "M", "stock": 15},
-                {"sku": "BLU-SED-CHA-M", "color": "Champagne", "codigo_color": "#F7E7CE", "talla": "M", "stock": 12},
-            ]
-        },
-
-        # PANTALONES & JEANS
-        {
-            "cat": "pantalones-jeans",
-            "nombre": "Jeans Straight Fit Denim Indigo",
-            "marca": "Drape Denim",
-            "material": "98% Algodón, 2% Spandex",
-            "precio": Decimal("289.00"),
-            "costo": Decimal("130.00"),
-            "calidad": 4,
-            "genero": Gender.HOMBRE,
-            "desc": "Pantalón vaquero de corte recto con lavado índigo profundo y ligero stretch.",
-            "desc_ai": "Jean versátil de alta resistencia para combinar con camisas, blazers o poleras en cenas y salidas.",
-            "tags_ai": ["denim", "jeans", "pantalon", "casual", "resistente", "cena", "versatil"],
-            "variants": [
-                {"sku": "JEA-STR-IND-30", "color": "Índigo Oscuro", "codigo_color": "#1A2B4C", "talla": "30", "stock": 15},
-                {"sku": "JEA-STR-IND-32", "color": "Índigo Oscuro", "codigo_color": "#1A2B4C", "talla": "32", "stock": 25},
-                {"sku": "JEA-STR-IND-34", "color": "Índigo Oscuro", "codigo_color": "#1A2B4C", "talla": "34", "stock": 18},
-                {"sku": "JEA-STR-NEG-32", "color": "Negro Lavado", "codigo_color": "#2B2B2B", "talla": "32", "stock": 20},
-            ]
-        },
-        {
-            "cat": "pantalones-jeans",
-            "nombre": "Pantalón Chino Comfort Fit",
-            "marca": "Drape Studio",
-            "material": "Gabardina Premium 100% Algodón",
-            "precio": Decimal("239.00"),
-            "costo": Decimal("100.00"),
-            "calidad": 4,
-            "genero": Gender.HOMBRE,
-            "desc": "Pantalón tipo chino elegante de estilo semi-formal con acabado peinado.",
-            "desc_ai": "Chino beige clásico para estilismos smart-casual ejecutivos y cenas relajadas.",
-            "tags_ai": ["chino", "pantalon", "formal", "beige", "oficina", "cena", "smart-casual"],
-            "variants": [
-                {"sku": "CHI-BEI-30", "color": "Beige Arena", "codigo_color": "#E1C699", "talla": "30", "stock": 14},
-                {"sku": "CHI-BEI-32", "color": "Beige Arena", "codigo_color": "#E1C699", "talla": "32", "stock": 22},
-                {"sku": "CHI-MAR-32", "color": "Azul Marino", "codigo_color": "#000080", "talla": "32", "stock": 18},
-                {"sku": "CHI-VER-32", "color": "Verde Oliva", "codigo_color": "#556B2F", "talla": "32", "stock": 12},
-            ]
-        },
-        {
-            "cat": "pantalones-jeans",
-            "nombre": "Pantalón Palazzo Sastrero Fluido",
-            "marca": "Aura Elegance",
-            "material": "Crepe de Lana y Viscosa",
-            "precio": Decimal("319.00"),
-            "costo": Decimal("140.00"),
-            "calidad": 5,
-            "genero": Gender.MUJER,
-            "desc": "Pantalón de tiro alto y pierna ancha con pinzas frontales refinadas.",
-            "desc_ai": "Elegancia sofisticada para reuniones ejecutivas, eventos formales o cenas de gala.",
-            "tags_ai": ["palazzo", "pantalon", "sastreria", "elegante", "formal", "mujer", "cena"],
-            "variants": [
-                {"sku": "PAL-SAS-NEG-S", "color": "Negro Azabache", "codigo_color": "#0F0F0F", "talla": "S", "stock": 10},
-                {"sku": "PAL-SAS-NEG-M", "color": "Negro Azabache", "codigo_color": "#0F0F0F", "talla": "M", "stock": 16},
-                {"sku": "PAL-SAS-MAR-M", "color": "Marfil", "codigo_color": "#FFFFF0", "talla": "M", "stock": 12},
-            ]
-        },
-        {
-            "cat": "pantalones-jeans",
-            "nombre": "Joggers Urban Cargo con Ajuste Cónico",
-            "marca": "Street Luxe",
-            "material": "Algodón Ripstop y Spandex",
-            "precio": Decimal("199.00"),
-            "costo": Decimal("85.00"),
-            "calidad": 4,
-            "genero": Gender.UNISEX,
-            "desc": "Pantalón jogger con múltiples bolsillos funcionales y cintura elastizada con cordón.",
-            "desc_ai": "Estilo urbano utilitario ultra cómodo para el día a día y viajes.",
-            "tags_ai": ["jogger", "cargo", "pantalon", "urbano", "streetwear", "comodo", "economico"],
-            "variants": [
-                {"sku": "JOG-CAR-NEG-M", "color": "Negro", "codigo_color": "#111111", "talla": "M", "stock": 25},
-                {"sku": "JOG-CAR-NEG-L", "color": "Negro", "codigo_color": "#111111", "talla": "L", "stock": 20},
-                {"sku": "JOG-CAR-VER-M", "color": "Verde Militar", "codigo_color": "#4B5320", "talla": "M", "stock": 18},
-            ]
-        },
-
-        # VESTIDOS & FALDAS
-        {
-            "cat": "vestidos-faldas",
-            "nombre": "Vestido Midi Seda Floral Botánico",
-            "marca": "Aura Elegance",
-            "material": "Seda Satén y Viscosa",
-            "precio": Decimal("399.00"),
-            "costo": Decimal("180.00"),
-            "calidad": 5,
-            "genero": Gender.MUJER,
-            "desc": "Vestido midi con caída fluida, escote en V y estampado botánico elegante.",
-            "desc_ai": "Vestido sofisticado para cócteles, bodas de día y cenas formales.",
-            "tags_ai": ["vestido", "elegante", "seda", "fiesta", "estampado", "cena", "boda"],
-            "variants": [
-                {"sku": "VES-MID-FLO-S", "color": "Floral Marino", "codigo_color": "#2C3E50", "talla": "S", "stock": 8},
-                {"sku": "VES-MID-FLO-M", "color": "Floral Marino", "codigo_color": "#2C3E50", "talla": "M", "stock": 14},
-                {"sku": "VES-MID-BUR-M", "color": "Rojo Borgoña", "codigo_color": "#800020", "talla": "M", "stock": 10},
-            ]
-        },
-        {
-            "cat": "vestidos-faldas",
-            "nombre": "Little Black Dress de Cóctel Clásico",
-            "marca": "Aura Elegance",
-            "material": "Punto Milano Estructurado",
-            "precio": Decimal("349.00"),
-            "costo": Decimal("150.00"),
-            "calidad": 5,
-            "genero": Gender.MUJER,
-            "desc": "El infaltable vestido negro entallado con largo a la rodilla y escote barco.",
-            "desc_ai": "Pieza icónica y atemporal para eventos nocturnos, cenas elegantes y celebraciones.",
-            "tags_ai": ["vestido", "negro", "coctel", "cena", "elegante", "noche", "clasico"],
-            "variants": [
-                {"sku": "VES-LBD-NEG-XS", "color": "Negro", "codigo_color": "#000000", "talla": "XS", "stock": 6},
-                {"sku": "VES-LBD-NEG-S", "color": "Negro", "codigo_color": "#000000", "talla": "S", "stock": 12},
-                {"sku": "VES-LBD-NEG-M", "color": "Negro", "codigo_color": "#000000", "talla": "M", "stock": 15},
-            ]
-        },
-        {
-            "cat": "vestidos-faldas",
-            "nombre": "Falda Plisada Midi Satén Brillante",
-            "marca": "Aura Elegance",
-            "material": "Satén de Poliéster Reciclado Premium",
-            "precio": Decimal("219.00"),
-            "costo": Decimal("90.00"),
-            "calidad": 4,
-            "genero": Gender.MUJER,
-            "desc": "Falda midi plisada con cintura elástica dorada y hermoso movimiento al caminar.",
-            "desc_ai": "Prenda dinámica que combina perfecto con botas, sandalias o zapatillas blancas.",
-            "tags_ai": ["falda", "plisada", "midi", "saten", "fiesta", "casual-chic", "cena"],
-            "variants": [
-                {"sku": "FAL-PLI-DOR-S", "color": "Oro Suave", "codigo_color": "#D4AF37", "talla": "S", "stock": 10},
-                {"sku": "FAL-PLI-DOR-M", "color": "Oro Suave", "codigo_color": "#D4AF37", "talla": "M", "stock": 15},
-                {"sku": "FAL-PLI-NEG-M", "color": "Negro Noche", "codigo_color": "#111111", "talla": "M", "stock": 12},
-            ]
-        },
-
-        # CHAQUETAS & ABRIGOS
-        {
-            "cat": "chaquetas-abrigos",
-            "nombre": "Blazer Ejecutivo Lana Merino",
-            "marca": "Tailor Crafted",
-            "material": "100% Lana Merino Fina",
-            "precio": Decimal("599.00"),
-            "costo": Decimal("260.00"),
-            "calidad": 5,
-            "genero": Gender.UNISEX,
-            "desc": "Blazer estructurado con forro de acetato, hombreras suaves y solapa clásica.",
-            "desc_ai": "Pieza clave de sastrería para conjuntos ejecutivos, cenas formales y eventos de alto nivel.",
-            "tags_ai": ["blazer", "saco", "formal", "lana", "premium", "cena", "oficina", "elegante"],
-            "variants": [
-                {"sku": "BLA-MER-GRI-38", "color": "Gris Marengo", "codigo_color": "#4A4A4A", "talla": "38", "stock": 8},
-                {"sku": "BLA-MER-GRI-40", "color": "Gris Marengo", "codigo_color": "#4A4A4A", "talla": "40", "stock": 12},
-                {"sku": "BLA-MER-AZU-40", "color": "Azul Noche", "codigo_color": "#0B132B", "talla": "40", "stock": 10},
-                {"sku": "BLA-MER-NEG-40", "color": "Negro Smoking", "codigo_color": "#0A0A0A", "talla": "40", "stock": 14},
-            ]
-        },
-        {
-            "cat": "chaquetas-abrigos",
-            "nombre": "Chamarra Biker Cuero Genuino",
-            "marca": "Street Luxe",
-            "material": "100% Cuero Vacuno Grano Entero",
-            "precio": Decimal("689.00"),
-            "costo": Decimal("300.00"),
-            "calidad": 5,
-            "genero": Gender.UNISEX,
-            "desc": "Chamarra de motociclista icónica con cremalleras metálicas YKK y forro térmico acolchado.",
-            "desc_ai": "Añade actitud y carácter premium a cualquier atuendo casual nocturno.",
-            "tags_ai": ["cuero", "chamarra", "chaqueta", "biker", "rock", "streetwear", "cena", "invierno"],
-            "variants": [
-                {"sku": "CHA-BIK-NEG-S", "color": "Negro Mate", "codigo_color": "#1C1C1C", "talla": "S", "stock": 6},
-                {"sku": "CHA-BIK-NEG-M", "color": "Negro Mate", "codigo_color": "#1C1C1C", "talla": "M", "stock": 10},
-                {"sku": "CHA-BIK-NEG-L", "color": "Negro Mate", "codigo_color": "#1C1C1C", "talla": "L", "stock": 8},
-            ]
-        },
-        {
-            "cat": "chaquetas-abrigos",
-            "nombre": "Bomber Jacket Ligera Impermeable",
-            "marca": "Urban Draper",
-            "material": "Nylon Ripstop con Revestimiento DWR",
-            "precio": Decimal("279.00"),
-            "costo": Decimal("110.00"),
-            "calidad": 4,
-            "genero": Gender.UNISEX,
-            "desc": "Chaqueta bomber ligera ideal para media estación y protección contra viento y llovizna.",
-            "desc_ai": "Chaqueta casual moderna que combina perfectamente con poleras y jeans.",
-            "tags_ai": ["bomber", "chaqueta", "casual", "urbano", "impermeable", "economico"],
-            "variants": [
-                {"sku": "BOM-LIG-VER-M", "color": "Verde Militar", "codigo_color": "#4B5320", "talla": "M", "stock": 15},
-                {"sku": "BOM-LIG-VER-L", "color": "Verde Militar", "codigo_color": "#4B5320", "talla": "L", "stock": 18},
-                {"sku": "BOM-LIG-NEG-M", "color": "Negro", "codigo_color": "#111111", "talla": "M", "stock": 20},
-            ]
-        },
-        {
-            "cat": "chaquetas-abrigos",
-            "nombre": "Gabardina Trench Coat Clásica",
-            "marca": "Tailor Crafted",
-            "material": "Gabardina de Algodón Impermeabilizado",
-            "precio": Decimal("549.00"),
-            "costo": Decimal("230.00"),
-            "calidad": 5,
-            "genero": Gender.UNISEX,
-            "desc": "Trench coat cruzado con cinturón de hebilla, charreteras y forro tartán clásico.",
-            "desc_ai": "Elegancia británica atemporal para días lluviosos y outfits ejecutivos.",
-            "tags_ai": ["trench", "gabardina", "abrigo", "elegante", "formal", "clasico"],
-            "variants": [
-                {"sku": "TRE-CLA-BEI-M", "color": "Beige Camel", "codigo_color": "#C19A6B", "talla": "M", "stock": 10},
-                {"sku": "TRE-CLA-BEI-L", "color": "Beige Camel", "codigo_color": "#C19A6B", "talla": "L", "stock": 8},
-            ]
-        },
-
-        # CALZADO & ZAPATOS
-        {
-            "cat": "calzado-zapatos",
-            "nombre": "Zapatillas Urbanas Cuero Nappa Blanco",
-            "marca": "Street Luxe",
-            "material": "Cuero vacuno genuino y suela de caucho vulcanizado",
-            "precio": Decimal("349.00"),
-            "costo": Decimal("150.00"),
-            "calidad": 5,
-            "genero": Gender.UNISEX,
-            "desc": "Zapatillas minimalistas de perfil bajo con plantilla ergonómica de espuma viscoelástica.",
-            "desc_ai": "Sneakers blancas versátiles que combinan con trajes formales, jeans, vestidos o shorts.",
-            "tags_ai": ["zapatillas", "sneakers", "calzado", "cuero", "blanco", "urbano", "cena", "comodo"],
-            "variants": [
-                {"sku": "SNE-NAP-BLA-39", "color": "Blanco Puro", "codigo_color": "#FFFFFF", "talla": "39", "stock": 10},
-                {"sku": "SNE-NAP-BLA-40", "color": "Blanco Puro", "codigo_color": "#FFFFFF", "talla": "40", "stock": 16},
-                {"sku": "SNE-NAP-BLA-41", "color": "Blanco Puro", "codigo_color": "#FFFFFF", "talla": "41", "stock": 20},
-                {"sku": "SNE-NAP-BLA-42", "color": "Blanco Puro", "codigo_color": "#FFFFFF", "talla": "42", "stock": 15},
-                {"sku": "SNE-NAP-NEG-41", "color": "Negro Total", "codigo_color": "#111111", "talla": "41", "stock": 12},
-            ]
-        },
-        {
-            "cat": "calzado-zapatos",
-            "nombre": "Zapatos Oxford Formales Artesanales",
-            "marca": "Tailor Crafted",
-            "material": "100% Cuero Box Calf y Suela de Cuero Cosido Goodyear",
-            "precio": Decimal("499.00"),
-            "costo": Decimal("220.00"),
-            "calidad": 5,
-            "genero": Gender.HOMBRE,
-            "desc": "Calzado formal por excelencia con puntera lisa y acabado abrillantado a mano.",
-            "desc_ai": "Zapato de gala imprescindible para trajes ejecutivos, matrimonios y cenas formales.",
-            "tags_ai": ["zapatos", "oxford", "formal", "calzado", "cuero", "elegante", "cena", "gala"],
-            "variants": [
-                {"sku": "ZAP-OXF-NEG-40", "color": "Negro Espejo", "codigo_color": "#0D0D0D", "talla": "40", "stock": 8},
-                {"sku": "ZAP-OXF-NEG-41", "color": "Negro Espejo", "codigo_color": "#0D0D0D", "talla": "41", "stock": 12},
-                {"sku": "ZAP-OXF-CAF-41", "color": "Café Coñac", "codigo_color": "#6E3B1F", "talla": "41", "stock": 10},
-            ]
-        },
-        {
-            "cat": "calzado-zapatos",
-            "nombre": "Botas Chelsea Cuero Gamuzado",
-            "marca": "Urban Draper",
-            "material": "Cuero Nobuk Gamuzado y Elásticos Reforzados",
-            "precio": Decimal("389.00"),
-            "costo": Decimal("170.00"),
-            "calidad": 4,
-            "genero": Gender.UNISEX,
-            "desc": "Botas al tobillo sin cordones con tirador trasero y suela antideslizante.",
-            "desc_ai": "Estilo refinado y atrevido para conjuntos de otoño/invierno con jeans o chinos.",
-            "tags_ai": ["botas", "chelsea", "calzado", "gamusa", "cena", "casual-chic"],
-            "variants": [
-                {"sku": "BOT-CHE-HAB-40", "color": "Habano", "codigo_color": "#704214", "talla": "40", "stock": 8},
-                {"sku": "BOT-CHE-HAB-41", "color": "Habano", "codigo_color": "#704214", "talla": "41", "stock": 14},
-                {"sku": "BOT-CHE-NEG-41", "color": "Negro", "codigo_color": "#1A1A1A", "talla": "41", "stock": 10},
-            ]
-        },
-        {
-            "cat": "calzado-zapatos",
-            "nombre": "Mocasines Loafer Cuero con Hebilla",
-            "marca": "Tailor Crafted",
-            "material": "Cuero Florentic Italiano",
-            "precio": Decimal("429.00"),
-            "costo": Decimal("190.00"),
-            "calidad": 5,
-            "genero": Gender.UNISEX,
-            "desc": "Mocasín estilo Penny Loafer con detalle metálico dorado y suela flexible.",
-            "desc_ai": "Calzado smart-casual cómodo y distinguido para oficina o salidas gourmet.",
-            "tags_ai": ["mocasines", "loafer", "zapatos", "calzado", "cuero", "cena", "elegante"],
-            "variants": [
-                {"sku": "MOC-LOA-BUR-40", "color": "Vino Tinto", "codigo_color": "#5E1914", "talla": "40", "stock": 7},
-                {"sku": "MOC-LOA-BUR-41", "color": "Vino Tinto", "codigo_color": "#5E1914", "talla": "41", "stock": 10},
-                {"sku": "MOC-LOA-NEG-41", "color": "Negro", "codigo_color": "#111111", "talla": "41", "stock": 12},
-            ]
-        },
-
-        # ACCESORIOS & BOLSOS
-        {
-            "cat": "accesorios-bolsos",
-            "nombre": "Cinturón de Cuero Reversible Clásico",
-            "marca": "Drape Leather",
-            "material": "100% Cuero Genuino con hebilla de acero pulido",
-            "precio": Decimal("129.00"),
-            "costo": Decimal("45.00"),
-            "calidad": 4,
-            "genero": Gender.UNISEX,
-            "desc": "Cinturón reversible café/negro con hebilla rotatoria de ajuste milimétrico.",
-            "desc_ai": "Accesorio esencial 2 en 1 para combinar calzado y trajes de vestir.",
-            "tags_ai": ["cinturon", "cuero", "accesorio", "reversible", "cena", "economico"],
-            "variants": [
-                {"sku": "CIN-REV-90", "color": "Negro / Café", "codigo_color": "#3B2F2F", "talla": "90 cm", "stock": 25},
-                {"sku": "CIN-REV-100", "color": "Negro / Café", "codigo_color": "#3B2F2F", "talla": "100 cm", "stock": 30},
-                {"sku": "CIN-REV-110", "color": "Negro / Café", "codigo_color": "#3B2F2F", "talla": "110 cm", "stock": 20},
-            ]
-        },
-        {
-            "cat": "accesorios-bolsos",
-            "nombre": "Bolso Tote Bag Cuero Vacuno Minimal",
-            "marca": "Drape Leather",
-            "material": "Cuero Rústico Encerado",
-            "precio": Decimal("389.00"),
-            "costo": Decimal("160.00"),
-            "calidad": 5,
-            "genero": Gender.UNISEX,
-            "desc": "Bolso amplio con compartimento para laptop de 15 pulgadas y bolsillo interno con cierre.",
-            "desc_ai": "Bolso espacioso y elegante para profesionales, estudiantes y uso diario.",
-            "tags_ai": ["bolso", "tote", "cuero", "accesorio", "oficina", "mujer", "unisex"],
-            "variants": [
-                {"sku": "BOL-TOT-CAR-U", "color": "Caramelo", "codigo_color": "#8B5A2B", "talla": "Única", "stock": 15},
-                {"sku": "BOL-TOT-NEG-U", "color": "Negro Mate", "codigo_color": "#1C1C1C", "talla": "Única", "stock": 18},
-            ]
-        },
-        {
-            "cat": "accesorios-bolsos",
-            "nombre": "Bufanda de Lana y Cachemira Suave",
-            "marca": "Tailor Crafted",
-            "material": "70% Lana Merino, 30% Cachemira",
-            "precio": Decimal("169.00"),
-            "costo": Decimal("65.00"),
-            "calidad": 5,
-            "genero": Gender.UNISEX,
-            "desc": "Bufanda tejida con flecos tradicionales, tacto ultrasuave y abrigo térmico liviano.",
-            "desc_ai": "El complemento ideal para sacos, sobretodos y abrigos de invierno.",
-            "tags_ai": ["bufanda", "lana", "cachemira", "invierno", "accesorio", "elegante", "cena"],
-            "variants": [
-                {"sku": "BUF-CAC-GRI-U", "color": "Gris Perla", "codigo_color": "#C0C0C0", "talla": "Única", "stock": 20},
-                {"sku": "BUF-CAC-BUR-U", "color": "Burdeos", "codigo_color": "#800020", "talla": "Única", "stock": 15},
-            ]
-        },
-        {
-            "cat": "accesorios-bolsos",
-            "nombre": "Reloj de Pulsera Minimalist Steel",
-            "marca": "Drape Timepiece",
-            "material": "Caja de Acero Inoxidable 316L y Cristal de Zafiro",
-            "precio": Decimal("449.00"),
-            "costo": Decimal("180.00"),
-            "calidad": 5,
-            "genero": Gender.UNISEX,
-            "desc": "Reloj analógico con esfera limpia, correa de malla milanesa ajustable y resistencia al agua 5ATM.",
-            "desc_ai": "Accesorio de lujo accesible que corona cualquier conjunto formal o casual.",
-            "tags_ai": ["reloj", "acero", "accesorio", "joyeria", "elegante", "cena", "regalo"],
-            "variants": [
-                {"sku": "REL-MIN-PLA-U", "color": "Plata Pulido", "codigo_color": "#E5E5E5", "talla": "Única", "stock": 12},
-                {"sku": "REL-MIN-NEG-U", "color": "Negro Carbón", "codigo_color": "#222222", "talla": "Única", "stock": 14},
-            ]
-        },
-        {
-            "cat": "accesorios-bolsos",
-            "nombre": "Lentes de Sol Aviador Polarizados",
-            "marca": "Street Luxe",
-            "material": "Marco de Titanio Ligero y Lentes UV400",
-            "precio": Decimal("189.00"),
-            "costo": Decimal("70.00"),
-            "calidad": 4,
-            "genero": Gender.UNISEX,
-            "desc": "Gafas de sol polarizadas de silueta clásica aviador con almohadillas nasales de silicona.",
-            "desc_ai": "Protección solar y estilo atemporal para días soleados y paseos urbanos.",
-            "tags_ai": ["lentes", "gafas", "sol", "accesorio", "verano", "casual"],
-            "variants": [
-                {"sku": "LEN-AVI-DOR-U", "color": "Dorado / Verde", "codigo_color": "#D4AF37", "talla": "Única", "stock": 20},
-                {"sku": "LEN-AVI-NEG-U", "color": "Negro Total", "codigo_color": "#111111", "talla": "Única", "stock": 25},
-            ]
-        },
-
-        # DEPORTES & ATHLEISURE
-        {
-            "cat": "deportes-athleisure",
-            "nombre": "Hoodie Térmico French Terry",
-            "marca": "Urban Draper",
-            "material": "80% Algodón, 20% Poliéster Reciclado",
-            "precio": Decimal("229.00"),
-            "costo": Decimal("95.00"),
-            "calidad": 4,
-            "genero": Gender.UNISEX,
-            "desc": "Sudadera con capucha forrada, bolsillo canguro y tejido afelpado de alta densidad.",
-            "desc_ai": "Máxima comodidad para días frescos, gimnasio o descanso en casa.",
-            "tags_ai": ["hoodie", "sudadera", "deportivo", "comodo", "casual", "athleisure"],
-            "variants": [
-                {"sku": "HOO-TER-GRI-M", "color": "Gris Jaspeado", "codigo_color": "#7E827A", "talla": "M", "stock": 20},
-                {"sku": "HOO-TER-GRI-L", "color": "Gris Jaspeado", "codigo_color": "#7E827A", "talla": "L", "stock": 25},
-                {"sku": "HOO-TER-NEG-M", "color": "Negro", "codigo_color": "#111111", "talla": "M", "stock": 22},
-            ]
-        },
-    ]
-
-    prod_count = 0
-    variant_count = 0
-
-    for pdata in products_data:
-        cat = cat_map.get(pdata["cat"])
-        if not cat:
-            continue
-        product_image = "/static/products/placeholder.svg"
-
-        p = db.scalar(select(Product).where(Product.nombre == pdata["nombre"]))
-        if not p:
-            p = Product(
-                categoria_id=cat.id,
-                nombre=pdata["nombre"],
-                marca=pdata["marca"],
-                material=pdata["material"],
-                precio=pdata["precio"],
-                costo_referencia=pdata["costo"],
-                calidad_nivel=pdata["calidad"],
-                genero_objetivo=pdata["genero"],
-                descripcion=pdata["desc"],
-                descripcion_ai=pdata["desc_ai"],
-                tags_ai=pdata["tags_ai"],
-                imagenes=[product_image],
-                activo=True,
-            )
-            db.add(p)
-            db.flush()
-            prod_count += 1
-            log_fn(f"  + Producto creado: {p.nombre} (Bs. {p.precio})")
-        else:
-            p.categoria_id = cat.id
-            p.marca = pdata["marca"]
-            p.material = pdata["material"]
-            p.precio = pdata["precio"]
-            p.costo_referencia = pdata["costo"]
-            p.calidad_nivel = pdata["calidad"]
-            p.genero_objetivo = pdata["genero"]
-            p.descripcion = pdata["desc"]
-            p.descripcion_ai = pdata["desc_ai"]
-            p.tags_ai = pdata["tags_ai"]
-            p.imagenes = [product_image]
-            p.activo = True
-            log_fn(f"  = Producto actualizado: {p.nombre}")
-
-        for vdata in pdata["variants"]:
-            v = db.scalar(select(ProductVariant).where(ProductVariant.sku == vdata["sku"]))
-            if not v:
-                v = ProductVariant(
-                    producto_id=p.id,
-                    sku=vdata["sku"],
-                    color=vdata["color"],
-                    codigo_color=vdata.get("codigo_color"),
-                    talla=vdata["talla"],
-                    stock_total=vdata["stock"],
-                    stock_reservado=0,
-                    activo=True,
+        # 2. Asignación a sucursal si es personal operativo
+        target_branch = udata.get("branch")
+        if target_branch:
+            staff_rel = db.scalar(
+                select(BranchStaff).where(
+                    BranchStaff.usuario_id == user.id,
+                    BranchStaff.sucursal_id == target_branch.id,
                 )
-                db.add(v)
-                variant_count += 1
-                log_fn(f"    - Variante SKU: {v.sku} [{v.color} | Talla {v.talla}] Stock: {v.stock_total}")
-            else:
-                v.stock_total = max(v.stock_total, vdata["stock"])
-                v.color = vdata["color"]
-                v.codigo_color = vdata.get("codigo_color")
-                v.talla = vdata["talla"]
-                v.activo = True
-
-    log_fn(f"✨ Seeding completado: catálogo con {len(products_data)} productos configurados.")
-
-
-def seed_branches(db, log_fn: Callable[[str], None] = print) -> None:
-    city = db.scalar(
-        select(City).where(
-            City.nombre == "Santa Cruz de la Sierra",
-            City.departamento == "Santa Cruz",
-        )
-    )
-    if not city:
-        city = City(nombre="Santa Cruz de la Sierra", departamento="Santa Cruz", activo=True)
-        db.add(city)
-        db.flush()
-
-    branch_specs = [
-        ("SCZ-CENTRAL", "DrapeMind Central", "Av. San Martín, Equipetrol", "70000000"),
-        ("SCZ-NORTE", "DrapeMind Norte", "Av. Banzer, 4to anillo", "70000001"),
-    ]
-    branches: list[Branch] = []
-    for code, name, address, phone in branch_specs:
-        branch = db.scalar(select(Branch).where(Branch.codigo == code))
-        if not branch:
-            branch = Branch(
-                ciudad_id=city.id,
-                codigo=code,
-                nombre=name,
-                direccion=address,
-                telefono=phone,
-                activo=True,
             )
-            db.add(branch)
-            db.flush()
-        branches.append(branch)
+            if not staff_rel:
+                db.add(BranchStaff(usuario_id=user.id, sucursal_id=target_branch.id, activo=True))
+                db.flush()
+                log_fn(f"    - Asignado a sucursal: {target_branch.nombre}")
 
-    central, north = branches
-    for variant in db.scalars(select(ProductVariant).order_by(ProductVariant.id)):
-        total = variant.stock_total
-        central_row = db.scalar(
+    # 3. Perfil de estilo IA para cliente principal
+    vip_client = user_map.get("cliente@drapemind.com")
+    if vip_client:
+        style = db.scalar(select(UserStyleProfile).where(UserStyleProfile.usuario_id == vip_client.id))
+        if not style:
+            style = UserStyleProfile(
+                usuario_id=vip_client.id,
+                estilo_predilecto="Casual Elegante / Minimalista",
+                colores_favoritos=["Negro", "Azul Marino", "Blanco", "Beige"],
+                talla_superior="M",
+                talla_inferior="30",
+                talla_calzado="38",
+                presupuesto_estimado=Decimal("500.00"),
+                notas_adicionales="Prefiere tejidos naturales de algodón y lino para clima cálido.",
+            )
+            db.add(style)
+            db.flush()
+
+    return user_map
+
+
+def seed_categories_from_csv(db, log_fn: Callable[[str], None] = print) -> dict[int, int]:
+    """Carga categorías desde data/categorias.csv resolviendo la jerarquía padre-hijo."""
+    csv_file = DATA_DIR / "categorias.csv"
+    if not csv_file.exists():
+        log_fn("  ! No se encontró categorias.csv en data/; saltando carga de categorías.")
+        return {}
+
+    with csv_file.open("r", encoding="utf-8-sig", newline="") as f:
+        rows = list(csv.DictReader(f))
+
+    log_fn(f"  → Cargando {len(rows)} categorías desde {csv_file.name}...")
+
+    rows_by_id = {int(r["id"].strip()): r for r in rows if r.get("id")}
+    category_id_map: dict[int, int] = {}
+    pending = set(rows_by_id.keys())
+
+    while pending:
+        progress = False
+        for cid in list(pending):
+            r = rows_by_id[cid]
+            parent_raw = (r.get("parent_id") or "").strip()
+            parent_cid = int(parent_raw) if parent_raw and parent_raw.isdigit() else None
+
+            # Si tiene padre pero aún no ha sido insertado, esperar
+            if parent_cid is not None and parent_cid not in category_id_map:
+                continue
+
+            parent_db_id = category_id_map.get(parent_cid) if parent_cid is not None else None
+            slug = r["slug"].strip()
+
+            existing = db.scalar(select(Category).where(Category.slug == slug))
+            if not existing:
+                cat = Category(
+                    nombre=r["nombre"].strip(),
+                    slug=slug,
+                    descripcion=r.get("descripcion", "").strip() or None,
+                    parent_id=parent_db_id,
+                    activo=r.get("activo", "true").lower() in {"true", "1", "t"},
+                )
+                db.add(cat)
+                db.flush()
+                category_id_map[cid] = cat.id
+            else:
+                existing.nombre = r["nombre"].strip()
+                existing.descripcion = r.get("descripcion", "").strip() or None
+                existing.parent_id = parent_db_id
+                existing.activo = True
+                db.flush()
+                category_id_map[cid] = existing.id
+
+            pending.remove(cid)
+            progress = True
+
+        if not progress and pending:
+            # En caso de ciclo o error en parent_id, insertar los restantes como raíz
+            for cid in list(pending):
+                r = rows_by_id[cid]
+                slug = r["slug"].strip()
+                existing = db.scalar(select(Category).where(Category.slug == slug))
+                if not existing:
+                    cat = Category(
+                        nombre=r["nombre"].strip(),
+                        slug=slug,
+                        descripcion=r.get("descripcion", "").strip() or None,
+                        parent_id=None,
+                        activo=True,
+                    )
+                    db.add(cat)
+                    db.flush()
+                    category_id_map[cid] = cat.id
+                else:
+                    category_id_map[cid] = existing.id
+            break
+
+    log_fn(f"  ✓ {len(category_id_map)} categorías sincronizadas correctamente.")
+    return category_id_map
+
+
+def seed_products_from_csv(db, category_id_map: dict[int, int], log_fn: Callable[[str], None] = print) -> dict[int, int]:
+    """Carga productos desde data/productos.csv con tags IA, precios e imágenes JSONB."""
+    csv_file = DATA_DIR / "productos.csv"
+    if not csv_file.exists():
+        log_fn("  ! No se encontró productos.csv en data/; saltando productos.")
+        return {}
+
+    with csv_file.open("r", encoding="utf-8-sig", newline="") as f:
+        rows = list(csv.DictReader(f))
+
+    log_fn(f"  → Cargando {len(rows)} productos desde {csv_file.name}...")
+    product_id_map: dict[int, int] = {}
+
+    # Si no había mapa de categorías (p.ej. ya estaban creadas), obtener por slug
+    all_cats = {c.id: c.id for c in db.scalars(select(Category))}
+    first_cat_id = next(iter(all_cats.keys()), 1)
+
+    for idx, r in enumerate(rows, start=1):
+        source_id = int(r["id"].strip())
+        source_cat_id = int(r["categoria_id"].strip()) if r.get("categoria_id") else first_cat_id
+        db_cat_id = category_id_map.get(source_cat_id, source_cat_id)
+        if db_cat_id not in all_cats:
+            db_cat_id = first_cat_id
+
+        marker = f"{SEED_PREFIX}{source_id}"
+        tags = parse_pg_text_array(r.get("tags_ai", ""))
+        if marker not in tags:
+            tags.append(marker)
+
+        images = parse_json_array(r.get("imagenes", ""))
+        price = Decimal(r.get("precio", "150.00").strip() or "150.00")
+        cost = Decimal(r.get("costo_referencia", "60.00").strip() or "60.00") if r.get("costo_referencia") else None
+        calidad = int(r.get("calidad_nivel", "4").strip() or "4")
+        calidad = max(1, min(5, calidad))
+
+        genero_raw = (r.get("genero_objetivo") or "UNISEX").strip().upper()
+        if genero_raw not in {g.value for g in Gender}:
+            genero_raw = "UNISEX"
+
+        # Buscar por marcador o por ID explícito
+        prod = db.scalar(
+            select(Product).where(
+                Product.tags_ai.contains([marker])
+            )
+        )
+        if not prod:
+            prod = Product(
+                categoria_id=db_cat_id,
+                nombre=r["nombre"].strip(),
+                descripcion=r.get("descripcion", "").strip() or None,
+                marca=r.get("marca", "").strip() or None,
+                material=r.get("material", "").strip() or None,
+                precio=price,
+                costo_referencia=cost,
+                calidad_nivel=calidad,
+                genero_objetivo=Gender(genero_raw),
+                descripcion_ai=r.get("descripcion_ai", "").strip() or None,
+                tags_ai=tags,
+                imagenes=images,
+                activo=r.get("activo", "true").lower() in {"true", "1", "t"},
+            )
+            db.add(prod)
+            db.flush()
+        else:
+            prod.categoria_id = db_cat_id
+            prod.nombre = r["nombre"].strip()
+            prod.descripcion = r.get("descripcion", "").strip() or None
+            prod.marca = r.get("marca", "").strip() or None
+            prod.material = r.get("material", "").strip() or None
+            prod.precio = price
+            prod.costo_referencia = cost
+            prod.calidad_nivel = calidad
+            prod.genero_objetivo = Gender(genero_raw)
+            prod.descripcion_ai = r.get("descripcion_ai", "").strip() or None
+            prod.tags_ai = tags
+            prod.imagenes = images
+            prod.activo = True
+            db.flush()
+
+        product_id_map[source_id] = prod.id
+        if idx % 200 == 0 or idx == len(rows):
+            log_fn(f"    - Procesados {idx}/{len(rows)} productos...")
+
+    log_fn(f"  ✓ {len(product_id_map)} productos sincronizados con éxito.")
+    return product_id_map
+
+
+def seed_variants_from_csv(db, product_id_map: dict[int, int], log_fn: Callable[[str], None] = print) -> int:
+    """Carga variantes desde data/variantes_producto.csv con SKUs únicos y colores."""
+    csv_file = DATA_DIR / "variantes_producto.csv"
+    if not csv_file.exists():
+        log_fn("  ! No se encontró variantes_producto.csv en data/; saltando variantes.")
+        return 0
+
+    with csv_file.open("r", encoding="utf-8-sig", newline="") as f:
+        rows = list(csv.DictReader(f))
+
+    log_fn(f"  → Cargando {len(rows)} variantes desde {csv_file.name}...")
+    inserted = 0
+
+    for idx, r in enumerate(rows, start=1):
+        source_prod_id = int(r["producto_id"].strip())
+        db_prod_id = product_id_map.get(source_prod_id)
+        if not db_prod_id:
+            continue
+
+        sku = r["sku"].strip()
+        stock_total = int(r.get("stock_total", "15").strip() or "15")
+        # Asegurar stock mínimo útil para pruebas
+        if stock_total < 10:
+            stock_total = 12
+
+        stock_reservado = int(r.get("stock_reservado", "0").strip() or "0")
+        stock_reservado = min(stock_reservado, stock_total)
+
+        var = db.scalar(select(ProductVariant).where(ProductVariant.sku == sku))
+        if not var:
+            var = ProductVariant(
+                producto_id=db_prod_id,
+                sku=sku,
+                color=r.get("color", "Único").strip(),
+                codigo_color=r.get("codigo_color", "").strip() or None,
+                talla=r.get("talla", "U").strip(),
+                stock_total=stock_total,
+                stock_reservado=stock_reservado,
+                codigo_barras=r.get("codigo_barras", "").strip() or None,
+                imagen=r.get("imagen", "").strip() or None,
+                activo=r.get("activo", "true").lower() in {"true", "1", "t"},
+            )
+            db.add(var)
+        else:
+            var.producto_id = db_prod_id
+            var.color = r.get("color", "Único").strip()
+            var.codigo_color = r.get("codigo_color", "").strip() or None
+            var.talla = r.get("talla", "U").strip()
+            var.stock_total = max(var.stock_total, stock_total)
+            var.codigo_barras = r.get("codigo_barras", "").strip() or None
+            var.imagen = r.get("imagen", "").strip() or None
+            var.activo = True
+
+        inserted += 1
+        if idx % 500 == 0 or idx == len(rows):
+            db.flush()
+            log_fn(f"    - Procesadas {idx}/{len(rows)} variantes...")
+
+    db.flush()
+    log_fn(f"  ✓ {inserted} variantes de catálogo sincronizadas.")
+    return inserted
+
+
+def seed_branch_stock(db, central: Branch, north: Branch, log_fn: Callable[[str], None] = print) -> None:
+    """Distribuye el inventario de todas las variantes entre Showroom Central (60%) y Showroom Norte (40%)."""
+    log_fn("  → Distribuyendo stock por sede en Showroom Central y Showroom Norte...")
+    variants = list(db.scalars(select(ProductVariant).order_by(ProductVariant.id)))
+
+    updated_count = 0
+    for v in variants:
+        total = max(v.stock_total, 10)
+        c_row = db.scalar(
             select(BranchStock).where(
                 BranchStock.sucursal_id == central.id,
-                BranchStock.variante_id == variant.id,
+                BranchStock.variante_id == v.id,
             )
         )
-        north_row = db.scalar(
+        n_row = db.scalar(
             select(BranchStock).where(
                 BranchStock.sucursal_id == north.id,
-                BranchStock.variante_id == variant.id,
+                BranchStock.variante_id == v.id,
             )
         )
-        reserved = (central_row.stock_reservado if central_row else 0) + (
-            north_row.stock_reservado if north_row else 0
-        )
-        total = max(total, reserved)
-        central_total = max(central_row.stock_reservado if central_row else 0, (total * 7 + 9) // 10)
-        central_total = min(total, central_total)
-        north_total = total - central_total
-        if not central_row:
-            central_row = BranchStock(
+
+        c_reserved = c_row.stock_reservado if c_row else 0
+        n_reserved = n_row.stock_reservado if n_row else 0
+        total = max(total, c_reserved + n_reserved + 4)
+
+        central_qty = max(c_reserved, (total * 6) // 10)
+        north_qty = max(n_reserved, total - central_qty)
+
+        if not c_row:
+            c_row = BranchStock(
                 sucursal_id=central.id,
-                variante_id=variant.id,
+                variante_id=v.id,
                 stock_reservado=0,
                 stock_minimo=2,
                 activo=True,
             )
-            db.add(central_row)
-        if not north_row:
-            north_row = BranchStock(
+            db.add(c_row)
+
+        if not n_row:
+            n_row = BranchStock(
                 sucursal_id=north.id,
-                variante_id=variant.id,
+                variante_id=v.id,
                 stock_reservado=0,
-                stock_minimo=1,
+                stock_minimo=2,
                 activo=True,
             )
-            db.add(north_row)
-        central_row.stock_total = central_total
-        north_row.stock_total = max(north_total, north_row.stock_reservado)
-        variant.stock_total = central_row.stock_total + north_row.stock_total
-        variant.stock_reservado = central_row.stock_reservado + north_row.stock_reservado
+            db.add(n_row)
 
-    for user in db.scalars(
-        select(User).where(User.rol.in_([Role.VENDEDOR, Role.ENCARGADO, Role.CAJERO]))
-    ):
-        assignment = db.scalar(
-            select(BranchStaff).where(
-                BranchStaff.usuario_id == user.id,
-                BranchStaff.sucursal_id == central.id,
-            )
+        c_row.stock_total = central_qty
+        n_row.stock_total = north_qty
+        v.stock_total = central_qty + north_qty
+        v.stock_reservado = c_row.stock_reservado + n_row.stock_reservado
+        updated_count += 1
+
+        if updated_count % 1000 == 0:
+            db.flush()
+
+    db.flush()
+    log_fn(f"  ✓ Stock distribuido en sedes para {updated_count} variantes de producto.")
+
+
+def seed_test_orders_and_reservations(db, users: dict[str, User], central: Branch, north: Branch, log_fn: Callable[[str], None] = print) -> None:
+    """Crea pedidos completados para comprobantes y reservas listas con QR para pruebas en tienda."""
+    log_fn("  → Creando cositas de prueba operativas (reservas con QR, ventas emitidas)...")
+    cliente = users.get("cliente@drapemind.com")
+    vendedor = users.get("vendedor@drapemind.com")
+    if not cliente or not vendedor:
+        return
+
+    # Buscar dos variantes con stock
+    variants = list(db.scalars(select(ProductVariant).where(ProductVariant.stock_total > 5).limit(4)))
+    if len(variants) < 2:
+        return
+
+    v1, v2 = variants[0], variants[1]
+    p1 = db.get(Product, v1.producto_id)
+    p2 = db.get(Product, v2.producto_id)
+
+    # 1. Reserva lista para probar escaneo QR y conversión a venta en caja (CU-14, CU-15, CU-16)
+    existing_res = db.scalar(
+        select(Reservation).where(
+            Reservation.usuario_id == cliente.id,
+            Reservation.estado == "LISTA",
         )
-        if not assignment:
-            db.add(BranchStaff(usuario_id=user.id, sucursal_id=central.id, activo=True))
-    log_fn("  + 2 sucursales, inventario por sede y personal operativo configurados")
+    )
+    if not existing_res:
+        test_qr_token = uuid.uuid4()
+        reserva = Reservation(
+            usuario_id=cliente.id,
+            sucursal_id=central.id,
+            estado="LISTA",
+            codigo_publico=uuid.uuid4(),
+            qr_token=test_qr_token,
+            qr_payload=f"drapemind:reserva:{test_qr_token}",
+            vence_at=datetime.now(timezone.utc) + timedelta(days=2),
+            observaciones="Reserva de prueba lista en Showroom Central para prueba de escaneo QR y POS.",
+        )
+        db.add(reserva)
+        db.flush()
+
+        item_res = ReservationItem(
+            reserva_id=reserva.id,
+            variante_id=v1.id,
+            cantidad=1,
+            precio_referencia=p1.precio if p1 else Decimal("149.00"),
+        )
+        db.add(item_res)
+        db.flush()
+        log_fn(f"  + Reserva de prueba LISTA creada [ID #{reserva.id}] con QR token {test_qr_token}")
+
+    # 2. Pedido completado ENTREGADO para probar de inmediato la descarga de comprobantes en PDF e imagen (CU-12, CU-37)
+    existing_order = db.scalar(
+        select(Order).where(
+            Order.usuario_id == cliente.id,
+            Order.estado == "ENTREGADO",
+        )
+    )
+    if not existing_order:
+        subtotal = (p1.precio if p1 else Decimal("149.00")) + (p2.precio if p2 else Decimal("199.00"))
+        order = Order(
+            usuario_id=cliente.id,
+            sucursal_id=central.id,
+            estado="ENTREGADO",
+            canal="TIENDA",
+            tipo_entrega="TIENDA",
+            subtotal=subtotal,
+            descuento=Decimal("0.00"),
+            costo_envio=Decimal("0.00"),
+            total=subtotal,
+            observacion="Venta presencial de prueba en caja con emisión de comprobante de compra.",
+            paid_at=datetime.now(timezone.utc) - timedelta(hours=2),
+            completed_at=datetime.now(timezone.utc) - timedelta(hours=2),
+        )
+        db.add(order)
+        db.flush()
+
+        # Items del pedido
+        item1 = OrderItem(
+            pedido_id=order.id,
+            producto_id=p1.id if p1 else None,
+            variante_id=v1.id,
+            nombre_snapshot=p1.nombre if p1 else "Prenda Exclusiva",
+            sku_snapshot=v1.sku,
+            color_snapshot=v1.color or "Único",
+            talla_snapshot=v1.talla or "M",
+            cantidad=1,
+            precio_unitario=p1.precio if p1 else Decimal("149.00"),
+            descuento=Decimal("0.00"),
+            subtotal=p1.precio if p1 else Decimal("149.00"),
+        )
+        item2 = OrderItem(
+            pedido_id=order.id,
+            producto_id=p2.id if p2 else None,
+            variante_id=v2.id,
+            nombre_snapshot=p2.nombre if p2 else "Prenda Atelier",
+            sku_snapshot=v2.sku,
+            color_snapshot=v2.color or "Único",
+            talla_snapshot=v2.talla or "L",
+            cantidad=1,
+            precio_unitario=p2.precio if p2 else Decimal("199.00"),
+            descuento=Decimal("0.00"),
+            subtotal=p2.precio if p2 else Decimal("199.00"),
+        )
+        db.add(item1)
+        db.add(item2)
+
+        # Pago asociado
+        payment = Payment(
+            pedido_id=order.id,
+            metodo="EFECTIVO",
+            proveedor="CAJA_CENTRAL",
+            monto=subtotal,
+            moneda="BOB",
+            estado="APROBADO",
+            referencia_externa=f"REC-POS-{order.id}-TEST",
+        )
+        db.add(payment)
+        db.flush()
+        log_fn(f"  + Pedido ENTREGADO de prueba creado [ID #{order.id}] con comprobante listo para descarga PDF/PNG.")
+
+    # 3. Pedido pagado PAGADO para probar avance de estados (CU-39)
+    existing_paid = db.scalar(
+        select(Order).where(
+            Order.usuario_id == cliente.id,
+            Order.estado == "PAGADO",
+        )
+    )
+    if not existing_paid:
+        p_subtotal = p1.precio if p1 else Decimal("149.00")
+        paid_order = Order(
+            usuario_id=cliente.id,
+            sucursal_id=north.id,
+            estado="PAGADO",
+            canal="WEB",
+            tipo_entrega="DELIVERY",
+            subtotal=p_subtotal,
+            descuento=Decimal("0.00"),
+            costo_envio=Decimal("20.00"),
+            total=p_subtotal + Decimal("20.00"),
+            observacion="Pedido online pagado listo para empaque y despacho.",
+            paid_at=datetime.now(timezone.utc) - timedelta(minutes=30),
+        )
+        db.add(paid_order)
+        db.flush()
+
+        p_item = OrderItem(
+            pedido_id=paid_order.id,
+            producto_id=p1.id if p1 else None,
+            variante_id=v1.id,
+            nombre_snapshot=p1.nombre if p1 else "Prenda Exclusiva",
+            sku_snapshot=v1.sku,
+            color_snapshot=v1.color or "Único",
+            talla_snapshot=v1.talla or "M",
+            cantidad=1,
+            precio_unitario=p_subtotal,
+            descuento=Decimal("0.00"),
+            subtotal=p_subtotal,
+        )
+        db.add(p_item)
+        db.flush()
+        log_fn(f"  + Pedido PAGADO creado [ID #{paid_order.id}] para pruebas de despacho (CU-39).")
 
 
-def run_full_seed(log_fn: Callable[[str], None] = print):
-    """Ejecuta el seeding completo de toda la base de datos."""
-    log_fn("🌱 Iniciando Seeding Extendido de DrapeMind...")
+def reset_sequences(db, log_fn: Callable[[str], None] = print) -> None:
+    """Sincroniza las secuencias de PostgreSQL para evitar colisiones de IDs autoincrementables."""
+    tables = [
+        "categorias",
+        "productos",
+        "variantes_producto",
+        "usuarios",
+        "pedidos",
+        "reservas",
+        "items_pedido",
+        "items_reserva",
+        "pagos",
+        "sucursales",
+        "ciudades",
+    ]
+    log_fn("  → Reseteando secuencias de PostgreSQL...")
+    for tbl in tables:
+        try:
+            seq_sql = f"SELECT pg_get_serial_sequence('{tbl}', 'id')"
+            seq_name = db.execute(text(seq_sql)).scalar()
+            if seq_name:
+                fix_sql = f"SELECT setval('{seq_name}', COALESCE((SELECT MAX(id) FROM {tbl}), 1))"
+                db.execute(text(fix_sql))
+        except Exception:
+            pass
+    db.commit()
+    log_fn("  ✓ Secuencias de PostgreSQL sincronizadas al valor máximo actual.")
+
+
+def run_full_seed(log_fn: Callable[[str], None] = print) -> None:
+    """Ejecuta el sembrado completo, modular e idempotente de DrapeMind."""
+    log_fn("🌱 ====================================================================")
+    log_fn("   DRAPEMIND - SEEDER DE BASE DE DATOS Y CATÁLOGO POBLACIÓN")
+    log_fn("====================================================================")
+
     with SessionLocal() as db:
-        log_fn("\n📁 1. Creando Categorías...")
-        cat_map = seed_categories(db, log_fn)
-
-        log_fn("\n👥 2. Creando Usuarios y Direcciones Base...")
-        seed_users(db, log_fn)
-
-        log_fn("\n👔 3. Creando Catálogo Extenso de Productos y Variantes...")
-        seed_products(db, cat_map, log_fn)
-
-        log_fn("\n🏬 4. Configurando Sucursales e Inventario...")
-        seed_branches(db, log_fn)
-
+        log_fn("\n🏬 1. Ciudades y Sucursales (Showrooms)...")
+        central, north = seed_cities_and_branches(db, log_fn)
         db.commit()
-    log_fn("\n🎉 ¡Base de datos de DrapeMind sembrada y actualizada exitosamente!")
+
+        log_fn("\n👥 2. Usuarios por Rol, Sucursales y Perfiles...")
+        users = seed_users(db, central, north, log_fn)
+        db.commit()
+
+        log_fn("\n📁 3. Categorías desde data/categorias.csv...")
+        category_map = seed_categories_from_csv(db, log_fn)
+        db.commit()
+
+        log_fn("\n👔 4. Productos desde data/productos.csv...")
+        product_map = seed_products_from_csv(db, category_map, log_fn)
+        db.commit()
+
+        log_fn("\n🎨 5. Variantes desde data/variantes_producto.csv...")
+        seed_variants_from_csv(db, product_map, log_fn)
+        db.commit()
+
+        log_fn("\n📦 6. Inventario por Sede (BranchStock)...")
+        seed_branch_stock(db, central, north, log_fn)
+        db.commit()
+
+        log_fn("\n🧾 7. Cositas de Prueba (Reservas QR y Ventas con Comprobante)...")
+        seed_test_orders_and_reservations(db, users, central, north, log_fn)
+        db.commit()
+
+        log_fn("\n⚡ 8. Reseteo de Secuencias PostgreSQL...")
+        reset_sequences(db, log_fn)
+
+    log_fn("\n🎉 ====================================================================")
+    log_fn("   ¡SEEDING DE DRAPEMIND COMPLETADO CON ÉXITO!")
+    log_fn("   Catálogo con 887 productos, 4296 variantes, usuarios y sedes listos.")
+    log_fn("====================================================================\n")
 
 
 if __name__ == "__main__":

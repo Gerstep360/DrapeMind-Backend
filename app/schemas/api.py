@@ -151,6 +151,7 @@ class BranchStockOut(ORMModel):
     stock_total: int
     stock_reservado: int
     stock_disponible: int
+    precio: Decimal | None = None
     activo: bool
 
 

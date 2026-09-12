@@ -115,6 +115,7 @@ show_menu() {
     echo -e "${COLOR_PRIMARY}│${BOLD}  8 ${NC}${COLOR_PRIMARY}│${NC}  ⚡ ${BOLD}Instalar llama-server${NC} (Binarios GGML con soporte Gemma 4)           ${COLOR_PRIMARY}│${NC}"
     echo -e "${COLOR_PRIMARY}│${BOLD}  9 ${NC}${COLOR_PRIMARY}│${NC}  ${ICON_BRAIN} ${BOLD}Descargar Modelos IA${NC} (Gemma 4 + Scout Qwen 0.6B)                 ${COLOR_PRIMARY}│${NC}"
     echo -e "${COLOR_PRIMARY}│${BOLD} 10 ${NC}${COLOR_PRIMARY}│${NC}  🩺 ${BOLD}Verificar Diagnóstico y Salud${NC} (/health/ready y /health/ai)          ${COLOR_PRIMARY}│${NC}"
+    echo -e "${COLOR_PRIMARY}│${BOLD} 11 ${NC}${COLOR_PRIMARY}│${NC}  🌱 ${BOLD}Sembrar Catálogo y Pruebas${NC} (887 prendas, 4296 variantes, sedes)     ${COLOR_PRIMARY}│${NC}"
     echo -e "${COLOR_PRIMARY}│${BOLD}  0 ${NC}${COLOR_PRIMARY}│${NC}  🚪 ${BOLD}Salir del Instalador${NC}                                                ${COLOR_PRIMARY}│${NC}"
     echo -e "${COLOR_PRIMARY}╰────┴──────────────────────────────────────────────────────────────────────╯${NC}"
     echo ""
@@ -129,6 +130,7 @@ show_help() {
     echo "  --update      Actualiza código de Git, sincroniza .env con nuevas variables, migra BD y reinicia"
     echo "  --env         Sincroniza y actualiza únicamente las variables de entorno en .env"
     echo "  --db          Solo configura PostgreSQL, migraciones Alembic y sembrado inicial"
+    echo "  --seed        Ejecuta el seeder completo (catálogo población, usuarios por rol, inventario y pruebas)"
     echo "  --llama       Descarga o compila el binario llama-server con librerías GGML"
     echo "  --models      Descarga modelos IA (Gemma 4 y Scout Qwen 0.6B) de Hugging Face"
     echo "  --service     Reconfigura y reinicia el servicio systemd"
@@ -163,6 +165,9 @@ case "${1:-}" in
         sync_env_production
         run_migrations_and_seed
         ;;
+    --seed)
+        run_seeder_only
+        ;;
     --llama)
         install_llama_server true
         ;;
@@ -191,7 +196,7 @@ case "${1:-}" in
         ;;
     *)
         show_menu
-        read -rp "  ${COLOR_ACCENT}${ICON_CHEVRON}${NC} ${BOLD}Selecciona una opción [0-10]:${NC} " opt
+        read -rp "  ${COLOR_ACCENT}${ICON_CHEVRON}${NC} ${BOLD}Selecciona una opción [0-11]:${NC} " opt
         case $opt in
             1)
                 install_full
@@ -225,6 +230,9 @@ case "${1:-}" in
                 ;;
             10)
                 verify_backend
+                ;;
+            11)
+                run_seeder_only
                 ;;
             0)
                 echo -e "  ${COLOR_MUTED}Saliendo del instalador...${NC}"

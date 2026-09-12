@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_role
+from app.api.deps import require_roles
 from app.db.session import get_db
 from app.models import Order, Role, User
 from app.schemas.api import OrderOut, OrderStatusUpdate
@@ -22,7 +22,7 @@ router = APIRouter()
 def listar_pedidos_admin(
     state: str | None = None,
     sucursal_id: int | None = None,
-    _staff: User = Depends(require_role(Role.ADMIN, Role.VENDEDOR)),
+    _staff: User = Depends(require_roles(Role.ADMIN, Role.ENCARGADO, Role.VENDEDOR, Role.CAJERO)),
     db: Session = Depends(get_db),
 ) -> list[Order]:
     stmt = select(Order)
@@ -42,7 +42,7 @@ def listar_pedidos_admin(
 def actualizar_estado_pedido(
     order_id: int,
     payload: OrderStatusUpdate,
-    _staff: User = Depends(require_role(Role.ADMIN, Role.VENDEDOR)),
+    _staff: User = Depends(require_roles(Role.ADMIN, Role.ENCARGADO, Role.VENDEDOR, Role.CAJERO)),
     db: Session = Depends(get_db),
 ) -> Order:
     order = db.get(Order, order_id)

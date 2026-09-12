@@ -1,0 +1,68 @@
+﻿id,nombre,slug,descripcion,parent_id,activo,created_at,updated_at
+1,Ropa,ropa,"Prendas de vestir para hombre, mujer y unisex.",,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+2,Calzado,calzado,"Zapatos, zapatillas, botas, sandalias y otros tipos de calzado.",,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+3,Accesorios,accesorios,"Complementos de moda como bolsos, relojes, joyería, cinturones y gafas.",,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+4,Mochilas,mochilas,Categoría de accesorios importada desde el catálogo de origen (backpacks).,3,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+5,Batas de baño,batas-de-bano,Categoría de ropa importada desde el catálogo de origen (bath-robe).,1,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+6,Cinturones,cinturones,Categoría de accesorios importada desde el catálogo de origen (belts).,3,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+7,Bodys,bodys,Categoría de ropa importada desde el catálogo de origen (bodysuit).,1,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+8,Botas,botas,Categoría de calzado importada desde el catálogo de origen (boots).,2,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+9,Bóxers,boxers,Categoría de ropa importada desde el catálogo de origen (boxers).,1,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+10,Sostenes,sostenes,Categoría de ropa importada desde el catálogo de origen (bra).,1,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+11,Pulseras,pulseras,Categoría de accesorios importada desde el catálogo de origen (bracelet).,3,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+12,Calzoncillos,calzoncillos,Categoría de ropa importada desde el catálogo de origen (briefs).,1,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+13,Camisolas,camisolas,Categoría de ropa importada desde el catálogo de origen (camisoles).,1,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+14,Gorras,gorras,Categoría de accesorios importada desde el catálogo de origen (caps).,3,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+15,Zapatos casuales,zapatos-casuales,Categoría de calzado importada desde el catálogo de origen (casual-shoes).,2,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+16,Clutches,clutches,Categoría de accesorios importada desde el catálogo de origen (clutches).,3,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+17,Conjuntos coordinados,conjuntos-coordinados,Categoría de ropa importada desde el catálogo de origen (co-ords).,1,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+18,Vestidos,vestidos,Categoría de ropa importada desde el catálogo de origen (dresses).,1,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+19,Bolsos deportivos,bolsos-deportivos,Categoría de accesorios importada desde el catálogo de origen (duffel-bag).,3,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+20,Dupattas,dupattas,Categoría de ropa importada desde el catálogo de origen (dupatta).,1,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+21,Aretes,aretes,Categoría de accesorios importada desde el catálogo de origen (earrings).,3,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+22,Vestidos étnicos,vestidos-etnicos,Categoría de ropa importada desde el catálogo de origen (ethnic-dresses).,1,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+23,Zapatos planos,zapatos-planos,Categoría de calzado importada desde el catálogo de origen (flats).,2,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+24,Chancletas,chancletas,Categoría de calzado importada desde el catálogo de origen (flip-flops).,2,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+25,Zapatos formales,zapatos-formales,Categoría de calzado importada desde el catálogo de origen (formal-shoes).,2,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+26,Guantes,guantes,Categoría de accesorios importada desde el catálogo de origen (gloves).,3,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+27,Accesorios para cabello,accesorios-para-cabello,Categoría de accesorios importada desde el catálogo de origen (hair-accessory).,3,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+28,Bolsos de mano,bolsos-de-mano,Categoría de accesorios importada desde el catálogo de origen (handbags).,3,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+29,Tacones,tacones,Categoría de calzado importada desde el catálogo de origen (heels).,2,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+30,Chaquetas,chaquetas,Categoría de ropa importada desde el catálogo de origen (jackets).,1,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+31,Jeans,jeans,Categoría de ropa importada desde el catálogo de origen (jeans).,1,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+32,Jumpsuits,jumpsuits,Categoría de ropa importada desde el catálogo de origen (jumpsuit).,1,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+33,Conjuntos kurta,conjuntos-kurta,Categoría de ropa importada desde el catálogo de origen (kurta-sets).,1,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+34,Kurtas,kurtas,Categoría de ropa importada desde el catálogo de origen (kurtas).,1,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+35,Kurtis,kurtis,Categoría de ropa importada desde el catálogo de origen (kurtis).,1,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+36,Pantalones de descanso,pantalones-de-descanso,Categoría de ropa importada desde el catálogo de origen (lounge-pants).,1,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+37,Shorts de descanso,shorts-de-descanso,Categoría de ropa importada desde el catálogo de origen (lounge-shorts).,1,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+38,Poleras de descanso,poleras-de-descanso,Categoría de ropa importada desde el catálogo de origen (lounge-tshirts).,1,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+39,Mangalsutras,mangalsutras,Categoría de accesorios importada desde el catálogo de origen (mangalsutra).,3,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+40,Pijamas,pijamas,Categoría de ropa importada desde el catálogo de origen (night-suits).,1,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+41,Camisones,camisones,Categoría de ropa importada desde el catálogo de origen (nightdress).,1,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+42,Pantalones palazzo,pantalones-palazzo,Categoría de ropa importada desde el catálogo de origen (palazzos).,1,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+43,Anillos,anillos,Categoría de accesorios importada desde el catálogo de origen (ring).,3,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+44,Sandalias,sandalias,Categoría de calzado importada desde el catálogo de origen (sandals).,2,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+45,Blusas de sari,blusas-de-sari,Categoría de ropa importada desde el catálogo de origen (saree-blouse).,1,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+46,Saris,saris,Categoría de ropa importada desde el catálogo de origen (sarees).,1,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+47,Bufandas,bufandas,Categoría de accesorios importada desde el catálogo de origen (scarves).,3,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+48,Sherwanis,sherwanis,Categoría de ropa importada desde el catálogo de origen (sherwani).,1,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+49,Camisas,camisas,Categoría de ropa importada desde el catálogo de origen (shirts).,1,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+50,Shorts,shorts,Categoría de ropa importada desde el catálogo de origen (shorts).,1,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+51,Faldas,faldas,Categoría de ropa importada desde el catálogo de origen (skirts).,1,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+52,Zapatillas deportivas,zapatillas-deportivas,Categoría de calzado importada desde el catálogo de origen (sports-shoes).,2,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+53,Gafas de sol,gafas-de-sol,Categoría de accesorios importada desde el catálogo de origen (sunglasses).,3,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+54,Suéteres,sueteres,Categoría de ropa importada desde el catálogo de origen (sweaters).,1,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+55,Sudaderas,sudaderas,Categoría de ropa importada desde el catálogo de origen (sweatshirts).,1,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+56,Tops de baño,tops-de-bano,Categoría de ropa importada desde el catálogo de origen (swim-tops).,1,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+57,Pantalones térmicos,pantalones-termicos,Categoría de ropa importada desde el catálogo de origen (thermal-bottoms).,1,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+58,Mallas,mallas,Categoría de ropa importada desde el catálogo de origen (tights).,1,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+59,Tops,tops,Categoría de ropa importada desde el catálogo de origen (tops).,1,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+60,Pantalones deportivos,pantalones-deportivos,Categoría de ropa importada desde el catálogo de origen (track-pants).,1,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+61,Maletas con ruedas,maletas-con-ruedas,Categoría de accesorios importada desde el catálogo de origen (trolley-bag).,3,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+62,Pantalones,pantalones,Categoría de ropa importada desde el catálogo de origen (trousers).,1,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+63,Bóxers tipo trunk,boxers-tipo-trunk,Categoría de ropa importada desde el catálogo de origen (trunk).,1,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+64,Poleras,poleras,Categoría de ropa importada desde el catálogo de origen (tshirts).,1,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+65,Túnicas,tunicas,Categoría de ropa importada desde el catálogo de origen (tunics).,1,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+66,Billeteras,billeteras,Categoría de accesorios importada desde el catálogo de origen (wallets).,3,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00
+67,Relojes,relojes,Categoría de accesorios importada desde el catálogo de origen (watches).,3,true,2026-09-12T13:13:00-04:00,2026-09-12T13:13:00-04:00

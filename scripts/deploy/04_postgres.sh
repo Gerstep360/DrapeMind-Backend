@@ -91,7 +91,28 @@ run_migrations_and_seed() {
     fi
 }
 
+run_seeder_only() {
+    cd "${BACKEND_DIR}"
+
+    echo -e "${COLOR_PRIMARY}╭── [SEEDER DE BASE DE DATOS Y CATÁLOGO POBLACIÓN] ─────────────────────────╮${NC}"
+    echo -e "${COLOR_PRIMARY}│${NC}  ${BOLD}${ICON_DATABASE} Sembrando Catálogo (887 prendas, 4296 variantes), Usuarios y Sedes...${NC}"
+    echo -e "${COLOR_PRIMARY}╰───────────────────────────────────────────────────────────────────────────╯${NC}"
+
+    if [[ -x "${BACKEND_DIR}/.venv/bin/python" ]]; then
+        "${BACKEND_DIR}/.venv/bin/python" -m scripts.db.seed_data
+        log_success "Catálogo población, usuarios por rol y datos de prueba sembrados exitosamente."
+    else
+        log_error "Entorno virtual .venv no encontrado en ${BACKEND_DIR}."
+        exit 1
+    fi
+}
+
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    setup_postgresql
-    run_migrations_and_seed
+    if [[ "${1:-}" == "--seed" ]]; then
+        run_seeder_only
+    else
+        setup_postgresql
+        run_migrations_and_seed
+    fi
 fi
+
