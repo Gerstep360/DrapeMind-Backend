@@ -16,7 +16,10 @@ def capabilities() -> dict:
     return {
         "mode": "2d-overlay",
         "backend": ["asset-validation", "size-recommendation", "fabric-parameters"],
-        "mobile": ["camera", "manual-2d-overlay"],
+        "mobile": ["camera", "manual-2d-overlay", "on-device-pose-demo"],
+        "body_tracking_demo": {"garment": "Studio demo top", "catalog_item": False,
+            "anchors": ["shoulders", "hips"], "requires_product_asset": False,
+            "occlusion": False, "size_measurement": False},
         "requires": ["camera_permission", "person_in_frame", "ar_asset"],
         "supports_3d": False,
     }

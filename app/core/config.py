@@ -84,8 +84,11 @@ class Settings(BaseSettings):
     AI_FIRST_TOKEN_TIMEOUT_SECONDS: float = Field(default=120.0, ge=10, le=600)
     AI_TEMPERATURE: float = 0.35
     RESERVATION_TTL_MINUTES: int = 2880
-    PAYMENT_PROVIDER: Literal["mock", "external"] = "mock"
+    PAYMENT_PROVIDER: Literal["mock", "external", "stripe"] = "mock"
     PAYMENT_WEBHOOK_SECRET: str = "change-me-payment-webhook-secret"
+    STRIPE_WEBHOOK_SECRET: str = ""
+    STRIPE_SECRET_KEY: str = ""
+    STRIPE_PUBLISHABLE_KEY: str = ""
     AR_ASSET_BASE_URL: str = "http://localhost:8000/static/ar"
 
     @field_validator("CORS_ORIGINS", mode="before")

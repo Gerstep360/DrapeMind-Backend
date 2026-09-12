@@ -171,7 +171,10 @@ sync_env_production() {
 
     # Dominio y Pagos
     set_or_update_var "RESERVATION_TTL_MINUTES" "2880" "${ENV_FILE}"
-    set_or_update_var "PAYMENT_PROVIDER" "\"mock\"" "${ENV_FILE}"
+    set_default_var "PAYMENT_PROVIDER" "\"mock\"" "${ENV_FILE}"
+    set_default_var "STRIPE_SECRET_KEY" "\"\"" "${ENV_FILE}"
+    set_default_var "STRIPE_PUBLISHABLE_KEY" "\"\"" "${ENV_FILE}"
+    set_default_var "STRIPE_WEBHOOK_SECRET" "\"\"" "${ENV_FILE}"
     set_or_update_var "AR_ASSET_BASE_URL" "\"http://${SERVER_IP}/DrapeMind/static/ar\"" "${ENV_FILE}"
 
     # Directorios estáticos necesarios

@@ -1,6 +1,8 @@
 import hashlib
 import hmac
 import json
+import logging
+from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request
 from sqlalchemy import select
@@ -14,7 +16,11 @@ from app.schemas.api import PaymentCreate, PaymentOut, PaymentWebhook
 from app.services.store import confirm_payment, create_payment, staff_can_access_branch
 from app.services.realtime import event_hub
 
+from app.api.v1.endpoints.stripe_payments import router as stripe_router
+
 router = APIRouter()
+router.include_router(stripe_router)
+logger = logging.getLogger(__name__)
 
 
 def _can_read_payment(user: User, order: Order, db: Session) -> bool:
@@ -82,6 +88,9 @@ async def webhook(
         payload = PaymentWebhook.model_validate(json.loads(body))
     except (ValueError, json.JSONDecodeError) as exc:
         raise HTTPException(422, "Payload de webhook invalido") from exc
+    candidate = db.scalar(select(Payment).where(Payment.referencia_externa == payload.referencia_externa))
+    if candidate and candidate.proveedor == "STRIPE":
+        raise HTTPException(409, "Este pago requiere el webhook firmado de Stripe")
     payment = confirm_payment(db, payload.referencia_externa, payload.estado)
     order = db.get(Order, payment.pedido_id)
     await event_hub.publish(
@@ -107,7 +116,7 @@ def mock_confirm(
         raise HTTPException(404, "Endpoint no disponible")
     payment = db.scalar(
         select(Payment).join(Order, Order.id == Payment.pedido_id)
-        .where(Payment.id == payment_id, Order.usuario_id == current_user.id)
+        .where(Payment.id == payment_id, Order.usuario_id == current_user.id, Payment.proveedor == "MOCK")
     )
     if not payment:
         raise HTTPException(404, "Pago no encontrado")
