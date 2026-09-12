@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_roles
 from app.db.session import get_db
-from app.models import Order, OrderItem, Payment, Role, User
+from app.models import Branch, Order, OrderItem, Payment, Role, User
 from app.schemas.api import OrderOut, OrderStatusUpdate
 from app.services.realtime import event_hub
 from app.services.store import (
@@ -174,11 +174,11 @@ def confirm_order_cash_payment(
 
 @router.get(
     "/{order_id}/receipt",
-    response_class=PlainTextResponse,
     summary="CU-12: Descargar comprobante de compra (no fiscal)",
 )
 def download_receipt(
     order_id: int,
+    format: str = "json",
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -210,7 +210,64 @@ def download_receipt(
             select(OrderItem).where(OrderItem.pedido_id == order_id).order_by(OrderItem.id)
         )
     )
+    cliente = db.get(User, order.usuario_id)
+    sucursal = db.get(Branch, order.sucursal_id) if order.sucursal_id else None
 
+    if format == "json":
+        return {
+            "order": {
+                "id": order.id,
+                "codigo_publico": order.codigo_publico,
+                "created_at": order.created_at.isoformat() if order.created_at else None,
+                "estado": order.estado,
+                "canal": order.canal,
+                "tipo_entrega": order.tipo_entrega,
+                "subtotal": float(order.subtotal),
+                "descuento": float(order.descuento),
+                "costo_envio": float(order.costo_envio),
+                "total": float(order.total),
+                "observacion": order.observacion,
+            },
+            "sucursal": {
+                "id": sucursal.id if sucursal else 1,
+                "nombre": sucursal.nombre if sucursal else "Showroom Central DrapeMind",
+                "ciudad": "Santa Cruz",
+                "direccion": sucursal.direccion if sucursal else "Av. Las Américas #780, Equipetrol",
+                "telefono": sucursal.telefono if sucursal else "63014529",
+            },
+            "cliente": {
+                "id": cliente.id if cliente else None,
+                "nombre": cliente.nombre if cliente else "Cliente DrapeMind",
+                "email": cliente.email if cliente else "",
+                "telefono": cliente.telefono if cliente else "",
+            },
+            "items": [
+                {
+                    "id": item.id,
+                    "nombre": item.nombre_snapshot,
+                    "sku": item.sku_snapshot,
+                    "color": item.color_snapshot,
+                    "talla": item.talla_snapshot,
+                    "cantidad": item.cantidad,
+                    "precio_unitario": float(item.precio_unitario),
+                    "subtotal": float(item.subtotal),
+                }
+                for item in items
+            ],
+            "payments": [
+                {
+                    "id": p.id,
+                    "metodo": p.metodo,
+                    "monto": float(p.monto),
+                    "estado": p.estado,
+                    "referencia": p.referencia_externa,
+                    "created_at": p.created_at.isoformat() if p.created_at else None,
+                }
+                for p in payments
+            ],
+        }
+
+    # Fallback texto plano
     lines = [
         "==================================================",
         "              DRAPEMIND ATELIER MODA              ",
@@ -219,7 +276,7 @@ def download_receipt(
         "",
         f"Código de Pedido : {order.codigo_publico}",
         f"Fecha y Hora     : {order.created_at.strftime('%Y-%m-%d %H:%M:%S') if order.created_at else ''}",
-        f"Sucursal         : {'Showroom Central' if not order.sucursal_id or order.sucursal_id == 1 else f'Showroom #{order.sucursal_id}'}",
+        f"Sucursal         : {sucursal.nombre if sucursal else 'Showroom Central'}",
         f"Modalidad        : {order.tipo_entrega}",
         f"Estado del Pedido: {order.estado}",
         "",
