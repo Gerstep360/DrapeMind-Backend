@@ -315,3 +315,86 @@ def download_receipt(
     )
 
 
+@router.get(
+    "/{order_id}/public-receipt",
+    summary="CU-12: Consulta pública y autenticación de comprobante oficial vía QR",
+)
+def get_public_receipt(
+    order_id: int,
+    db: Session = Depends(get_db),
+):
+    order = db.get(Order, order_id)
+    if not order:
+        raise HTTPException(404, "Comprobante de compra no encontrado")
+
+    payments = list(
+        db.scalars(
+            select(Payment).where(Payment.pedido_id == order_id).order_by(Payment.id)
+        )
+    )
+    items = list(
+        db.scalars(
+            select(OrderItem).where(OrderItem.pedido_id == order_id).order_by(OrderItem.id)
+        )
+    )
+    cliente = db.get(User, order.usuario_id)
+    sucursal = db.get(Branch, order.sucursal_id) if order.sucursal_id else None
+
+    return {
+        "verified": True,
+        "verification_seal": "OFICIAL_DRAPEMIND_CLOUD_ERP",
+        "verified_at": datetime.now(timezone.utc).isoformat(),
+        "order": {
+            "id": order.id,
+            "codigo_publico": order.codigo_publico,
+            "created_at": order.created_at.isoformat() if order.created_at else None,
+            "estado": order.estado,
+            "canal": order.canal,
+            "tipo_entrega": order.tipo_entrega,
+            "subtotal": float(order.subtotal),
+            "descuento": float(order.descuento),
+            "costo_envio": float(order.costo_envio),
+            "total": float(order.total),
+            "observacion": order.observacion,
+        },
+        "sucursal": {
+            "id": sucursal.id if sucursal else 1,
+            "nombre": sucursal.nombre if sucursal else "Showroom Central DrapeMind",
+            "ciudad": "Santa Cruz",
+            "direccion": sucursal.direccion if sucursal else "Av. Las Américas #780, Equipetrol",
+            "telefono": sucursal.telefono if sucursal else "63014529",
+        },
+        "cliente": {
+            "id": cliente.id if cliente else None,
+            "nombre": cliente.nombre if cliente else "Cliente DrapeMind",
+            "email": cliente.email if cliente else "",
+            "telefono": cliente.telefono if cliente else "",
+        },
+        "items": [
+            {
+                "id": item.id,
+                "nombre": item.nombre_snapshot,
+                "sku": item.sku_snapshot,
+                "color": item.color_snapshot,
+                "talla": item.talla_snapshot,
+                "cantidad": item.cantidad,
+                "precio_unitario": float(item.precio_unitario),
+                "subtotal": float(item.subtotal),
+            }
+            for item in items
+        ],
+        "payments": [
+            {
+                "id": p.id,
+                "metodo": p.metodo,
+                "monto": float(p.monto),
+                "estado": p.estado,
+                "referencia": p.referencia_externa,
+                "created_at": p.created_at.isoformat() if p.created_at else None,
+            }
+            for p in payments
+        ],
+    }
+
+
+
