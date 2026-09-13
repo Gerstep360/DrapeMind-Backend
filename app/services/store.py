@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models import (
-    Address, Branch, BranchStaff, BranchStock, Cart, CartItem, InventoryMovement,
+    Address, Branch, BranchStaff, BranchStock, Cart, CartItem, Gender, InventoryMovement,
     Order, OrderItem, Payment, Product, ProductVariant, Reservation,
     ReservationItem, Role, User,
 )
@@ -111,8 +111,16 @@ def search_products(
             stmt = stmt.where(Product.precio >= min_price)
         if max_price is not None:
             stmt = stmt.where(Product.precio <= max_price)
-        if gender:
-            stmt = stmt.where(Product.genero_objetivo == gender)
+        if gender and gender.upper() != "TODOS":
+            g_up = gender.upper()
+            try:
+                target_gender = Gender[g_up]
+                if target_gender in (Gender.HOMBRE, Gender.MUJER):
+                    stmt = stmt.where(Product.genero_objetivo.in_([target_gender, Gender.UNISEX]))
+                else:
+                    stmt = stmt.where(Product.genero_objetivo == target_gender)
+            except (KeyError, ValueError):
+                pass
         if color:
             stmt = stmt.where(ProductVariant.color.ilike(f"%{color}%"))
         if size:

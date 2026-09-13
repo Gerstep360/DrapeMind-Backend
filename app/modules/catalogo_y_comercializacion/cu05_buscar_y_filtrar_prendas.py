@@ -23,7 +23,9 @@ def buscar_y_filtrar_prendas(
     categoria_id: int | None = None,
     precio_min: Decimal | None = Query(default=None, ge=0),
     precio_max: Decimal | None = Query(default=None, ge=0),
+    max_price: Decimal | None = Query(default=None, ge=0),
     genero: str | None = None,
+    gender: str | None = None,
     color: str | None = None,
     talla: str | None = None,
     con_stock: bool = True,
@@ -32,13 +34,15 @@ def buscar_y_filtrar_prendas(
     db: Session = Depends(get_db),
 ) -> list[dict]:
     """CU-05: Filtro y búsqueda avanzada de prendas."""
+    resolved_genero = genero or gender
+    resolved_precio_max = precio_max if precio_max is not None else max_price
     return search_products(
         db,
         q,
         categoria_id,
         precio_min,
-        precio_max,
-        genero,
+        resolved_precio_max,
+        resolved_genero,
         color,
         talla,
         con_stock,

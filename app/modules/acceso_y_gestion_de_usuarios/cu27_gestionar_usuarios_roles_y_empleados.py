@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from pydantic import BaseModel, EmailStr, Field
-from app.api.deps import require_role
+from app.api.deps import require_role, require_roles
 from app.core.security import get_password_hash
 from app.db.session import get_db
 from app.models import Role, User, UserStatus
@@ -50,6 +50,33 @@ def listar_usuarios(
     if rol:
         query = query.where(User.rol == rol)
     query = query.order_by(User.id.desc()).offset(offset).limit(limit)
+    return list(db.scalars(query).all())
+
+
+@router.get(
+    "/customers/search",
+    response_model=list[UserOut],
+    summary="CU-27: Buscar clientes para Punto de Venta POS",
+    description="Permite a vendedores y cajeros buscar clientes por nombre, teléfono o correo.",
+)
+def buscar_clientes_pos(
+    q: str = Query(default="", max_length=100),
+    limit: int = Query(default=15, ge=1, le=50),
+    _staff: User = Depends(require_roles(Role.ADMIN, Role.ENCARGADO, Role.VENDEDOR, Role.CAJERO)),
+    db: Session = Depends(get_db),
+) -> list[User]:
+    from sqlalchemy import or_
+    query = select(User).where(User.rol == Role.CLIENTE)
+    if q.strip():
+        term = f"%{q.strip()}%"
+        query = query.where(
+            or_(
+                User.nombre.ilike(term),
+                User.email.ilike(term),
+                User.telefono.ilike(term),
+            )
+        )
+    query = query.order_by(User.nombre.asc()).limit(limit)
     return list(db.scalars(query).all())
 
 
