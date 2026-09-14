@@ -138,6 +138,7 @@ show_help() {
     echo "  --logs        Muestra logs de journalctl del backend en tiempo real"
     echo "  --logs-llama  Muestra logs de llama-server en tiempo real (tokens, velocidad y generación)"
     echo "  --check       Verifica endpoints de salud (/health/ready y /health/ai)"
+    echo "  --uninstall   Desinstala y elimina DrapeMind de forma quirúrgica"
     echo "  --help        Muestra esta ayuda"
     echo ""
 }
@@ -190,6 +191,20 @@ case "${1:-}" in
         ;;
     --check)
         verify_backend
+        ;;
+    --uninstall|--remove)
+        for cand in \
+            "${SCRIPT_DIR}/scripts/deploy/uninstall_drapemind.sh" \
+            "${SCRIPT_DIR}/../scripts/uninstall_drapemind.sh" \
+            "/root/app/DrapeMind/DrapeMind-Backend/scripts/deploy/uninstall_drapemind.sh" \
+            "/root/app/DrapeMind/scripts/uninstall_drapemind.sh"; do
+            if [[ -f "${cand}" ]]; then
+                chmod +x "${cand}"
+                exec bash "${cand}"
+            fi
+        done
+        echo "ERROR: No se encontró uninstall_drapemind.sh."
+        exit 1
         ;;
     --help|-h)
         show_help

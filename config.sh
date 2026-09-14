@@ -137,9 +137,15 @@ run_web() {
 run_uninstall() {
     local UNINSTALL_SCRIPT=""
     for candidate in \
+        "/root/app/DrapeMind/DrapeMind-Backend/scripts/deploy/uninstall_drapemind.sh" \
+        "/root/app/DrapeMind/scripts/uninstall_drapemind.sh" \
+        "${SCRIPT_DIR}/scripts/deploy/uninstall_drapemind.sh" \
         "${SCRIPT_DIR}/scripts/uninstall_drapemind.sh" \
+        "${ROOT_DIR}/scripts/deploy/uninstall_drapemind.sh" \
         "${ROOT_DIR}/scripts/uninstall_drapemind.sh" \
-        "${BACKEND_DIR}/scripts/deploy/uninstall_drapemind.sh"; do
+        "${ROOT_DIR}/DrapeMind-Backend/scripts/deploy/uninstall_drapemind.sh" \
+        "${BACKEND_DIR}/scripts/deploy/uninstall_drapemind.sh" \
+        "${BACKEND_DIR}/scripts/uninstall_drapemind.sh"; do
         if [[ -f "${candidate}" ]]; then
             UNINSTALL_SCRIPT="${candidate}"
             break
@@ -147,7 +153,7 @@ run_uninstall() {
     done
 
     if [[ -z "${UNINSTALL_SCRIPT}" ]]; then
-        echo -e "${COLOR_DANGER}ERROR: No se encontró uninstall_drapemind.sh.${NC}"
+        echo -e "${COLOR_DANGER}ERROR: No se encontró uninstall_drapemind.sh en las rutas conocidas.${NC}"
         read -rp "Presiona Enter para continuar..."
         return 1
     fi
@@ -155,6 +161,13 @@ run_uninstall() {
     chmod +x "${UNINSTALL_SCRIPT}"
     bash "${UNINSTALL_SCRIPT}"
     echo ""
+
+    # Si la desinstalación eliminó la carpeta raíz o backend, salir limpiamente
+    if [[ ! -d "${ROOT_DIR}" || ! -d "${BACKEND_DIR}" ]]; then
+        echo -e "${COLOR_SUCCESS}Desinstalación y limpieza finalizada con éxito. Cerrando gestor.${NC}"
+        exit 0
+    fi
+
     echo -e "${COLOR_MUTED}Presiona Enter para regresar al menú principal...${NC}"
     read -r
 }
@@ -284,6 +297,7 @@ case "${1:-}" in
         ;;
     --uninstall|--remove)
         run_uninstall
+        exit 0
         ;;
     --check|-c)
         verify_all
