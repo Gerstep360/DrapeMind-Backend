@@ -556,12 +556,21 @@ class ExecutiveReportRequest(BaseModel):
     enfoque_especifico: str | None = Field(default=None, max_length=300)
 
 
+class ReportTable(BaseModel):
+    titulo: str
+    columnas: list[str]
+    filas: list[list[Any]]
+    resumen: str | None = None
+
+
 class ExecutiveReportResponse(BaseModel):
     tipo_reporte: str
     periodo: str
     indicadores_clave: dict[str, Any]
     resumen_ejecutivo: str
     diagnostico_rendimiento: str
+    enfoque_personalizado: str | None = None
+    tablas_analiticas: list[ReportTable] = Field(default_factory=list)
     cuellos_de_botella: list[str]
     recomendaciones_estrategicas: list[str]
     fecha_generacion: str
