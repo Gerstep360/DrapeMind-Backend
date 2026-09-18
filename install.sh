@@ -75,7 +75,6 @@ update_backend_code() {
         cd "${BACKEND_DIR}"
         git fetch origin Main --quiet 2>&1 || git fetch --all --quiet 2>&1
         git reset --hard origin/Main >/dev/null 2>&1 || git reset --hard origin/main >/dev/null 2>&1 || git reset --hard HEAD >/dev/null 2>&1
-        git clean -fd >/dev/null 2>&1 || true
         chmod +x "${BACKEND_DIR}"/*.sh "${BACKEND_DIR}"/scripts/deploy/*.sh 2>/dev/null || true
     }
     tui_spin_cmd "Descargando commits recientes desde origin/Main" _sync_git_repo
