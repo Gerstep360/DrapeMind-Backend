@@ -23,12 +23,12 @@ verify_backend() {
 
     local HEALTH_BADGE="${COLOR_DANGER}[ ERROR ]${NC}"
     if echo "${HEALTH}" | grep -q '"status":"ready"'; then
-        HEALTH_BADGE="${COLOR_SUCCESS}${BOLD}[ ✔ OPERATIVO ]${NC}"
+        HEALTH_BADGE="${COLOR_SUCCESS}${BOLD}[ OPERATIVO ]${NC}"
     fi
 
-    local AI_BADGE="${COLOR_WARNING}[ ⏸ REPOSO (DEMANDA) ]${NC}"
+    local AI_BADGE="${COLOR_WARNING}[ REPOSO (DEMANDA) ]${NC}"
     if echo "${AI_HEALTH}" | grep -q '"healthy":true'; then
-        AI_BADGE="${COLOR_SUCCESS}${BOLD}[ ✔ ACTIVO ]${NC}"
+        AI_BADGE="${COLOR_SUCCESS}${BOLD}[ ACTIVO ]${NC}"
     fi
 
     local ROUTING_BADGE="${COLOR_MUTED}[ DESCONOCIDO ]${NC}"
@@ -87,28 +87,28 @@ view_llama_logs() {
     if [[ -n "${GEMMA_PID}" ]]; then
         local GEMMA_MEM
         GEMMA_MEM=$(ps -p "${GEMMA_PID}" -o %cpu,%mem,rss --no-headers 2>/dev/null | awk '{print "CPU: "$1"% | RAM: "$2"% ("int($3/1024)" MB)"}' || echo "")
-        echo -e "  ${COLOR_SUCCESS}${ICON_CHECK}${NC} ${BOLD}Gemma 4 (Síntesis):${NC}  ${COLOR_SUCCESS}${BOLD}[ ✔ ACTIVO ]${NC} (PID: ${BOLD}${GEMMA_PID}${NC} | Puerto: ${BOLD}${AI_SERVER_PORT}${NC})"
+        echo -e "  ${COLOR_SUCCESS}${ICON_CHECK}${NC} ${BOLD}Gemma 4 (Síntesis):${NC}  ${COLOR_SUCCESS}${BOLD}[ ACTIVO ]${NC} (PID: ${BOLD}${GEMMA_PID}${NC} | Puerto: ${BOLD}${AI_SERVER_PORT}${NC})"
         [[ -n "${GEMMA_MEM}" ]] && echo -e "     ${COLOR_MUTED}Recursos:${NC} ${GEMMA_MEM}"
     else
-        echo -e "  ${COLOR_WARNING}ℹ${NC}  ${BOLD}Gemma 4 (Síntesis):${NC}  ${COLOR_WARNING}${BOLD}[ ⏸ EN REPOSO / ON-DEMAND ]${NC} (Inicia si Scout delega síntesis)"
+        echo -e "  ${COLOR_WARNING}[i]${NC}  ${BOLD}Gemma 4 (Síntesis):${NC}  ${COLOR_WARNING}${BOLD}[ EN REPOSO / ON-DEMAND ]${NC} (Inicia si Scout delega síntesis)"
     fi
 
     if [[ -n "${SCOUT_PID}" ]]; then
         local SCOUT_MEM
         SCOUT_MEM=$(ps -p "${SCOUT_PID}" -o %cpu,%mem,rss --no-headers 2>/dev/null | awk '{print "CPU: "$1"% | RAM: "$2"% ("int($3/1024)" MB)"}' || echo "")
-        echo -e "  ${COLOR_SUCCESS}${ICON_CHECK}${NC} ${BOLD}Scout Qwen (Orq.):${NC}   ${COLOR_SUCCESS}${BOLD}[ ✔ ACTIVO ]${NC} (PID: ${BOLD}${SCOUT_PID}${NC} | Puerto: ${BOLD}${SCOUT_SERVER_PORT}${NC})"
+        echo -e "  ${COLOR_SUCCESS}${ICON_CHECK}${NC} ${BOLD}Scout Qwen (Orq.):${NC}   ${COLOR_SUCCESS}${BOLD}[ ACTIVO ]${NC} (PID: ${BOLD}${SCOUT_PID}${NC} | Puerto: ${BOLD}${SCOUT_SERVER_PORT}${NC})"
         [[ -n "${SCOUT_MEM}" ]] && echo -e "     ${COLOR_MUTED}Recursos:${NC} ${SCOUT_MEM}"
     else
-        echo -e "  ${COLOR_WARNING}ℹ${NC}  ${BOLD}Scout Qwen (Orq.):${NC}   ${COLOR_WARNING}${BOLD}[ ⏸ EN REPOSO / ON-DEMAND ]${NC} (Inicia al recibir consultas)"
+        echo -e "  ${COLOR_WARNING}[i]${NC}  ${BOLD}Scout Qwen (Orq.):${NC}   ${COLOR_WARNING}${BOLD}[ EN REPOSO / ON-DEMAND ]${NC} (Inicia al recibir consultas)"
     fi
 
     echo ""
     echo -e "  ${COLOR_ACCENT}${BOLD}Guía de Marcadores en los Logs:${NC}"
-    echo -e "  ${COLOR_PRIMARY}✦ [NUEVO MENSAJE]${NC}      Llegada de mensaje del usuario y modo de enrutamiento"
-    echo -e "  ${COLOR_PRIMARY}✦ [SCOUT ORQUESTADOR]${NC}  Decisión de Scout, tokens consumidos y si delega o no"
-    echo -e "  ${COLOR_PRIMARY}✦ [GEMMA 4 INFERENCIA]${NC} TTFT, velocidad (tokens/seg) y consumo del modelo grande"
-    echo -e "  ${COLOR_PRIMARY}✦ [TURNO COMPLETADO]${NC}   Consumo total de tokens, latencia y diagnóstico de rendimiento"
-    echo -e "  ${COLOR_MUTED}✦ [AI_AUDIT]{...}${NC}       Líneas JSON estructuradas para análisis automático con IA"
+    echo -e "  ${COLOR_PRIMARY}[>] [NUEVO MENSAJE]${NC}      Llegada de mensaje del usuario y modo de enrutamiento"
+    echo -e "  ${COLOR_PRIMARY}[>] [SCOUT ORQUESTADOR]${NC}  Decisión de Scout, tokens consumidos y si delega o no"
+    echo -e "  ${COLOR_PRIMARY}[>] [GEMMA 4 INFERENCIA]${NC} TTFT, velocidad (tokens/seg) y consumo del modelo grande"
+    echo -e "  ${COLOR_PRIMARY}[>] [TURNO COMPLETADO]${NC}   Consumo total de tokens, latencia y diagnóstico de rendimiento"
+    echo -e "  ${COLOR_MUTED}[>] [AI_AUDIT]{...}${NC}       Líneas JSON estructuradas para análisis automático con IA"
     echo ""
     echo -e "  ${COLOR_PRIMARY}${ICON_CHEVRON}${NC} ${BOLD}Monitoreando:${NC} ${COLOR_ACCENT}${LOG_FILE}${NC}, ${COLOR_ACCENT}${SCOUT_LOG_FILE}${NC} y ${COLOR_ACCENT}${AUDIT_LOG_FILE}${NC}"
     echo -e "  ${COLOR_MUTED}(Presiona ${BOLD}Ctrl+C${NC}${COLOR_MUTED} para detener el visor y volver al menú principal)${NC}"

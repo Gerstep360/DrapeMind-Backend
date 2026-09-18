@@ -101,7 +101,7 @@ run_migrations_and_seed() {
             "${BACKEND_DIR}/.venv/bin/python" -m alembic upgrade head
 
         tui_spin_cmd "Sembrando catálogo inicial de productos, trajes y usuarios de prueba" \
-            "${BACKEND_DIR}/.venv/bin/python" -m scripts.db.seed_data || log_warn "El sembrado ya existía o finalizó con avisos menores."
+            "${BACKEND_DIR}/.venv/bin/python" -m scripts.db.seed_data --standard || log_warn "El sembrado ya existía o finalizó con avisos menores."
 
         log_success "Migraciones y datos de prueba sincronizados correctamente."
     else
@@ -113,11 +113,11 @@ run_seeder_only() {
     cd "${BACKEND_DIR}"
 
     echo -e "${COLOR_PRIMARY}╭── [SEEDER DE BASE DE DATOS Y CATÁLOGO POBLACIÓN] ─────────────────────────╮${NC}"
-    echo -e "${COLOR_PRIMARY}│${NC}  ${BOLD}${ICON_DATABASE} Sembrando Catálogo (887 prendas, 4296 variantes), Usuarios y Sedes...${NC}"
+    echo -e "${COLOR_PRIMARY}│${NC}  ${BOLD}${ICON_DATABASE} Sembrando Catálogo Personalizable, Usuarios, Sedes y Pruebas...${NC}"
     echo -e "${COLOR_PRIMARY}╰───────────────────────────────────────────────────────────────────────────╯${NC}"
 
     if [[ -x "${BACKEND_DIR}/.venv/bin/python" ]]; then
-        "${BACKEND_DIR}/.venv/bin/python" -m scripts.db.seed_data
+        "${BACKEND_DIR}/.venv/bin/python" -m scripts.db.seed_data "$@"
         log_success "Catálogo población, usuarios por rol y datos de prueba sembrados exitosamente."
     else
         log_error "Entorno virtual .venv no encontrado en ${BACKEND_DIR}."
@@ -127,7 +127,8 @@ run_seeder_only() {
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     if [[ "${1:-}" == "--seed" ]]; then
-        run_seeder_only
+        shift
+        run_seeder_only "$@"
     else
         setup_postgresql
         run_migrations_and_seed

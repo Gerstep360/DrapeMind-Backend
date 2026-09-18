@@ -67,7 +67,7 @@ update_backend_code() {
     export INSTALL_FLOW=true
     tui_banner
     echo -e "${COLOR_PRIMARY}╭── [ACTUALIZACIÓN SEGURA DE DRAPEMIND BACKEND] ────────────────────────────╮${NC}"
-    echo -e "${COLOR_PRIMARY}│${NC}  ${BOLD}🔄 Sincronizando repositorio, dependencias, entorno, BD y servicios...   ${COLOR_PRIMARY}│${NC}"
+    echo -e "${COLOR_PRIMARY}│${NC}  ${BOLD}[ACTUALIZAR] Sincronizando repositorio, dependencias, BD y servicios...   ${COLOR_PRIMARY}│${NC}"
     echo -e "${COLOR_PRIMARY}╰───────────────────────────────────────────────────────────────────────────╯${NC}"
 
     tui_step 1 5 "Sincronizando Código Fuente desde el Repositorio Git"
@@ -100,23 +100,57 @@ update_backend_code() {
     verify_backend
 }
 
+prompt_and_run_seeder() {
+    echo ""
+    echo -e "${COLOR_PRIMARY}╭── [CONFIGURACIÓN DE POBLACIÓN DE BASE DE DATOS] ──────────────────────────╮${NC}"
+    echo -e "${COLOR_PRIMARY}│${NC}  Selecciona la escala de catálogo para optimizar rendimiento y login:      ${COLOR_PRIMARY}│${NC}"
+    echo -e "${COLOR_PRIMARY}├───────────────────────────────────────────────────────────────────────────┤${NC}"
+    echo -e "${COLOR_PRIMARY}│${NC}  1) Modo Ligero (40 prendas, 2 sucursales) - RECOMENDADO para evitar lag  ${COLOR_PRIMARY}│${NC}"
+    echo -e "${COLOR_PRIMARY}│${NC}  2) Modo Estándar (120 prendas, 3 sucursales) - Balance catálogo y memoria ${COLOR_PRIMARY}│${NC}"
+    echo -e "${COLOR_PRIMARY}│${NC}  3) Modo Completo (887 prendas, 5 sucursales) - Carga masiva total         ${COLOR_PRIMARY}│${NC}"
+    echo -e "${COLOR_PRIMARY}│${NC}  4) Personalizado (Indicar cantidad de ropa, sucursales y reset limpio)    ${COLOR_PRIMARY}│${NC}"
+    echo -e "${COLOR_PRIMARY}╰───────────────────────────────────────────────────────────────────────────╯${NC}"
+    read -rp "  Selecciona perfil [1-4, por defecto 1]: " s_choice
+    case "$s_choice" in
+        2)
+            run_seeder_only --standard --reset
+            ;;
+        3)
+            run_seeder_only --full --reset
+            ;;
+        4)
+            read -rp "  ¿Cuántas prendas de ropa deseas sembrar? [ej. 60]: " p_num
+            p_val="${p_num:-60}"
+            read -rp "  ¿Cuántas sucursales deseas activar? (1 a 5) [ej. 2]: " b_num
+            b_val="${b_num:-2}"
+            read -rp "  ¿Deseas limpiar tablas antes de sembrar (reset limpio)? [S/n]: " r_ans
+            r_flag="--reset"
+            if [[ "$r_ans" =~ ^[nN] ]]; then r_flag=""; fi
+            run_seeder_only --products "$p_val" --branches "$b_val" $r_flag
+            ;;
+        *)
+            run_seeder_only --quick --reset
+            ;;
+    esac
+}
+
 show_menu() {
     tui_banner
     echo -e "${COLOR_PRIMARY}╭── [MENÚ DE ADMINISTRACIÓN Y DESPLIEGUE] ──────────────────────────────────╮${NC}"
     echo -e "${COLOR_PRIMARY}│${NC}  Selecciona una acción para gestionar el Backend de DrapeMind:           ${COLOR_PRIMARY}│${NC}"
     echo -e "${COLOR_PRIMARY}├────┬──────────────────────────────────────────────────────────────────────┤${NC}"
     echo -e "${COLOR_PRIMARY}│${BOLD}  1 ${NC}${COLOR_PRIMARY}│${NC}  ${ICON_ROCKET} ${BOLD}Instalación Completa${NC} (Paquetes, BD, Python, .env, Gemma 4, Systemd)${COLOR_PRIMARY}│${NC}"
-    echo -e "${COLOR_PRIMARY}│${BOLD}  2 ${NC}${COLOR_PRIMARY}│${NC}  🔄 ${BOLD}Actualizar desde Git${NC} (Pull + Migrar .env + Restart)                ${COLOR_PRIMARY}│${NC}"
+    echo -e "${COLOR_PRIMARY}│${BOLD}  2 ${NC}${COLOR_PRIMARY}│${NC}  [ACTUALIZAR] ${BOLD}Actualizar desde Git${NC} (Pull + Migrar .env + Restart)    ${COLOR_PRIMARY}│${NC}"
     echo -e "${COLOR_PRIMARY}│${BOLD}  3 ${NC}${COLOR_PRIMARY}│${NC}  ${ICON_SHIELD} ${BOLD}Sincronizar y Proteger .env${NC} (Agregar nuevas variables sin daño)    ${COLOR_PRIMARY}│${NC}"
     echo -e "${COLOR_PRIMARY}│${BOLD}  4 ${NC}${COLOR_PRIMARY}│${NC}  ${ICON_GEAR} ${BOLD}Iniciar / Reiniciar Servicio${NC} (drapemind-backend en puerto 8045)    ${COLOR_PRIMARY}│${NC}"
-    echo -e "${COLOR_PRIMARY}│${BOLD}  5 ${NC}${COLOR_PRIMARY}│${NC}  📜 ${BOLD}Ver Logs del Backend${NC} (Journalctl FastAPI / Uvicorn)            ${COLOR_PRIMARY}│${NC}"
+    echo -e "${COLOR_PRIMARY}│${BOLD}  5 ${NC}${COLOR_PRIMARY}│${NC}  [LOGS] ${BOLD}Ver Logs del Backend${NC} (Journalctl FastAPI / Uvicorn)        ${COLOR_PRIMARY}│${NC}"
     echo -e "${COLOR_PRIMARY}│${BOLD}  6 ${NC}${COLOR_PRIMARY}│${NC}  ${ICON_BRAIN} ${BOLD}Ver Logs de Llama / IA${NC} (Tokens, Velocidad y Generación en vivo)  ${COLOR_PRIMARY}│${NC}"
     echo -e "${COLOR_PRIMARY}│${BOLD}  7 ${NC}${COLOR_PRIMARY}│${NC}  ${ICON_DATABASE} ${BOLD}Configurar PostgreSQL${NC} (Usuario, base de datos y migraciones)        ${COLOR_PRIMARY}│${NC}"
-    echo -e "${COLOR_PRIMARY}│${BOLD}  8 ${NC}${COLOR_PRIMARY}│${NC}  ⚡ ${BOLD}Instalar llama-server${NC} (Binarios GGML con soporte Gemma 4)           ${COLOR_PRIMARY}│${NC}"
+    echo -e "${COLOR_PRIMARY}│${BOLD}  8 ${NC}${COLOR_PRIMARY}│${NC}  [LLAMA] ${BOLD}Instalar llama-server${NC} (Binarios GGML con soporte Gemma 4)      ${COLOR_PRIMARY}│${NC}"
     echo -e "${COLOR_PRIMARY}│${BOLD}  9 ${NC}${COLOR_PRIMARY}│${NC}  ${ICON_BRAIN} ${BOLD}Descargar Modelos IA${NC} (Gemma 4 + Scout Qwen 0.6B)                 ${COLOR_PRIMARY}│${NC}"
-    echo -e "${COLOR_PRIMARY}│${BOLD} 10 ${NC}${COLOR_PRIMARY}│${NC}  🩺 ${BOLD}Verificar Diagnóstico y Salud${NC} (/health/ready y /health/ai)          ${COLOR_PRIMARY}│${NC}"
-    echo -e "${COLOR_PRIMARY}│${BOLD} 11 ${NC}${COLOR_PRIMARY}│${NC}  🌱 ${BOLD}Sembrar Catálogo y Pruebas${NC} (887 prendas, 4296 variantes, sedes)     ${COLOR_PRIMARY}│${NC}"
-    echo -e "${COLOR_PRIMARY}│${BOLD}  0 ${NC}${COLOR_PRIMARY}│${NC}  🚪 ${BOLD}Salir del Instalador${NC}                                                ${COLOR_PRIMARY}│${NC}"
+    echo -e "${COLOR_PRIMARY}│${BOLD} 10 ${NC}${COLOR_PRIMARY}│${NC}  [CHECK] ${BOLD}Verificar Diagnóstico y Salud${NC} (/health/ready y /health/ai)      ${COLOR_PRIMARY}│${NC}"
+    echo -e "${COLOR_PRIMARY}│${BOLD} 11 ${NC}${COLOR_PRIMARY}│${NC}  [SEEDER] ${BOLD}Sembrar Catálogo y Pruebas${NC} (Personalizable, sedes, stock)    ${COLOR_PRIMARY}│${NC}"
+    echo -e "${COLOR_PRIMARY}│${BOLD}  0 ${NC}${COLOR_PRIMARY}│${NC}  [SALIR] ${BOLD}Salir del Instalador${NC}                                            ${COLOR_PRIMARY}│${NC}"
     echo -e "${COLOR_PRIMARY}╰────┴──────────────────────────────────────────────────────────────────────╯${NC}"
     echo ""
 }
@@ -167,7 +201,8 @@ case "${1:-}" in
         run_migrations_only
         ;;
     --seed)
-        run_seeder_only
+        shift
+        run_seeder_only "$@"
         ;;
     --llama)
         install_llama_server true
@@ -208,6 +243,7 @@ case "${1:-}" in
         ;;
     --help|-h)
         show_help
+        exit 0
         ;;
     *)
         show_menu
@@ -247,7 +283,7 @@ case "${1:-}" in
                 verify_backend
                 ;;
             11)
-                run_seeder_only
+                prompt_and_run_seeder
                 ;;
             0)
                 echo -e "  ${COLOR_MUTED}Saliendo del instalador...${NC}"

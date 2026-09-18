@@ -23,18 +23,18 @@ GREEN="${COLOR_SUCCESS}"
 YELLOW="${COLOR_WARNING}"
 CYAN="${COLOR_PRIMARY}"
 
-# Glifos e Iconografía TUI
-ICON_ROCKET="🚀"
-ICON_BRAIN="🧠"
-ICON_SHIELD="🛡️ "
-ICON_CHECK="✔"
-ICON_CROSS="✖"
-ICON_GEAR="⚙️ "
-ICON_SPARK="✦"
-ICON_CHEVRON="➜"
-ICON_DOT="●"
-ICON_PACKAGE="📦"
-ICON_DATABASE="🗄️ "
+# Glifos e Iconografia TUI (Cero emojis)
+ICON_ROCKET="[DEPLOY]"
+ICON_BRAIN="[IA]"
+ICON_SHIELD="[SEC]"
+ICON_CHECK="[OK]"
+ICON_CROSS="[FAIL]"
+ICON_GEAR="[*]"
+ICON_SPARK="[+]"
+ICON_CHEVRON="->"
+ICON_DOT="*"
+ICON_PACKAGE="[PKG]"
+ICON_DATABASE="[DB]"
 
 SERVER_IP="157.173.102.129"
 BACKEND_PORT=8045
@@ -131,7 +131,7 @@ tui_spin_cmd() {
     "$@" > "${log_file}" 2>&1 &
     local pid=$!
 
-    local spin_chars=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
+    local spin_chars=('-' '\' '|' '/')
     local i=0
     local start_time
     start_time=$(date +%s)

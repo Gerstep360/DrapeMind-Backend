@@ -3,7 +3,7 @@
 # DRAPEMIND - DESINSTALADOR QUIRÚRGICO Y ESCÁNER INTELIGENTE DE SISTEMAS
 # Servidor: 157.173.102.129
 # =====================================================================
-# ✦ ESCÁNER DE DEPENDENCIAS Y PROGRAMAS:
+# [*] ESCÁNER DE DEPENDENCIAS Y PROGRAMAS:
 # 1. Escanea programas y servicios usados por DrapeMind vs otros sistemas.
 # 2. Si un programa es EXCLUSIVO de DrapeMind y ningún otro proyecto lo ocupa,
 #    lo elimina para liberar recursos y almacenamiento (modelos IA, llama-server).
@@ -60,7 +60,7 @@ banner() {
     clear 2>/dev/null || true
     echo -e "${COLOR_DANGER}${BOLD}"
     echo "╭──────────────────────────────────────────────────────────────────────────╮"
-    echo "│  ⚠️  DRAPEMIND ATELIER — DESINSTALADOR Y ESCÁNER INTELIGENTE DE VPS      │"
+    echo "│  [AVISO]  DRAPEMIND ATELIER — DESINSTALADOR Y ESCÁNER INTELIGENTE DE VPS      │"
     echo "│     Limpieza quirúrgica: elimina lo exclusivo y protege lo compartido    │"
     echo "╰──────────────────────────────────────────────────────────────────────────╯"
     echo -e "${NC}"
@@ -87,7 +87,7 @@ scan_system_and_dependencies() {
 
     if [[ -n "${RUNNING_SERVICES}" ]]; then
         OTHER_PROJECTS_FOUND=true
-        echo -e "  ${COLOR_WARNING}📦 Otros sistemas detectados en ejecución:${NC}"
+        echo -e "  ${COLOR_WARNING}[PKG] Otros sistemas detectados en ejecución:${NC}"
         while IFS= read -r srv; do
             echo -e "     ${COLOR_MUTED}• ${srv}${NC}"
         done <<< "${RUNNING_SERVICES}"
@@ -97,22 +97,22 @@ scan_system_and_dependencies() {
 
     # 2. Escanear PostgreSQL (¿Hay otras bases de datos?)
     echo ""
-    echo -e "  ${COLOR_ACCENT}🔍 Análisis de PostgreSQL:${NC}"
+    echo -e "  ${COLOR_ACCENT}[BUSCAR] Análisis de PostgreSQL:${NC}"
     if command -v psql >/dev/null 2>&1; then
         local ALL_DBS
         ALL_DBS=$(su - postgres -c "psql -tc 'SELECT datname FROM pg_database WHERE datistemplate = false;'" 2>/dev/null | tr -d ' ' || true)
         local OTHER_DBS_COUNT=0
         for db in ${ALL_DBS}; do
             if [[ "${db}" == "drapemind_db" ]]; then
-                echo -e "     • Base DrapeMind:   ${COLOR_DANGER}${BOLD}${db}${NC} (Exclusiva ➜ Será eliminada)"
+                echo -e "     • Base DrapeMind:   ${COLOR_DANGER}${BOLD}${db}${NC} (Exclusiva -> Será eliminada)"
             elif [[ -n "${db}" && "${db}" != "postgres" ]]; then
                 OTHER_DBS_COUNT=$((OTHER_DBS_COUNT + 1))
-                echo -e "     • Base de otro sistema: ${COLOR_SUCCESS}${BOLD}${db}${NC} (COMPARTIDA ➜ 🛡️ PROTEGIDA)"
+                echo -e "     • Base de otro sistema: ${COLOR_SUCCESS}${BOLD}${db}${NC} (COMPARTIDA -> [SEC] PROTEGIDA)"
             fi
         done
         if [[ ${OTHER_DBS_COUNT} -gt 0 ]]; then
             OTHER_DB_FOUND=true
-            echo -e "     ${COLOR_SUCCESS}✔ Se detectaron bases de datos de otros proyectos. PostgreSQL NO se desinstalará.${NC}"
+            echo -e "     ${COLOR_SUCCESS}[OK] Se detectaron bases de datos de otros proyectos. PostgreSQL NO se desinstalará.${NC}"
         else
             echo -e "     ${COLOR_MUTED}• No hay otras bases de datos de proyectos en PostgreSQL.${NC}"
         fi
@@ -122,7 +122,7 @@ scan_system_and_dependencies() {
 
     # 3. Escanear Nginx (¿Hay otros sitios web?)
     echo ""
-    echo -e "  ${COLOR_ACCENT}🔍 Análisis de Nginx:${NC}"
+    echo -e "  ${COLOR_ACCENT}[BUSCAR] Análisis de Nginx:${NC}"
     if command -v nginx >/dev/null 2>&1; then
         local OTHER_SITES=0
         for site in /etc/nginx/sites-enabled/*; do
@@ -131,13 +131,13 @@ scan_system_and_dependencies() {
                 bsite="$(basename "${site}")"
                 if [[ "${bsite}" != *"drapemind"* ]]; then
                     OTHER_SITES=$((OTHER_SITES + 1))
-                    echo -e "     • Sitio activo:     ${COLOR_SUCCESS}${BOLD}${bsite}${NC} (COMPARTIDO ➜ 🛡️ PROTEGIDO)"
+                    echo -e "     • Sitio activo:     ${COLOR_SUCCESS}${BOLD}${bsite}${NC} (COMPARTIDO -> [SEC] PROTEGIDO)"
                 fi
             fi
         done
         if [[ ${OTHER_SITES} -gt 0 ]]; then
             OTHER_NGINX_SITES_FOUND=true
-            echo -e "     ${COLOR_SUCCESS}✔ Nginx aloja otros sitios web. Nginx NO se desinstalará, solo se retira /DrapeMind.${NC}"
+            echo -e "     ${COLOR_SUCCESS}[OK] Nginx aloja otros sitios web. Nginx NO se desinstalará, solo se retira /DrapeMind.${NC}"
         else
             echo -e "     ${COLOR_MUTED}• No hay otros sitios activos en Nginx.${NC}"
         fi
@@ -145,7 +145,7 @@ scan_system_and_dependencies() {
 
     # 4. Escanear Node.js y npm (¿Lo usan otros proyectos?)
     echo ""
-    echo -e "  ${COLOR_ACCENT}🔍 Análisis de Node.js / npm:${NC}"
+    echo -e "  ${COLOR_ACCENT}[BUSCAR] Análisis de Node.js / npm:${NC}"
     if command -v node >/dev/null 2>&1; then
         local NODE_PROCS
         NODE_PROCS=$(pgrep -a node 2>/dev/null | grep -v 'drapemind' || true)
@@ -155,10 +155,10 @@ scan_system_and_dependencies() {
         if [[ -n "${NODE_PROCS}" || -n "${OTHER_NODE_DIRS}" ]]; then
             OTHER_NODE_FOUND=true
             echo -e "     • Node.js es utilizado por otros proyectos (ej. Cotizador Frontend)."
-            echo -e "     ${COLOR_SUCCESS}✔ Node.js y npm son COMPARTIDOS ➜ 🛡️ PROTEGIDOS (No se tocan).${NC}"
+            echo -e "     ${COLOR_SUCCESS}[OK] Node.js y npm son COMPARTIDOS -> [SEC] PROTEGIDOS (No se tocan).${NC}"
         else
             echo -e "     • Ningún otro sistema en el servidor utiliza Node.js."
-            echo -e "     ${COLOR_DANGER}✖ Node.js es candidato a desinstalación limpia.${NC}"
+            echo -e "     ${COLOR_DANGER}[X] Node.js es candidato a desinstalación limpia.${NC}"
         fi
     else
         echo -e "     ${COLOR_MUTED}• Node.js no está instalado.${NC}"
@@ -166,14 +166,14 @@ scan_system_and_dependencies() {
 
     # 5. Escanear Motor LLM y Modelos IA (Exclusivos de DrapeMind)
     echo ""
-    echo -e "  ${COLOR_ACCENT}🔍 Análisis de Motor LLM (llama-server) y Modelos IA:${NC}"
+    echo -e "  ${COLOR_ACCENT}[BUSCAR] Análisis de Motor LLM (llama-server) y Modelos IA:${NC}"
     local OTHER_LLAMA
     OTHER_LLAMA=$(systemctl list-units --type=service 2>/dev/null | grep -E 'llama|gemma|scout' | grep -v 'drapemind' || true)
     if [[ -z "${OTHER_LLAMA}" ]]; then
         echo -e "     • llama-server y modelos Gemma/Scout son ${COLOR_DANGER}${BOLD}EXCLUSIVOS de DrapeMind${NC}."
-        echo -e "     ${COLOR_DANGER}➜ Serán eliminados para liberar memoria y gigabytes de disco.${NC}"
+        echo -e "     ${COLOR_DANGER}-> Serán eliminados para liberar memoria y gigabytes de disco.${NC}"
     else
-        echo -e "     ${COLOR_SUCCESS}✔ Otro servicio utiliza llama-server. Se protegerá.${NC}"
+        echo -e "     ${COLOR_SUCCESS}[OK] Otro servicio utiliza llama-server. Se protegerá.${NC}"
     fi
     echo ""
 }
@@ -217,7 +217,7 @@ step_1_stop_and_remove_systemd() {
 
     systemctl daemon-reload
     systemctl reset-failed 2>/dev/null || true
-    echo -e "  ${COLOR_SUCCESS}✔ Servicios systemd de DrapeMind eliminados.${NC}"
+    echo -e "  ${COLOR_SUCCESS}[OK] Servicios systemd de DrapeMind eliminados.${NC}"
 }
 
 step_2_terminate_orphan_processes() {
@@ -240,7 +240,7 @@ step_2_terminate_orphan_processes() {
     PIDS_LLAMA=$(pgrep -f "llama-server" || true)
     [[ -n "${PIDS_LLAMA}" ]] && kill -9 ${PIDS_LLAMA} 2>/dev/null || true
 
-    echo -e "  ${COLOR_SUCCESS}✔ Puertos 8045, 8088 y 8089 liberados.${NC}"
+    echo -e "  ${COLOR_SUCCESS}[OK] Puertos 8045, 8088 y 8089 liberados.${NC}"
 }
 
 step_3_clean_nginx() {
@@ -266,9 +266,9 @@ step_3_clean_nginx() {
     if command -v nginx >/dev/null 2>&1; then
         if nginx -t >/dev/null 2>&1; then
             systemctl reload nginx 2>/dev/null || true
-            echo -e "  ${COLOR_SUCCESS}✔ Nginx recargado con éxito. Otros sitios permanecen 100% operativos.${NC}"
+            echo -e "  ${COLOR_SUCCESS}[OK] Nginx recargado con éxito. Otros sitios permanecen 100% operativos.${NC}"
         else
-            echo -e "  ${COLOR_WARNING}⚠️  Advertencia en nginx -t; revisa manualmente para no afectar otros sitios.${NC}"
+            echo -e "  ${COLOR_WARNING}[AVISO]  Advertencia en nginx -t; revisa manualmente para no afectar otros sitios.${NC}"
         fi
     fi
 }
@@ -279,7 +279,7 @@ step_4_clean_www_files() {
     rm -rf "/var/www/drapemind" 2>/dev/null || true
     rm -rf "/var/www/html/DrapeMind" 2>/dev/null || true
     rm -rf "/var/log/drapemind" 2>/dev/null || true
-    echo -e "  ${COLOR_SUCCESS}✔ Archivos web publicados de DrapeMind eliminados.${NC}"
+    echo -e "  ${COLOR_SUCCESS}[OK] Archivos web publicados de DrapeMind eliminados.${NC}"
 }
 
 step_5_manage_database() {
@@ -296,7 +296,7 @@ step_5_manage_database() {
             su - postgres -c "psql -c \"DROP DATABASE IF EXISTS drapemind_db;\"" 2>/dev/null || true
             echo -e "  • Eliminando usuario drapemind_user..."
             su - postgres -c "psql -c \"DROP USER IF EXISTS drapemind_user;\"" 2>/dev/null || true
-            echo -e "  ${COLOR_SUCCESS}✔ Base de datos y usuario de DrapeMind eliminados.${NC}"
+            echo -e "  ${COLOR_SUCCESS}[OK] Base de datos y usuario de DrapeMind eliminados.${NC}"
         else
             echo -e "  • No se encontró la base de datos 'drapemind_db'."
         fi
@@ -304,12 +304,12 @@ step_5_manage_database() {
         # Si NO hay ninguna otra BD en el servidor además de postgres
         if [[ "${OTHER_DB_FOUND}" == "false" ]]; then
             echo ""
-            echo -e "  ${COLOR_WARNING}ℹ️  PostgreSQL no aloja ninguna otra base de datos de otros proyectos.${NC}"
+            echo -e "  ${COLOR_WARNING}[INFO]  PostgreSQL no aloja ninguna otra base de datos de otros proyectos.${NC}"
             read -rp "  ¿Deseas DESINSTALAR el motor PostgreSQL del sistema? [s/N]: " del_pg
             if [[ "${del_pg}" == "s" || "${del_pg}" == "S" || "${del_pg}" == "si" || "${del_pg}" == "SI" ]]; then
                 echo -e "  • Desinstalando PostgreSQL..."
                 apt-get remove --purge -y postgresql postgresql-contrib 2>/dev/null || true
-                echo -e "  ${COLOR_SUCCESS}✔ Motor PostgreSQL desinstalado.${NC}"
+                echo -e "  ${COLOR_SUCCESS}[OK] Motor PostgreSQL desinstalado.${NC}"
             fi
         fi
     fi
@@ -336,17 +336,17 @@ step_6_clean_exclusive_tools_and_models() {
     # Si Node.js NO lo ocupa ningún otro proyecto
     if [[ "${OTHER_NODE_FOUND}" == "false" ]] && command -v node >/dev/null 2>&1; then
         echo ""
-        echo -e "  ${COLOR_WARNING}ℹ️  Ningún otro sistema en el VPS utiliza Node.js ni npm.${NC}"
+        echo -e "  ${COLOR_WARNING}[INFO]  Ningún otro sistema en el VPS utiliza Node.js ni npm.${NC}"
         read -rp "  ¿Deseas DESINSTALAR Node.js y npm del sistema? [s/N]: " del_node
         if [[ "${del_node}" == "s" || "${del_node}" == "S" || "${del_node}" == "si" || "${del_node}" == "SI" ]]; then
             echo -e "  • Desinstalando Node.js y npm..."
             apt-get remove --purge -y nodejs npm 2>/dev/null || true
             rm -rf /etc/apt/sources.list.d/nodesource.list* 2>/dev/null || true
-            echo -e "  ${COLOR_SUCCESS}✔ Node.js y npm desinstalados.${NC}"
+            echo -e "  ${COLOR_SUCCESS}[OK] Node.js y npm desinstalados.${NC}"
         fi
     fi
 
-    echo -e "  ${COLOR_SUCCESS}✔ Herramientas exclusivas limpiadas.${NC}"
+    echo -e "  ${COLOR_SUCCESS}[OK] Herramientas exclusivas limpiadas.${NC}"
 }
 
 step_7_delete_full_project_code() {
@@ -370,7 +370,7 @@ step_7_delete_full_project_code() {
             SIZE=$(du -sh "${dir}" 2>/dev/null | cut -f1 || echo "")
             echo -e "  • Eliminando directorio: ${BOLD}${dir}${NC} (${SIZE})..."
             rm -rf "${dir}"
-            echo -e "  ${COLOR_SUCCESS}✔ ${dir} eliminado completamente.${NC}"
+            echo -e "  ${COLOR_SUCCESS}[OK] ${dir} eliminado completamente.${NC}"
         fi
     done
 
@@ -378,13 +378,13 @@ step_7_delete_full_project_code() {
     apt-get autoremove -y -qq 2>/dev/null || true
     apt-get clean 2>/dev/null || true
 
-    echo -e "  ${COLOR_SUCCESS}✔ Proyecto Frontend y Backend de DrapeMind eliminado en su totalidad.${NC}"
+    echo -e "  ${COLOR_SUCCESS}[OK] Proyecto Frontend y Backend de DrapeMind eliminado en su totalidad.${NC}"
 }
 
 summary_final() {
     echo ""
     echo -e "${COLOR_SUCCESS}╭──────────────────────────────────────────────────────────────────────────╮${NC}"
-    echo -e "${COLOR_SUCCESS}│  ${BOLD}✦ DRAPEMIND HA SIDO COMPLETAMENTE DESINSTALADO DEL SERVIDOR${NC}${COLOR_SUCCESS}             │${NC}"
+    echo -e "${COLOR_SUCCESS}│  ${BOLD}[*] DRAPEMIND HA SIDO COMPLETAMENTE DESINSTALADO DEL SERVIDOR${NC}${COLOR_SUCCESS}             │${NC}"
     echo -e "${COLOR_SUCCESS}├──────────────────────────────────────────────────────────────────────────┤${NC}"
     echo -e "${COLOR_SUCCESS}│${NC}  • Servicio systemd:        ${COLOR_DANGER}[ ELIMINADO ]${NC}${COLOR_SUCCESS}"
     echo -e "${COLOR_SUCCESS}│${NC}  • Puertos 8045, 8088, 8089: ${COLOR_SUCCESS}[ LIBERADOS ]${NC}${COLOR_SUCCESS}"

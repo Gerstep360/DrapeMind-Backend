@@ -553,6 +553,7 @@ class ExecutiveReportRequest(BaseModel):
         "ESTRATEGICO_GLOBAL",
     ] = "VENTAS_Y_TENDENCIAS"
     periodo: Literal["MES_ACTUAL", "TRIMESTRE", "HISTORICO"] = "MES_ACTUAL"
+    modelo_ia: Literal["ALTAIR", "ALTAIR_MINI", "ALTAIR_VARIABLE"] = "ALTAIR"
     enfoque_especifico: str | None = Field(default=None, max_length=300)
 
 
@@ -566,6 +567,7 @@ class ReportTable(BaseModel):
 class ExecutiveReportResponse(BaseModel):
     tipo_reporte: str
     periodo: str
+    modelo_utilizado: str = "Altair (Gemma 4 E2B)"
     indicadores_clave: dict[str, Any]
     resumen_ejecutivo: str
     diagnostico_rendimiento: str

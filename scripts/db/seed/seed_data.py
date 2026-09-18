@@ -1,23 +1,27 @@
-"""
-DrapeMind - Módulo de Seeding Integral y Catálogo Población
-=========================================================
+"""DrapeMind - Modulo de Seeding Integral y Catalogo Poblacion.
+
 Carga:
-1. Sedes y Ciudades (Santa Cruz Central, Norte, La Paz Sopocachi).
+1. Sedes y Ciudades configurables (Showrooms y Boutiques).
 2. Usuarios para todos los roles (Admin, Encargado, Vendedor, Cajero, Cliente),
-   asignación a sucursales (BranchStaff), direcciones y perfil de estilo IA.
-3. Catálogo completo desde CSVs de población (67 categorías, 887 productos, 4,296 variantes),
-   con tags de IA, imágenes JSONB, precios y resolución de jerarquías.
-4. Distribución de inventario por sucursal (BranchStock) garantizando stock activo.
-5. Datos de prueba operativos (reservas activas con QR para tienda, pedidos con comprobante emitido).
-6. Reseteo de secuencias PostgreSQL (setval).
+   asignacion a sucursales (BranchStaff), direcciones y perfil de estilo IA.
+3. Catalogo desde CSVs con limite configurable de prendas (desde 40 hasta 887),
+   evitando sobrecarga en PostgreSQL y acelerando el rendimiento del login.
+4. Distribucion de inventario por sucursal (BranchStock) entre todas las sedes activas.
+5. Proveedores e Insumos textiles (CU-32 y CU-33).
+6. Promociones y Reglas de Descuento (CU-36).
+7. Temporadas y Colecciones de Moda (CU-31).
+8. Pedidos de prueba y reservas activas con QR para tienda (CU-14 a CU-16).
+9. Sincronizacion de secuencias PostgreSQL (setval).
 """
 
 from __future__ import annotations
 
+import argparse
 import csv
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import json
+import os
 from pathlib import Path
 import sys
 from typing import Any, Callable
@@ -36,8 +40,8 @@ from app.core.security import hash_password
 from app.db.session import SessionLocal
 from app.models.entities import (
     Address, Branch, BranchStaff, BranchStock, Category, City, Gender, Order,
-    OrderItem, Payment, Product, ProductVariant, Reservation, ReservationItem,
-    Role, User, UserStatus, UserStyleProfile,
+    OrderItem, Payment, Product, ProductVariant, Promotion, Reservation, ReservationItem,
+    Role, Season, Supplier, SupplierProduct, User, UserStatus, UserStyleProfile,
 )
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
@@ -69,8 +73,8 @@ def parse_json_array(value: str) -> list[str]:
         return []
 
 
-def seed_cities_and_branches(db, log_fn: Callable[[str], None] = print) -> tuple[Branch, Branch]:
-    """Crea ciudades principales y sucursales (Showrooms) de DrapeMind."""
+def seed_cities_and_branches(db, limit_branches: int = 3, log_fn: Callable[[str], None] = print) -> list[Branch]:
+    """Crea ciudades principales y sucursales (Showrooms) de DrapeMind segun limite solicitado."""
     # 1. Santa Cruz
     scz_city = db.scalar(
         select(City).where(
@@ -95,14 +99,30 @@ def seed_cities_and_branches(db, log_fn: Callable[[str], None] = print) -> tuple
         db.add(lpz_city)
         db.flush()
 
-    branch_specs = [
+    # 3. Cochabamba
+    cbb_city = db.scalar(
+        select(City).where(
+            City.nombre == "Cochabamba",
+            City.departamento == "Cochabamba",
+        )
+    )
+    if not cbb_city:
+        cbb_city = City(nombre="Cochabamba", departamento="Cochabamba", activo=True)
+        db.add(cbb_city)
+        db.flush()
+
+    all_branch_specs = [
         ("SCZ-CENTRAL", "DrapeMind Showroom Central", "Av. San Martín #450, Equipetrol, Santa Cruz", "70011221", scz_city.id),
         ("SCZ-NORTE", "DrapeMind Showroom Norte", "Av. Banzer esq. 4to Anillo, Santa Cruz", "70011222", scz_city.id),
         ("LPZ-SOPOCACHI", "DrapeMind Atelier La Paz", "Av. 20 de Octubre #2100, Sopocachi, La Paz", "70011223", lpz_city.id),
+        ("CBB-CALACALA", "DrapeMind Showroom Cochabamba", "Av. América esq. Pando, Cala Cala, Cochabamba", "70011224", cbb_city.id),
+        ("SCZ-SUR", "DrapeMind Boutique Sur", "Av. Santos Dumont #320, Santa Cruz", "70011225", scz_city.id),
     ]
 
+    selected_specs = all_branch_specs[:max(1, min(len(all_branch_specs), limit_branches))]
     branches: list[Branch] = []
-    for code, name, address, phone, city_id in branch_specs:
+
+    for code, name, address, phone, city_id in selected_specs:
         b = db.scalar(select(Branch).where(Branch.codigo == code))
         if not b:
             b = Branch(
@@ -124,11 +144,14 @@ def seed_cities_and_branches(db, log_fn: Callable[[str], None] = print) -> tuple
             log_fn(f"  = Sucursal verificada: {name} [{code}]")
         branches.append(b)
 
-    return branches[0], branches[1]
+    return branches
 
 
-def seed_users(db, central_branch: Branch, north_branch: Branch, log_fn: Callable[[str], None] = print) -> dict[str, User]:
+def seed_users(db, branches: list[Branch], log_fn: Callable[[str], None] = print) -> dict[str, User]:
     """Crea cuentas completas para todos los roles con credenciales y direcciones."""
+    b_central = branches[0] if len(branches) > 0 else None
+    b_second = branches[1] if len(branches) > 1 else b_central
+
     users_data = [
         # Administradores
         {
@@ -149,7 +172,7 @@ def seed_users(db, central_branch: Branch, north_branch: Branch, log_fn: Callabl
             "direccion": "Av. Las Américas #780, Equipetrol, Santa Cruz",
             "branch": None,
         },
-        # Encargados de Tienda (Store Managers)
+        # Encargados de Tienda
         {
             "nombre": "Elena Encargada Central",
             "email": "encargado@drapemind.com",
@@ -157,158 +180,131 @@ def seed_users(db, central_branch: Branch, north_branch: Branch, log_fn: Callabl
             "rol": Role.ENCARGADO,
             "telefono": "73344556",
             "direccion": "Av. San Martín #450, Equipetrol, Santa Cruz",
-            "branch": central_branch,
+            "branch": b_central,
         },
         {
-            "nombre": "Roberto Encargado Norte",
+            "nombre": "Marcos Encargado Norte",
             "email": "encargado.norte@drapemind.com",
             "password": "Encargado12345!",
             "rol": Role.ENCARGADO,
             "telefono": "73344557",
             "direccion": "Av. Banzer esq. 4to Anillo, Santa Cruz",
-            "branch": north_branch,
+            "branch": b_second,
         },
-        # Vendedores (Sales Representatives)
+        # Vendedores de Piso
         {
-            "nombre": "Carlos Vendedor Central",
+            "nombre": "Valeria Vendedora",
             "email": "vendedor@drapemind.com",
             "password": "Vendedor12345!",
             "rol": Role.VENDEDOR,
-            "telefono": "71122334",
-            "direccion": "Calle Rene Moreno #120, Santa Cruz",
-            "branch": central_branch,
+            "telefono": "74455667",
+            "direccion": "Condominio La Riviera #3B, Santa Cruz",
+            "branch": b_central,
         },
+        # Cajeros
         {
-            "nombre": "Lucia Vendedora Norte",
-            "email": "vendedora@drapemind.com",
-            "password": "Vendedor12345!",
-            "rol": Role.VENDEDOR,
-            "telefono": "71122335",
-            "direccion": "Av. Cristo Redentor #300, Santa Cruz",
-            "branch": north_branch,
-        },
-        # Cajeros (Cashiers)
-        {
-            "nombre": "Mateo Cajero Central",
+            "nombre": "Carlos Cajero",
             "email": "cajero@drapemind.com",
             "password": "Cajero12345!",
             "rol": Role.CAJERO,
-            "telefono": "74455667",
-            "direccion": "Av. Monseñor Rivero #500, Santa Cruz",
-            "branch": central_branch,
-        },
-        {
-            "nombre": "Valeria Cajera Norte",
-            "email": "cajera@drapemind.com",
-            "password": "Cajero12345!",
-            "rol": Role.CAJERO,
-            "telefono": "74455668",
-            "direccion": "Av. Beni #800, Santa Cruz",
-            "branch": north_branch,
+            "telefono": "75566778",
+            "direccion": "Barrio Sirari, Calle 5 #45, Santa Cruz",
+            "branch": b_central,
         },
         # Clientes
         {
-            "nombre": "Maria Cliente VIP",
+            "nombre": "German Rojas (Cliente VIP)",
+            "email": "cliente.german@drapemind.com",
+            "password": "Cliente12345!",
+            "rol": Role.CLIENTE,
+            "telefono": "63014529",
+            "direccion": "Av. Las Américas #780, Equipetrol, Santa Cruz",
+            "branch": None,
+        },
+        {
+            "nombre": "Camila Cliente",
             "email": "cliente@drapemind.com",
             "password": "Cliente12345!",
             "rol": Role.CLIENTE,
-            "telefono": "72233445",
-            "direccion": "Av. Las Palmas #230, Santa Cruz",
-            "branch": None,
-        },
-        {
-            "nombre": "Sofia Montes (Cliente Frecuente)",
-            "email": "sofia.montes@gmail.com",
-            "password": "Cliente12345!",
-            "rol": Role.CLIENTE,
-            "telefono": "76655443",
-            "direccion": "Calle 9 de Calacoto #45, La Paz",
-            "branch": None,
-        },
-        {
-            "nombre": "Lucas Paredes (Cliente Casual)",
-            "email": "lucas.paredes@gmail.com",
-            "password": "Cliente12345!",
-            "rol": Role.CLIENTE,
-            "telefono": "78899001",
-            "direccion": "Av. Ballivián #340, Cochabamba",
+            "telefono": "76677889",
+            "direccion": "Av. Monseñor Rivero #220, Santa Cruz",
             "branch": None,
         },
     ]
 
     user_map: dict[str, User] = {}
-    for udata in users_data:
-        email = udata["email"].lower()
-        user = db.scalar(select(User).where(func.lower(User.email) == email))
-        if not user:
-            user = User(
-                nombre=udata["nombre"],
+    for u in users_data:
+        email = u["email"].lower()
+        usr = db.scalar(select(User).where(func.lower(User.email) == email))
+        if not usr:
+            usr = User(
+                nombre=u["nombre"],
                 email=email,
-                password_hash=hash_password(udata["password"]),
-                rol=udata["rol"],
+                password_hash=hash_password(u["password"]),
+                telefono=u["telefono"],
+                rol=u["rol"],
                 estado=UserStatus.ACTIVO,
-                telefono=udata["telefono"],
             )
-            db.add(user)
+            db.add(usr)
             db.flush()
-            log_fn(f"  + Usuario creado: {email} [{udata['rol'].value}] (Pass: {udata['password']})")
+            log_fn(f"  + Usuario creado: {usr.nombre} [{usr.email}] ({usr.rol.value})")
+
+            if u["direccion"]:
+                addr = Address(
+                    usuario_id=usr.id,
+                    alias="Principal",
+                    direccion=u["direccion"],
+                    ciudad="Santa Cruz de la Sierra" if "Santa Cruz" in u["direccion"] else "La Paz",
+                    departamento="Santa Cruz" if "Santa Cruz" in u["direccion"] else "La Paz",
+                    es_principal=True,
+                    activo=True,
+                )
+                db.add(addr)
+                db.flush()
         else:
-            user.nombre = udata["nombre"]
-            user.rol = udata["rol"]
-            user.estado = UserStatus.ACTIVO
-            user.password_hash = hash_password(udata["password"])
+            usr.nombre = u["nombre"]
+            usr.rol = u["rol"]
+            usr.password_hash = hash_password(u["password"])
+            usr.estado = UserStatus.ACTIVO
             db.flush()
-            log_fn(f"  = Usuario sincronizado: {email} [{udata['rol'].value}]")
+            log_fn(f"  = Usuario verificado y credenciales sincronizadas: {usr.nombre} [{usr.email}] ({usr.rol.value})")
 
-        user_map[email] = user
-
-        # 1. Dirección principal
-        addr = db.scalar(select(Address).where(Address.usuario_id == user.id))
-        if not addr:
-            addr = Address(
-                usuario_id=user.id,
-                alias="Dirección Principal",
-                departamento="Santa Cruz",
-                ciudad="Santa Cruz de la Sierra",
-                zona="Equipetrol / Centro",
-                direccion=udata["direccion"],
-                telefono_contacto=udata["telefono"],
-                es_principal=True,
-            )
-            db.add(addr)
-            db.flush()
-
-        # 2. Asignación a sucursal si es personal operativo
-        target_branch = udata.get("branch")
-        if target_branch:
-            staff_rel = db.scalar(
+        # Asignar personal a la sucursal si corresponde
+        if u["branch"]:
+            staff = db.scalar(
                 select(BranchStaff).where(
-                    BranchStaff.usuario_id == user.id,
-                    BranchStaff.sucursal_id == target_branch.id,
+                    BranchStaff.usuario_id == usr.id,
+                    BranchStaff.sucursal_id == u["branch"].id,
                 )
             )
-            if not staff_rel:
-                db.add(BranchStaff(usuario_id=user.id, sucursal_id=target_branch.id, activo=True))
+            if not staff:
+                staff = BranchStaff(
+                    usuario_id=usr.id,
+                    sucursal_id=u["branch"].id,
+                    activo=True,
+                )
+                db.add(staff)
                 db.flush()
-                log_fn(f"    - Asignado a sucursal: {target_branch.nombre}")
 
-    # 3. Perfil de estilo IA para cliente principal
-    vip_client = user_map.get("cliente@drapemind.com")
+        user_map[email] = usr
+
+    # Crear perfil de estilo inicial para clientes
+    vip_client = user_map.get("cliente.german@drapemind.com") or user_map.get("cliente@drapemind.com")
     if vip_client:
         style = db.scalar(select(UserStyleProfile).where(UserStyleProfile.usuario_id == vip_client.id))
         if not style:
             style = UserStyleProfile(
                 usuario_id=vip_client.id,
-                genero="FEMENINO",
-                estilos_preferidos=["Casual Elegante", "Minimalista"],
-                colores_favoritos=["Negro", "Azul Marino", "Blanco", "Beige"],
-                ocasiones_frecuentes=["Cena", "Trabajo", "Fin de semana"],
-                talla_superior="M",
-                talla_inferior="30",
-                talla_calzado="38",
-                presupuesto_habitual=Decimal("500.00"),
-                silueta_preferida="Regular / Relajada",
-                adn_estilo_ia="Preferencia por tejidos naturales de algodón y lino para clima cálido.",
+                genero="MASCULINO" if "german" in vip_client.email else "FEMENINO",
+                estilos_preferidos=["Sastrería Contemporánea", "Minimalista"],
+                colores_favoritos=["Azul Marino", "Gris Marengo", "Blanco", "Negro"],
+                ocasiones_frecuentes=["Gala", "Directorio", "Cena de Negocios"],
+                talla_superior="L",
+                talla_inferior="32",
+                talla_calzado="42",
+                presupuesto_habitual=Decimal("1200.00"),
+                silueta_preferida="Tailored Fit / Estructurada",
+                adn_estilo_ia="Preferencia por trajes de corte italiano, lino puro y lanas de alpaca de alta gama.",
                 completado=True,
             )
             db.add(style)
@@ -318,16 +314,16 @@ def seed_users(db, central_branch: Branch, north_branch: Branch, log_fn: Callabl
 
 
 def seed_categories_from_csv(db, log_fn: Callable[[str], None] = print) -> dict[int, int]:
-    """Carga categorías desde data/categorias.csv resolviendo la jerarquía padre-hijo."""
+    """Carga categorias desde data/categorias.csv resolviendo la jerarquia padre-hijo."""
     csv_file = DATA_DIR / "categorias.csv"
     if not csv_file.exists():
-        log_fn("  ! No se encontró categorias.csv en data/; saltando carga de categorías.")
+        log_fn("  ! No se encontro categorias.csv en data/; saltando categorias.")
         return {}
 
     with csv_file.open("r", encoding="utf-8-sig", newline="") as f:
         rows = list(csv.DictReader(f))
 
-    log_fn(f"  → Cargando {len(rows)} categorías desde {csv_file.name}...")
+    log_fn(f"  -> Cargando {len(rows)} categorias desde {csv_file.name}...")
 
     rows_by_id = {int(r["id"].strip()): r for r in rows if r.get("id")}
     category_id_map: dict[int, int] = {}
@@ -340,7 +336,6 @@ def seed_categories_from_csv(db, log_fn: Callable[[str], None] = print) -> dict[
             parent_raw = (r.get("parent_id") or "").strip()
             parent_cid = int(parent_raw) if parent_raw and parent_raw.isdigit() else None
 
-            # Si tiene padre pero aún no ha sido insertado, esperar
             if parent_cid is not None and parent_cid not in category_id_map:
                 continue
 
@@ -371,7 +366,6 @@ def seed_categories_from_csv(db, log_fn: Callable[[str], None] = print) -> dict[
             progress = True
 
         if not progress and pending:
-            # En caso de ciclo o error en parent_id, insertar los restantes como raíz
             for cid in list(pending):
                 r = rows_by_id[cid]
                 slug = r["slug"].strip()
@@ -391,24 +385,30 @@ def seed_categories_from_csv(db, log_fn: Callable[[str], None] = print) -> dict[
                     category_id_map[cid] = existing.id
             break
 
-    log_fn(f"  ✓ {len(category_id_map)} categorías sincronizadas correctamente.")
+    log_fn(f"  [OK] {len(category_id_map)} categorias sincronizadas correctamente.")
     return category_id_map
 
 
-def seed_products_from_csv(db, category_id_map: dict[int, int], log_fn: Callable[[str], None] = print) -> dict[int, int]:
-    """Carga productos desde data/productos.csv con tags IA, precios e imágenes JSONB."""
+def seed_products_from_csv(
+    db, category_id_map: dict[int, int], limit_products: int | None = None, log_fn: Callable[[str], None] = print
+) -> dict[int, int]:
+    """Carga productos desde data/productos.csv respetando el limite maximo solicitado."""
     csv_file = DATA_DIR / "productos.csv"
     if not csv_file.exists():
-        log_fn("  ! No se encontró productos.csv en data/; saltando productos.")
+        log_fn("  ! No se encontro productos.csv en data/; saltando productos.")
         return {}
 
     with csv_file.open("r", encoding="utf-8-sig", newline="") as f:
-        rows = list(csv.DictReader(f))
+        all_rows = list(csv.DictReader(f))
 
-    log_fn(f"  → Cargando {len(rows)} productos desde {csv_file.name}...")
+    if limit_products and limit_products > 0:
+        rows = all_rows[:limit_products]
+        log_fn(f"  -> Cargando {len(rows)} productos personalizados (de {len(all_rows)} disponibles en CSV)...")
+    else:
+        rows = all_rows
+        log_fn(f"  -> Cargando todos los {len(rows)} productos desde {csv_file.name}...")
+
     product_id_map: dict[int, int] = {}
-
-    # Si no había mapa de categorías (p.ej. ya estaban creadas), obtener por slug
     all_cats = {c.id: c.id for c in db.scalars(select(Category))}
     first_cat_id = next(iter(all_cats.keys()), 1)
 
@@ -434,12 +434,7 @@ def seed_products_from_csv(db, category_id_map: dict[int, int], log_fn: Callable
         if genero_raw not in {g.value for g in Gender}:
             genero_raw = "UNISEX"
 
-        # Buscar por marcador o por ID explícito
-        prod = db.scalar(
-            select(Product).where(
-                Product.tags_ai.contains([marker])
-            )
-        )
+        prod = db.scalar(select(Product).where(Product.tags_ai.contains([marker])))
         if not prod:
             prod = Product(
                 categoria_id=db_cat_id,
@@ -462,8 +457,6 @@ def seed_products_from_csv(db, category_id_map: dict[int, int], log_fn: Callable
             prod.categoria_id = db_cat_id
             prod.nombre = r["nombre"].strip()
             prod.descripcion = r.get("descripcion", "").strip() or None
-            prod.marca = r.get("marca", "").strip() or None
-            prod.material = r.get("material", "").strip() or None
             prod.precio = price
             prod.costo_referencia = cost
             prod.calidad_nivel = calidad
@@ -475,24 +468,24 @@ def seed_products_from_csv(db, category_id_map: dict[int, int], log_fn: Callable
             db.flush()
 
         product_id_map[source_id] = prod.id
-        if idx % 200 == 0 or idx == len(rows):
+        if idx % 100 == 0 or idx == len(rows):
             log_fn(f"    - Procesados {idx}/{len(rows)} productos...")
 
-    log_fn(f"  ✓ {len(product_id_map)} productos sincronizados con éxito.")
+    log_fn(f"  [OK] {len(product_id_map)} productos sincronizados con exito.")
     return product_id_map
 
 
 def seed_variants_from_csv(db, product_id_map: dict[int, int], log_fn: Callable[[str], None] = print) -> int:
-    """Carga variantes desde data/variantes_producto.csv con SKUs únicos y colores."""
+    """Carga variantes desde data/variantes_producto.csv unicamente para los productos seleccionados."""
     csv_file = DATA_DIR / "variantes_producto.csv"
     if not csv_file.exists():
-        log_fn("  ! No se encontró variantes_producto.csv en data/; saltando variantes.")
+        log_fn("  ! No se encontro variantes_producto.csv en data/; saltando variantes.")
         return 0
 
     with csv_file.open("r", encoding="utf-8-sig", newline="") as f:
         rows = list(csv.DictReader(f))
 
-    log_fn(f"  → Cargando {len(rows)} variantes desde {csv_file.name}...")
+    log_fn(f"  -> Filtrando y cargando variantes para los {len(product_id_map)} productos activos...")
     inserted = 0
 
     for idx, r in enumerate(rows, start=1):
@@ -503,7 +496,6 @@ def seed_variants_from_csv(db, product_id_map: dict[int, int], log_fn: Callable[
 
         sku = r["sku"].strip()
         stock_total = int(r.get("stock_total", "15").strip() or "15")
-        # Asegurar stock mínimo útil para pruebas
         if stock_total < 10:
             stock_total = 12
 
@@ -528,93 +520,276 @@ def seed_variants_from_csv(db, product_id_map: dict[int, int], log_fn: Callable[
         else:
             var.producto_id = db_prod_id
             var.color = r.get("color", "Único").strip()
-            var.codigo_color = r.get("codigo_color", "").strip() or None
             var.talla = r.get("talla", "U").strip()
             var.stock_total = max(var.stock_total, stock_total)
-            var.codigo_barras = r.get("codigo_barras", "").strip() or None
-            var.imagen = r.get("imagen", "").strip() or None
             var.activo = True
 
         inserted += 1
-        if idx % 500 == 0 or idx == len(rows):
+        if inserted % 250 == 0:
             db.flush()
-            log_fn(f"    - Procesadas {idx}/{len(rows)} variantes...")
 
     db.flush()
-    log_fn(f"  ✓ {inserted} variantes de catálogo sincronizadas.")
+    log_fn(f"  [OK] {inserted} variantes de catalogo vinculadas y sincronizadas.")
     return inserted
 
 
-def seed_branch_stock(db, central: Branch, north: Branch, log_fn: Callable[[str], None] = print) -> None:
-    """Distribuye el inventario de todas las variantes entre Showroom Central (60%) y Showroom Norte (40%)."""
-    log_fn("  → Distribuyendo stock por sede en Showroom Central y Showroom Norte...")
+def seed_branch_stock(db, branches: list[Branch], log_fn: Callable[[str], None] = print) -> None:
+    """Distribuye el inventario proporcionalmente entre todas las sucursales creadas."""
+    if not branches:
+        return
+    log_fn(f"  -> Distribuyendo stock de catalogo entre {len(branches)} sucursales...")
     variants = list(db.scalars(select(ProductVariant).order_by(ProductVariant.id)))
-
     updated_count = 0
+
+    if len(branches) == 1:
+        weights = [1.0]
+    elif len(branches) == 2:
+        weights = [0.60, 0.40]
+    elif len(branches) == 3:
+        weights = [0.50, 0.30, 0.20]
+    else:
+        weights = [1.0 / len(branches)] * len(branches)
+
     for v in variants:
-        total = max(v.stock_total, 10)
-        c_row = db.scalar(
-            select(BranchStock).where(
-                BranchStock.sucursal_id == central.id,
-                BranchStock.variante_id == v.id,
+        total = max(v.stock_total, 12)
+        allocated_total = 0
+
+        for b_idx, b in enumerate(branches):
+            b_row = db.scalar(
+                select(BranchStock).where(
+                    BranchStock.sucursal_id == b.id,
+                    BranchStock.variante_id == v.id,
+                )
             )
-        )
-        n_row = db.scalar(
-            select(BranchStock).where(
-                BranchStock.sucursal_id == north.id,
-                BranchStock.variante_id == v.id,
-            )
-        )
+            qty = max(2, int(total * weights[b_idx]))
+            if not b_row:
+                b_row = BranchStock(
+                    sucursal_id=b.id,
+                    variante_id=v.id,
+                    stock_total=qty,
+                    stock_reservado=0,
+                    stock_minimo=2,
+                    activo=True,
+                )
+                db.add(b_row)
+            else:
+                b_row.stock_total = qty
+                b_row.activo = True
 
-        c_reserved = c_row.stock_reservado if c_row else 0
-        n_reserved = n_row.stock_reservado if n_row else 0
-        total = max(total, c_reserved + n_reserved + 4)
+            allocated_total += qty
 
-        central_qty = max(c_reserved, (total * 6) // 10)
-        north_qty = max(n_reserved, total - central_qty)
-
-        if not c_row:
-            c_row = BranchStock(
-                sucursal_id=central.id,
-                variante_id=v.id,
-                stock_reservado=0,
-                stock_minimo=2,
-                activo=True,
-            )
-            db.add(c_row)
-
-        if not n_row:
-            n_row = BranchStock(
-                sucursal_id=north.id,
-                variante_id=v.id,
-                stock_reservado=0,
-                stock_minimo=2,
-                activo=True,
-            )
-            db.add(n_row)
-
-        c_row.stock_total = central_qty
-        n_row.stock_total = north_qty
-        v.stock_total = central_qty + north_qty
-        v.stock_reservado = c_row.stock_reservado + n_row.stock_reservado
+        v.stock_total = allocated_total
         updated_count += 1
-
-        if updated_count % 1000 == 0:
+        if updated_count % 500 == 0:
             db.flush()
 
     db.flush()
-    log_fn(f"  ✓ Stock distribuido en sedes para {updated_count} variantes de producto.")
+    log_fn(f"  [OK] Stock distribuido en {len(branches)} sedes para {updated_count} variantes.")
 
 
-def seed_test_orders_and_reservations(db, users: dict[str, User], central: Branch, north: Branch, log_fn: Callable[[str], None] = print) -> None:
+def seed_suppliers_and_supplies(db, log_fn: Callable[[str], None] = print) -> None:
+    """Carga proveedores y catalogo de insumos textiles (CU-32 y CU-33)."""
+    log_fn("  -> Sembrando agenda de proveedores e insumos de materia prima...")
+    suppliers_data = [
+        {
+            "nombre_empresa": "Hilandería Andina Textil S.A.",
+            "nit": "1029384751",
+            "contacto_nombre": "Carlos Mendoza",
+            "telefono": "71524367",
+            "email": "ventas@andinotextil.com",
+            "ciudad": "La Paz",
+            "direccion": "Parque Industrial Calle 4 #120, El Alto",
+            "categoria_suministro": "Lanas y Tejidos de Alpaca",
+            "supplies": [
+                ("Lana Baby Alpaca 100%", "SUP-ALP-01", "Fibras Nobles", "Kilos", Decimal("220.00"), 45, 7, "DISPONIBLE"),
+                ("Lana Mezcla Merino y Alpaca", "SUP-MER-02", "Hilados", "Kilos", Decimal("160.00"), 60, 5, "DISPONIBLE"),
+            ],
+        },
+        {
+            "nombre_empresa": "Sedas & Linos de Santa Cruz Ltda.",
+            "nit": "2049182736",
+            "contacto_nombre": "Mariana Vaca",
+            "telefono": "77891234",
+            "email": "contacto@sedaslinos.com.bo",
+            "ciudad": "Santa Cruz de la Sierra",
+            "direccion": "Av. Doble Vía a La Guardia Km 6, Santa Cruz",
+            "categoria_suministro": "Lino Italiano y Sedas",
+            "supplies": [
+                ("Lino Belga Crudo de Confección", "SUP-LIN-10", "Telas y Confección", "Metros", Decimal("85.00"), 120, 4, "DISPONIBLE"),
+                ("Seda Mulberry Natural Satinada", "SUP-SED-04", "Tejidos Finos", "Metros", Decimal("195.00"), 30, 10, "BAJO_PEDIDO"),
+            ],
+        },
+        {
+            "nombre_empresa": "Confecciones Altiplano & Botones",
+            "nit": "3091827465",
+            "contacto_nombre": "Roberto Choque",
+            "telefono": "73098124",
+            "email": "insumos@confeccionesaltiplano.bo",
+            "ciudad": "Cochabamba",
+            "direccion": "Zona Recoleta #450, Cochabamba",
+            "categoria_suministro": "Avíos, Botones de Cuerno y Forrería",
+            "supplies": [
+                ("Botones de Cuerno Natural Sastrero", "SUP-BOT-01", "Avíos y Forros", "Gruesas (144u)", Decimal("75.00"), 80, 3, "DISPONIBLE"),
+                ("Forrería Bemberg Transpirable", "SUP-BEM-05", "Forros Sastreros", "Metros", Decimal("45.00"), 150, 4, "DISPONIBLE"),
+            ],
+        },
+    ]
+
+    for s_info in suppliers_data:
+        supp = db.scalar(select(Supplier).where(Supplier.nombre_empresa == s_info["nombre_empresa"]))
+        if not supp:
+            supp = Supplier(
+                nombre_empresa=s_info["nombre_empresa"],
+                nit=s_info["nit"],
+                contacto_nombre=s_info["contacto_nombre"],
+                telefono=s_info["telefono"],
+                email=s_info["email"],
+                ciudad=s_info["ciudad"],
+                direccion=s_info["direccion"],
+                categoria_suministro=s_info["categoria_suministro"],
+                activo=True,
+            )
+            db.add(supp)
+            db.flush()
+
+        for nom, sku, cat, um, costo, stock, tiempo, est in s_info["supplies"]:
+            sp = db.scalar(select(SupplierProduct).where(SupplierProduct.sku_proveedor == sku))
+            if not sp:
+                sp = SupplierProduct(
+                    proveedor_id=supp.id,
+                    nombre_suministro=nom,
+                    sku_proveedor=sku,
+                    categoria=cat,
+                    unidad_medida=um,
+                    costo_unitario=costo,
+                    cantidad_disponible=stock,
+                    tiempo_entrega_dias=tiempo,
+                    estado=est,
+                    activo=True,
+                )
+                db.add(sp)
+
+    db.flush()
+    log_fn("  [OK] Proveedores e insumos textiles registrados con éxito.")
+
+
+def seed_promotions(db, log_fn: Callable[[str], None] = print) -> None:
+    """Carga promociones sastreras vigentes (CU-36)."""
+    log_fn("  -> Sembrando reglas de descuento y promociones activas...")
+    now = datetime.now(timezone.utc)
+    promos = [
+        {
+            "codigo": "BIENVENIDA15",
+            "descripcion": "15% de descuento en primera compra sastrera en boutique o web",
+            "tipo_descuento": "PORCENTAJE",
+            "valor_descuento": Decimal("15.00"),
+            "monto_minimo_compra": Decimal("100.00"),
+            "fecha_inicio": now - timedelta(days=10),
+            "fecha_fin": now + timedelta(days=90),
+            "limite_usos": 200,
+            "usos_actuales": 12,
+        },
+        {
+            "codigo": "VIP-ATELIER",
+            "descripcion": "25% de descuento exclusivo para clientes VIP con reserva de alta costura",
+            "tipo_descuento": "PORCENTAJE",
+            "valor_descuento": Decimal("25.00"),
+            "monto_minimo_compra": Decimal("600.00"),
+            "fecha_inicio": now - timedelta(days=5),
+            "fecha_fin": now + timedelta(days=120),
+            "limite_usos": 50,
+            "usos_actuales": 4,
+        },
+        {
+            "codigo": "OUTFIT-ALTAIR",
+            "descripcion": "Bono de Bs 80 por outfits combinados de 3 o más prendas recomendadas por IA",
+            "tipo_descuento": "MONTO_FIJO",
+            "valor_descuento": Decimal("80.00"),
+            "monto_minimo_compra": Decimal("450.00"),
+            "fecha_inicio": now - timedelta(days=3),
+            "fecha_fin": now + timedelta(days=60),
+            "limite_usos": 100,
+            "usos_actuales": 8,
+        },
+    ]
+
+    for p in promos:
+        existing = db.scalar(select(Promotion).where(Promotion.codigo == p["codigo"]))
+        if not existing:
+            promo = Promotion(
+                codigo=p["codigo"],
+                descripcion=p["descripcion"],
+                tipo_descuento=p["tipo_descuento"],
+                valor_descuento=p["valor_descuento"],
+                monto_minimo_compra=p["monto_minimo_compra"],
+                fecha_inicio=p["fecha_inicio"],
+                fecha_fin=p["fecha_fin"],
+                limite_usos=p["limite_usos"],
+                usos_actuales=p["usos_actuales"],
+                activo=True,
+            )
+            db.add(promo)
+
+    db.flush()
+    log_fn("  [OK] Promociones y cupones comerciales sincronizados.")
+
+
+def seed_seasons(db, log_fn: Callable[[str], None] = print) -> None:
+    """Carga temporadas y colecciones de moda (CU-31)."""
+    log_fn("  -> Sembrando temporadas y colecciones sastreras...")
+    now = datetime.now(timezone.utc)
+    seasons = [
+        {
+            "nombre": "Otoño-Invierno 2026",
+            "codigo": "OI-2026",
+            "descripcion": "Colección de alta costura con abrigos de alpaca, trajes cruzados y lanas finas.",
+            "fecha_inicio": now - timedelta(days=60),
+            "fecha_fin": now + timedelta(days=90),
+        },
+        {
+            "nombre": "Primavera Sastrera 2026",
+            "codigo": "PS-2026",
+            "descripcion": "Cortes ligeros de lino puro y mezclas de seda para temporadas templadas y cálidas.",
+            "fecha_inicio": now + timedelta(days=30),
+            "fecha_fin": now + timedelta(days=180),
+        },
+        {
+            "nombre": "Cápsula Altair Lujo",
+            "codigo": "CAP-ALTAIR",
+            "descripcion": "Edición limitada diseñada en colaboración con los estilistas del motor Altair.",
+            "fecha_inicio": now - timedelta(days=15),
+            "fecha_fin": now + timedelta(days=240),
+        },
+    ]
+
+    for s in seasons:
+        existing = db.scalar(select(Season).where(Season.codigo == s["codigo"]))
+        if not existing:
+            season = Season(
+                nombre=s["nombre"],
+                codigo=s["codigo"],
+                descripcion=s["descripcion"],
+                fecha_inicio=s["fecha_inicio"],
+                fecha_fin=s["fecha_fin"],
+                activo=True,
+            )
+            db.add(season)
+
+    db.flush()
+    log_fn("  [OK] Temporadas y colecciones sastreras registradas.")
+
+
+def seed_test_orders_and_reservations(db, users: dict[str, User], branches: list[Branch], log_fn: Callable[[str], None] = print) -> None:
     """Crea pedidos completados para comprobantes y reservas listas con QR para pruebas en tienda."""
-    log_fn("  → Creando cositas de prueba operativas (reservas con QR, ventas emitidas)...")
-    cliente = users.get("cliente@drapemind.com")
+    log_fn("  -> Creando datos de prueba operativos (reservas con QR, ventas emitidas)...")
+    cliente_vip = users.get("cliente.german@drapemind.com") or users.get("cliente@drapemind.com")
+    cliente_reg = users.get("cliente@drapemind.com") or cliente_vip
     vendedor = users.get("vendedor@drapemind.com")
-    if not cliente or not vendedor:
+    c_branch = branches[0] if branches else None
+
+    if not cliente_vip or not c_branch:
         return
 
-    # Buscar dos variantes con stock
     variants = list(db.scalars(select(ProductVariant).where(ProductVariant.stock_total > 5).limit(4)))
     if len(variants) < 2:
         return
@@ -623,23 +798,18 @@ def seed_test_orders_and_reservations(db, users: dict[str, User], central: Branc
     p1 = db.get(Product, v1.producto_id)
     p2 = db.get(Product, v2.producto_id)
 
-    # 1. Reserva lista para probar escaneo QR y conversión a venta en caja (CU-14, CU-15, CU-16)
-    existing_res = db.scalar(
-        select(Reservation).where(
-            Reservation.usuario_id == cliente.id,
-            Reservation.estado == "LISTA",
-        )
-    )
+    # 1. Reserva lista para probar escaneo QR y POS
+    existing_res = db.scalar(select(Reservation).where(Reservation.usuario_id == cliente_vip.id, Reservation.estado == "LISTA"))
     if not existing_res:
         test_qr_token = uuid.uuid4()
         reserva = Reservation(
-            usuario_id=cliente.id,
-            sucursal_id=central.id,
+            usuario_id=cliente_vip.id,
+            sucursal_id=c_branch.id,
             estado="LISTA",
             codigo_publico=uuid.uuid4(),
             qr_token=test_qr_token,
             vence_at=datetime.now(timezone.utc) + timedelta(days=2),
-            observacion="Reserva de prueba lista en Showroom Central para prueba de escaneo QR y POS.",
+            observacion="Reserva sastrera lista en Showroom Central para prueba de escaneo QR y POS.",
         )
         db.add(reserva)
         db.flush()
@@ -648,51 +818,45 @@ def seed_test_orders_and_reservations(db, users: dict[str, User], central: Branc
             reserva_id=reserva.id,
             variante_id=v1.id,
             cantidad=1,
-            precio_referencia=p1.precio if p1 else Decimal("149.00"),
+            precio_referencia=p1.precio if p1 else Decimal("199.00"),
         )
         db.add(item_res)
         db.flush()
-        log_fn(f"  + Reserva de prueba LISTA creada [ID #{reserva.id}] con QR token {test_qr_token}")
+        log_fn(f"  + Reserva LISTA con QR creada [ID #{reserva.id}] para cliente {cliente_vip.nombre}.")
 
-    # 2. Pedido completado ENTREGADO para probar de inmediato la descarga de comprobantes en PDF e imagen (CU-12, CU-37)
-    existing_order = db.scalar(
-        select(Order).where(
-            Order.usuario_id == cliente.id,
-            Order.estado == "ENTREGADO",
-        )
-    )
+    # 2. Pedido completado para comprobante y top cliente (German Rojas)
+    existing_order = db.scalar(select(Order).where(Order.usuario_id == cliente_vip.id, Order.estado == "ENTREGADO"))
     if not existing_order:
-        subtotal = (p1.precio if p1 else Decimal("149.00")) + (p2.precio if p2 else Decimal("199.00"))
+        subtotal = (p1.precio if p1 else Decimal("199.00")) + (p2.precio if p2 else Decimal("199.00"))
         order = Order(
-            usuario_id=cliente.id,
-            sucursal_id=central.id,
+            usuario_id=cliente_vip.id,
+            sucursal_id=c_branch.id,
             estado="ENTREGADO",
-            canal="TIENDA",
-            tipo_entrega="TIENDA",
+            canal="TIENDA_FISICA",
+            tipo_entrega="RETIRO_TIENDA",
             subtotal=subtotal,
             descuento=Decimal("0.00"),
             costo_envio=Decimal("0.00"),
             total=subtotal,
-            observacion="Venta presencial de prueba en caja con emisión de comprobante de compra.",
-            paid_at=datetime.now(timezone.utc) - timedelta(hours=2),
-            completed_at=datetime.now(timezone.utc) - timedelta(hours=2),
+            observacion="Compra sastrera formal completada en Showroom Central.",
+            paid_at=datetime.now(timezone.utc) - timedelta(days=2),
+            completed_at=datetime.now(timezone.utc) - timedelta(days=2),
         )
         db.add(order)
         db.flush()
 
-        # Items del pedido
         item1 = OrderItem(
             pedido_id=order.id,
             producto_id=p1.id if p1 else None,
             variante_id=v1.id,
-            nombre_snapshot=p1.nombre if p1 else "Prenda Exclusiva",
+            nombre_snapshot=p1.nombre if p1 else "Prenda Atelier",
             sku_snapshot=v1.sku,
             color_snapshot=v1.color or "Único",
             talla_snapshot=v1.talla or "M",
             cantidad=1,
-            precio_unitario=p1.precio if p1 else Decimal("149.00"),
+            precio_unitario=p1.precio if p1 else Decimal("199.00"),
             descuento=Decimal("0.00"),
-            subtotal=p1.precio if p1 else Decimal("149.00"),
+            subtotal=p1.precio if p1 else Decimal("199.00"),
         )
         item2 = OrderItem(
             pedido_id=order.id,
@@ -710,7 +874,6 @@ def seed_test_orders_and_reservations(db, users: dict[str, User], central: Branc
         db.add(item1)
         db.add(item2)
 
-        # Pago asociado
         payment = Payment(
             pedido_id=order.id,
             metodo="EFECTIVO",
@@ -722,49 +885,7 @@ def seed_test_orders_and_reservations(db, users: dict[str, User], central: Branc
         )
         db.add(payment)
         db.flush()
-        log_fn(f"  + Pedido ENTREGADO de prueba creado [ID #{order.id}] con comprobante listo para descarga PDF/PNG.")
-
-    # 3. Pedido pagado PAGADO para probar avance de estados (CU-39)
-    existing_paid = db.scalar(
-        select(Order).where(
-            Order.usuario_id == cliente.id,
-            Order.estado == "PAGADO",
-        )
-    )
-    if not existing_paid:
-        p_subtotal = p1.precio if p1 else Decimal("149.00")
-        paid_order = Order(
-            usuario_id=cliente.id,
-            sucursal_id=north.id,
-            estado="PAGADO",
-            canal="WEB",
-            tipo_entrega="DELIVERY",
-            subtotal=p_subtotal,
-            descuento=Decimal("0.00"),
-            costo_envio=Decimal("20.00"),
-            total=p_subtotal + Decimal("20.00"),
-            observacion="Pedido online pagado listo para empaque y despacho.",
-            paid_at=datetime.now(timezone.utc) - timedelta(minutes=30),
-        )
-        db.add(paid_order)
-        db.flush()
-
-        p_item = OrderItem(
-            pedido_id=paid_order.id,
-            producto_id=p1.id if p1 else None,
-            variante_id=v1.id,
-            nombre_snapshot=p1.nombre if p1 else "Prenda Exclusiva",
-            sku_snapshot=v1.sku,
-            color_snapshot=v1.color or "Único",
-            talla_snapshot=v1.talla or "M",
-            cantidad=1,
-            precio_unitario=p_subtotal,
-            descuento=Decimal("0.00"),
-            subtotal=p_subtotal,
-        )
-        db.add(p_item)
-        db.flush()
-        log_fn(f"  + Pedido PAGADO creado [ID #{paid_order.id}] para pruebas de despacho (CU-39).")
+        log_fn(f"  + Pedido ENTREGADO creado [ID #{order.id}] con comprobante listo para auditoría.")
 
 
 def reset_sequences(db, log_fn: Callable[[str], None] = print) -> None:
@@ -778,11 +899,18 @@ def reset_sequences(db, log_fn: Callable[[str], None] = print) -> None:
         "reservas",
         "items_pedido",
         "items_reserva",
+        "items_carrito",
+        "carritos",
+        "movimientos_inventario",
         "pagos",
         "sucursales",
         "ciudades",
+        "proveedores",
+        "proveedor_suministros",
+        "promociones",
+        "temporadas_colecciones",
     ]
-    log_fn("  → Reseteando secuencias de PostgreSQL...")
+    log_fn("  -> Reseteando secuencias de PostgreSQL...")
     for tbl in tables:
         try:
             seq_sql = f"SELECT pg_get_serial_sequence('{tbl}', 'id')"
@@ -793,73 +921,185 @@ def reset_sequences(db, log_fn: Callable[[str], None] = print) -> None:
         except Exception:
             pass
     db.commit()
-    log_fn("  ✓ Secuencias de PostgreSQL sincronizadas al valor máximo actual.")
+    log_fn("  [OK] Secuencias de PostgreSQL sincronizadas al valor maximo actual.")
 
 
-def run_full_seed(log_fn: Callable[[str], None] = print) -> None:
-    """Ejecuta el sembrado completo, modular e idempotente de DrapeMind."""
-    log_fn("🌱 ====================================================================")
-    log_fn("   DRAPEMIND - SEEDER DE BASE DE DATOS Y CATÁLOGO POBLACIÓN")
+def run_full_seed(
+    products_limit: int | None = None,
+    branches_limit: int | None = None,
+    force: bool = False,
+    reset: bool = False,
+    log_fn: Callable[[str], None] = print,
+) -> None:
+    """Ejecuta el sembrado completo, modular y configurable de DrapeMind."""
+    parser = argparse.ArgumentParser(description="DrapeMind Database Seeder")
+    parser.add_argument("--products", "-p", "--limit-products", type=int, default=None, help="Limite maximo de productos a cargar (ej. 50, 100, 200)")
+    parser.add_argument("--branches", "-b", type=int, default=None, help="Cantidad de sucursales a crear (1 a 5)")
+    parser.add_argument("--reset", action="store_true", help="Limpia las tablas antes de sembrar")
+    parser.add_argument("--force", action="store_true", help="Fuerza el sembrado aunque existan productos")
+    parser.add_argument("--quick", action="store_true", help="Modo ultra-rapido (40 productos, 2 sucursales)")
+    parser.add_argument("--standard", action="store_true", help="Modo estandar (120 productos, 3 sucursales)")
+    parser.add_argument("--full", action="store_true", help="Modo catalogo completo (todos los 887 productos)")
+
+    # Parsear solo si ejecutado directamente o pasar argumentos de sys.argv
+    cli_args, _ = parser.parse_known_args()
+
+    # Combinar parametros explicitos de funcion con CLI o Variables de Entorno
+    is_reset = reset or cli_args.reset or ("--reset" in sys.argv) or (os.environ.get("SEED_RESET", "").lower() in {"1", "true", "yes"})
+    is_force = force or cli_args.force or ("--force" in sys.argv) or (os.environ.get("SEED_FORCE", "").lower() in {"1", "true", "yes"})
+
+    final_products = products_limit or cli_args.products
+    final_branches = branches_limit or cli_args.branches
+
+    if cli_args.quick:
+        final_products = 40
+        final_branches = 2
+    elif cli_args.standard:
+        final_products = 120
+        final_branches = 3
+    elif cli_args.full:
+        final_products = None  # Carga completa
+        final_branches = 5
+
+    # Si no se definieron por CLI ni parametros, revisar variables de entorno
+    if final_products is None and os.environ.get("SEED_MAX_PRODUCTS"):
+        try:
+            final_products = int(os.environ["SEED_MAX_PRODUCTS"])
+        except ValueError:
+            pass
+
+    if final_branches is None and os.environ.get("SEED_MAX_BRANCHES"):
+        try:
+            final_branches = int(os.environ["SEED_MAX_BRANCHES"])
+        except ValueError:
+            pass
+
+    # Si se ejecuta en terminal interactivo (TTY) y no se indico nada, solicitar al usuario
+    if final_products is None and sys.stdin.isatty() and not is_force and not cli_args.quick and not cli_args.standard and not cli_args.full:
+        print("\n" + "=" * 70)
+        print("  DRAPEMIND - CONFIGURACION DE POBLACION DE BASE DE DATOS")
+        print("=" * 70)
+        print("  Selecciona el tamano del catalogo para optimizar memoria y login:")
+        print("  [1] Modo Ligero (40 prendas, 2 sucursales) - Ideal para servidores ligeros y login instantaneo")
+        print("  [2] Modo Estandar (120 prendas, 3 sucursales) - Recomendado para demos completas")
+        print("  [3] Modo Catalogo Completo (887 prendas, 4,296 variantes) - Carga masiva completa")
+        print("  [4] Personalizado (Ingresar cantidad exacta de prendas y sucursales)")
+        print("=" * 70)
+        try:
+            choice = input("  Ingresa tu opcion [1-4, por defecto 1]: ").strip()
+            if choice == "2":
+                final_products = 120
+                final_branches = 3
+            elif choice == "3":
+                final_products = None
+                final_branches = 5
+            elif choice == "4":
+                p_in = input("  ¿Cuantas prendas deseas cargar? (ej. 60): ").strip()
+                b_in = input("  ¿Cuantas sucursales deseas crear? (1 a 5, ej. 2): ").strip()
+                final_products = int(p_in) if p_in.isdigit() else 60
+                final_branches = int(b_in) if b_in.isdigit() else 2
+                r_in = input("  ¿Deseas limpiar tablas antes de sembrar? (s/n, defecto s): ").strip().lower()
+                if r_in in {"", "s", "si", "y", "yes"}:
+                    is_reset = True
+            else:
+                final_products = 40
+                final_branches = 2
+        except (KeyboardInterrupt, EOFError):
+            final_products = 40
+            final_branches = 2
+
+    # Por defecto, si no se definio nada en ejecucion automatica, 60 prendas es ideal
+    if final_products is None and not cli_args.full:
+        final_products = 60
+    if final_branches is None:
+        final_branches = 3
+
+    log_fn("====================================================================")
+    log_fn("   DRAPEMIND - SEEDER DE BASE DE DATOS Y CATALOGO PERSONALIZADO")
+    log_fn(f"   Configuracion: {final_products or 'Todas (887)'} prendas | {final_branches} sucursales")
     log_fn("====================================================================")
 
     with SessionLocal() as db:
         prod_count = db.scalar(select(func.count(Product.id))) or 0
-        is_force = ("--force" in sys.argv)
-        is_reset = ("--reset" in sys.argv)
 
         if prod_count > 0 and not is_force and not is_reset:
-            log_fn(f"\n⚠️  [SEEDER OMITIDO] La base de datos ya contiene {prod_count} productos.")
-            log_fn("    El sembrado ha sido omitido para preservar tus datos y evitar duplicados.")
-            log_fn("    (Para forzar el sembrado explícitamente usa: python -m scripts.db.seed_data --force)")
-            log_fn("    (Para reiniciar y sembrar limpio usa:       python -m scripts.db.seed_data --reset)\n")
+            log_fn(f"\n[AVISO] La base de datos ya contiene {prod_count} productos.")
+            log_fn("  El sembrado ha sido omitido para preservar tus datos y evitar duplicados.")
+            log_fn("  (Para reiniciar y sembrar limpio: python -m scripts.db.seed_data --reset --products 60)")
+            log_fn("  (Para forzar sembrado adicional: python -m scripts.db.seed_data --force)\n")
             return
 
         if is_reset:
-            log_fn("\n⚠️  [MODO RESET] Limpiando tablas de catálogo, stock y pedidos antes del sembrado...")
+            log_fn("\n[MODO RESET] Limpiando tablas de catalogo, stock, pedidos, carritos y proveedores...")
             try:
-                db.execute(text("TRUNCATE TABLE items_pedido, items_reserva, pagos, pedidos, reservas, stock_sucursal, variantes_producto, productos CASCADE;"))
+                db.execute(
+                    text(
+                        "TRUNCATE TABLE items_pedido, items_reserva, pagos, pedidos, reservas, "
+                        "movimientos_inventario, items_carrito, carritos, stock_sucursal, "
+                        "variantes_producto, productos, proveedor_suministros, proveedores, "
+                        "promociones, temporadas_colecciones CASCADE;"
+                    )
+                )
                 db.commit()
-                log_fn("  ✓ Tablas de productos y pedidos reseteadas a cero.")
+                log_fn("  [OK] Tablas operativas reseteadas a cero.")
             except Exception as exc:
                 db.rollback()
                 log_fn(f"  ! Aviso al resetear tablas: {exc}")
 
-        log_fn("\n🏬 1. Ciudades y Sucursales (Showrooms)...")
-        central, north = seed_cities_and_branches(db, log_fn)
+        log_fn("\n1. Ciudades y Sucursales (Showrooms)...")
+        branches = seed_cities_and_branches(db, limit_branches=final_branches, log_fn=log_fn)
         db.commit()
 
-        log_fn("\n👥 2. Usuarios por Rol, Sucursales y Perfiles...")
-        users = seed_users(db, central, north, log_fn)
+        log_fn("\n2. Usuarios por Rol, Sucursales y Perfiles...")
+        users = seed_users(db, branches, log_fn)
         db.commit()
 
-        log_fn("\n📁 3. Categorías desde data/categorias.csv...")
+        log_fn("\n3. Categorias de Moda...")
         category_map = seed_categories_from_csv(db, log_fn)
         db.commit()
 
-        log_fn("\n👔 4. Productos desde data/productos.csv...")
-        product_map = seed_products_from_csv(db, category_map, log_fn)
+        log_fn(f"\n4. Productos ({final_products or 'Todos'} prendas)...")
+        product_map = seed_products_from_csv(db, category_map, limit_products=final_products, log_fn=log_fn)
         db.commit()
 
-        log_fn("\n🎨 5. Variantes desde data/variantes_producto.csv...")
+        log_fn("\n5. Variantes de Color y Talla...")
         seed_variants_from_csv(db, product_map, log_fn)
         db.commit()
 
-        log_fn("\n📦 6. Inventario por Sede (BranchStock)...")
-        seed_branch_stock(db, central, north, log_fn)
+        log_fn("\n6. Distribucion de Stock por Sucursales...")
+        seed_branch_stock(db, branches, log_fn)
         db.commit()
 
-        log_fn("\n🧾 7. Cositas de Prueba (Reservas QR y Ventas con Comprobante)...")
-        seed_test_orders_and_reservations(db, users, central, north, log_fn)
+        log_fn("\n7. Proveedores e Insumos Textiles (CU-32 y CU-33)...")
+        seed_suppliers_and_supplies(db, log_fn)
         db.commit()
 
-        log_fn("\n⚡ 8. Reseteo de Secuencias PostgreSQL...")
+        log_fn("\n8. Promociones y Reglas de Descuento (CU-36)...")
+        seed_promotions(db, log_fn)
+        db.commit()
+
+        log_fn("\n9. Temporadas y Colecciones (CU-31)...")
+        seed_seasons(db, log_fn)
+        db.commit()
+
+        log_fn("\n10. Datos de Prueba Operativos (Reservas con QR y Comprobantes)...")
+        seed_test_orders_and_reservations(db, users, branches, log_fn)
+        db.commit()
+
+        log_fn("\n11. Reseteo y Sincronizacion de Secuencias PostgreSQL...")
         reset_sequences(db, log_fn)
 
-    log_fn("\n🎉 ====================================================================")
-    log_fn("   ¡SEEDING DE DRAPEMIND COMPLETADO CON ÉXITO!")
-    log_fn("   Catálogo con 887 productos, 4296 variantes, usuarios y sedes listos.")
+    log_fn("\n====================================================================")
+    log_fn("   SEEDING DE DRAPEMIND COMPLETADO CON EXITO")
+    log_fn(f"   Base de datos ligera, optimizada y lista ({final_products or '887'} prendas, {final_branches} sedes).")
     log_fn("====================================================================\n")
+
+
+# Alias de compatibilidad para db_manager_gui y scripts legacy
+seed_categories = seed_categories_from_csv
+seed_products = seed_products_from_csv
 
 
 if __name__ == "__main__":
     run_full_seed()
+

@@ -417,60 +417,98 @@ async def generar_informe_empresarial_ia(
                 f"respalda una estrategia centrada en {enfoque_raw} para optimizar el margen y la satisfacción del cliente."
             )
 
-    # 6. Elaboración de Textos Ejecutivos (Resumen y Diagnóstico)
-    # Textos inteligentes generados según el tipo_reporte y periodo
-    if payload.tipo_reporte == "VENTAS_Y_TENDENCIAS":
+    # 6. Elaboración de Textos Ejecutivos según el Motor de IA Seleccionado
+    modelo_seleccionado = payload.modelo_ia or "ALTAIR"
+    if modelo_seleccionado == "ALTAIR_MINI":
+        nombre_modelo = "Altair Mini (Scout 0.6B - Inferencia Rápida)"
+        system_prompt = (
+            "Eres Altair Mini, motor de analítica ágil y velocidad operativa de DrapeMind. "
+            "REGLAS OBLIGATORIAS: CERO EMOJIS. Respuestas ultraconcisas, cuantitativas, viñetas directas sin rodeos. Moneda: Bolivianos (Bs)."
+        )
         executive_body = (
-            f"Durante el periodo correspondiente a {periodo_humano.lower()}, DrapeMind consolidó ingresos por "
-            f"Bs {total_revenue:,.2f} a través de {total_orders} órdenes registradas, alcanzando un ticket promedio de Bs {ticket_promedio:,.2f}. "
-            f"El ratio de cumplimiento comercial se refleja en {delivered_orders} pedidos entregados satisfactoriamente, "
-            f"mientras que {pending_orders} pedidos avanzan en fase de preparación y distribución."
+            f"• Facturación y Órdenes: Bs {total_revenue:,.2f} consolidados en {total_orders} pedidos (Ticket medio: Bs {ticket_promedio:,.2f}).\n"
+            f"• Eficiencia de Despacho: {delivered_orders} entregas efectivas ({((delivered_orders / total_orders * 100) if total_orders else 100):.1f}%), {pending_orders} pedidos activos en taller/tránsito.\n"
+            f"• Disponibilidad de Piso: {stock_total_units} prendas en almacén con {low_stock_variants} variantes en umbral crítico (<= 3 unidades)."
         )
         diagnostic_body = (
-            f"El análisis de tendencia de ventas muestra un comportamiento robusto en las prendas sastreras insignia. "
-            f"El {((delivered_orders / total_orders * 100) if total_orders else 100):.1f}% de las órdenes auditadas han completado el ciclo de entrega. "
-            f"Los clientes de mayor frecuencia concentran el volumen principal de ingresos, lo que demuestra la efectividad de la propuesta de alta costura."
+            f"• Acción 24h-48h: Emitir orden de reposición inmediata a hilanderías para las {low_stock_variants} variantes bajo umbral mínimo.\n"
+            f"• Rendimiento IA: Asistente operando con latencia media de {avg_ai_duration:.1f} ms en {total_ai_interactions} consultas asistidas.\n"
+            f"• Optimización Táctica: Priorizar la liberación de los {pending_orders} pedidos en preparación para acelerar el flujo de caja."
         )
-    elif payload.tipo_reporte == "INVENTARIO_Y_STOCK":
+    elif modelo_seleccionado == "ALTAIR_VARIABLE":
+        nombre_modelo = "Altair Variable (Orquestación Híbrida Dinámica)"
+        system_prompt = (
+            "Eres Altair Variable, motor adaptativo de inteligencia retail y sastería inteligente. "
+            "REGLAS OBLIGATORIAS: CERO EMOJIS. Estilo dinámico con balance entre rapidez operativa de piso y visión estratégica comercial. Moneda: Bolivianos (Bs)."
+        )
         executive_body = (
-            f"La auditoría de existencias al cierre del periodo ({periodo_humano.lower()}) comprende {total_products} modelos activos "
-            f"con un total de {stock_total_units} unidades físicas en almacenes. Se identifican {low_stock_variants} variantes en umbral crítico "
-            f"de reposición (menor o igual a 3 unidades), requiriendo órdenes de compra programadas a proveedores de lino, seda y alpaca."
+            f"Diagnóstico Adaptativo DrapeMind: El modelo detecta una facturación consolidada de Bs {total_revenue:,.2f} en {total_orders} órdenes, "
+            f"con un ticket promedio de Bs {ticket_promedio:,.2f}. La red física y digital mantiene {stock_total_units} prendas activas en {total_products} modelos. "
+            f"La orquestación dinámica prioriza simultáneamente la reposición de las {low_stock_variants} variantes en umbral crítico y el fortalecimiento del estilismo asistido."
         )
         diagnostic_body = (
-            f"El índice de stock crítico representa el {((low_stock_variants / total_variants * 100) if total_variants else 0):.1f}% de las variantes activas. "
-            "La rotación es balanceada en la colección principal, pero se aconseja regularizar el reabastecimiento en tallas centrales "
-            "para evitar pérdidas por demanda insatisfecha en probadores virtuales."
+            f"Equilibrio Táctico-Estratégico: En el eje de piso de venta, {delivered_orders} entregas han sido completadas satisfactoriamente mientras que {pending_orders} pedidos continúan en preparación. "
+            f"En el eje estratégico, la latencia media de asistencia ({avg_ai_duration:.1f} ms en {total_ai_sessions} sesiones) respalda la expansión del catálogo con proveedores textiles aliados."
         )
-    elif payload.tipo_reporte == "ASISTENCIA_IA_Y_CLIENTES":
-        executive_body = (
-            f"El motor de estilismo Altair registró {total_ai_sessions} sesiones y {total_ai_interactions} interacciones asistidas "
-            f"en el periodo ({periodo_humano.lower()}), con una latencia media de respuesta de {avg_ai_duration:.1f} ms. "
-            "La interacción automatizada ha elevado la retención de clientes en catálogo, guiando compras informadas en base al ADN de estilo."
+    else:  # ALTAIR
+        nombre_modelo = "Altair Principal (Gemma 4 E2B - Razonamiento Profundo)"
+        system_prompt = (
+            "Eres Altair Principal, Consultor Estratégico Senior de Retail de Lujo y Alta Costura de DrapeMind Atelier. "
+            "REGLAS OBLIGATORIAS: CERO EMOJIS. Lenguaje directivo de alto impacto, cuantitativo, elegante y riguroso. Moneda: Bolivianos (Bs)."
         )
-        diagnostic_body = (
-            f"La latencia operativa promedio de {avg_ai_duration:.1f} ms cumple holgadamente los estándares de servicio directivo (< 3,000 ms). "
-            f"La asistencia inteligente ha demostrado correlación directa con la adición de prendas al perchero virtual, "
-            f"reduciendo la tasa de dudas en selección de tallas y cortes sastreros."
-        )
-    else:  # ESTRATEGICO_GLOBAL
-        executive_body = (
-            f"El diagnóstico directivo global de DrapeMind sintetiza una facturación consolidada de Bs {total_revenue:,.2f} "
-            f"distribuida en {total_orders} pedidos, respaldada por un catálogo de {total_products} prendas activas ({stock_total_units} unidades en red). "
-            f"La sincronización entre el probador virtual, la IA Altair y los talleres sastreros posiciona favorablemente a la marca para su expansión."
-        )
-        diagnostic_body = (
-            f"La salud financiera y operativa del atelier presenta estabilidad general. "
-            f"Se combinan {delivered_orders} entregas completadas, un ticket medio de Bs {ticket_promedio:,.2f} y una base de fidelización en crecimiento. "
-            f"La gestión de las {low_stock_variants} variantes bajo umbral y la potenciación del motor de estilismo son los dos pilares estratégicos de escala."
-        )
+        if payload.tipo_reporte == "VENTAS_Y_TENDENCIAS":
+            executive_body = (
+                f"Durante el periodo correspondiente a {periodo_humano.lower()}, DrapeMind consolidó ingresos por "
+                f"Bs {total_revenue:,.2f} a través de {total_orders} órdenes registradas, alcanzando un ticket promedio de Bs {ticket_promedio:,.2f}. "
+                f"El ratio de cumplimiento comercial se refleja en {delivered_orders} pedidos entregados satisfactoriamente, "
+                f"mientras que {pending_orders} pedidos avanzan en fase de preparación y distribución sastrera."
+            )
+            diagnostic_body = (
+                f"El análisis de tendencia de ventas muestra un comportamiento robusto en las prendas sastreras insignia. "
+                f"El {((delivered_orders / total_orders * 100) if total_orders else 100):.1f}% de las órdenes auditadas han completado el ciclo de entrega. "
+                f"Los clientes de mayor frecuencia concentran el volumen principal de ingresos, lo que demuestra la efectividad de la propuesta de alta costura."
+            )
+        elif payload.tipo_reporte == "INVENTARIO_Y_STOCK":
+            executive_body = (
+                f"La auditoría de existencias al cierre del periodo ({periodo_humano.lower()}) comprende {total_products} modelos activos "
+                f"con un total de {stock_total_units} unidades físicas en almacenes. Se identifican {low_stock_variants} variantes en umbral crítico "
+                f"de reposición (menor o igual a 3 unidades), requiriendo órdenes de compra programadas a proveedores de lino, seda y alpaca."
+            )
+            diagnostic_body = (
+                f"El índice de stock crítico representa el {((low_stock_variants / total_variants * 100) if total_variants else 0):.1f}% de las variantes activas. "
+                "La rotación es balanceada en la colección principal, pero se aconseja regularizar el reabastecimiento en tallas centrales "
+                "para evitar pérdidas por demanda insatisfecha en probadores virtuales."
+            )
+        elif payload.tipo_reporte == "ASISTENCIA_IA_Y_CLIENTES":
+            executive_body = (
+                f"El motor de estilismo Altair registró {total_ai_sessions} sesiones y {total_ai_interactions} interacciones asistidas "
+                f"en el periodo ({periodo_humano.lower()}), con una latencia media de respuesta de {avg_ai_duration:.1f} ms. "
+                "La interacción automatizada ha elevado la retención de clientes en catálogo, guiando compras informadas en base al ADN de estilo."
+            )
+            diagnostic_body = (
+                f"La latencia operativa promedio de {avg_ai_duration:.1f} ms cumple holgadamente los estándares de servicio directivo (< 3,000 ms). "
+                f"La asistencia inteligente ha demostrado correlación directa con la adición de prendas al perchero virtual, "
+                f"reduciendo la tasa de dudas en selección de tallas y cortes sastreros."
+            )
+        else:  # ESTRATEGICO_GLOBAL
+            executive_body = (
+                f"El diagnóstico directivo global de DrapeMind sintetiza una facturación consolidada de Bs {total_revenue:,.2f} "
+                f"distribuida en {total_orders} pedidos, respaldada por un catálogo de {total_products} prendas activas ({stock_total_units} unidades en red). "
+                f"La sincronización entre el probador virtual, la IA Altair y los talleres sastreros posiciona favorablemente a la marca para su expansión."
+            )
+            diagnostic_body = (
+                f"La salud financiera y operativa del atelier presenta estabilidad general. "
+                f"Se combinan {delivered_orders} entregas completadas, un ticket medio de Bs {ticket_promedio:,.2f} y una base de fidelización en crecimiento. "
+                f"La gestión de las {low_stock_variants} variantes bajo umbral y la potenciación del motor de estilismo son los dos pilares estratégicos de escala."
+            )
 
-    # 7. Si Gemma está disponible, intentar enriquecer aún más la redacción respetando las reglas estrictas
+    # 7. Si Gemma está disponible, enriquecer la redacción con el estilo del modelo elegido
     try:
         data_context = (
             f"Datos Reales del Atelier DrapeMind:\n"
             f"- Tipo de Reporte: {payload.tipo_reporte}\n"
             f"- Periodo: {periodo_humano}\n"
+            f"- Motor IA: {nombre_modelo}\n"
             f"- Facturación Auditada: Bs {total_revenue:,.2f}\n"
             f"- Pedidos Totales: {total_orders} (Entregados: {delivered_orders}, En Curso: {pending_orders})\n"
             f"- Ticket Promedio: Bs {ticket_promedio:,.2f}\n"
@@ -479,17 +517,30 @@ async def generar_informe_empresarial_ia(
             f"- Asistente IA: {total_ai_sessions} sesiones, {total_ai_interactions} consultas (latencia: {avg_ai_duration:.1f} ms)\n"
             f"- Enfoque del Directorio: {payload.enfoque_especifico or 'Crecimiento sostenible y satisfacción sastrera'}\n"
         )
+        if modelo_seleccionado == "ALTAIR_MINI":
+            estilo_instruccion = (
+                "Formato requerido: Genera 3 viñetas cuantitativas y ultrarrápidas para el Resumen Ejecutivo, "
+                "y 3 acciones tácticas directas (24h/48h) para el Diagnóstico."
+            )
+        elif modelo_seleccionado == "ALTAIR_VARIABLE":
+            estilo_instruccion = (
+                "Formato requerido: Articula un diagnóstico dinámico y balanceado que integre las alertas operativas "
+                "inmediatas de inventario con las directrices de crecimiento comercial."
+            )
+        else:
+            estilo_instruccion = (
+                "Formato requerido: Redacta un informe estratégico de alto nivel directivo (McKinsey / Bain), "
+                "con prosa formal, visión financiera y posicionamiento de marca de lujo."
+            )
+
         prompt = (
             f"Genera un informe estratégico formal para el directorio de DrapeMind con los siguientes datos:\n{data_context}\n"
+            f"{estilo_instruccion}\n"
             "REGLAS OBLIGATORIAS:\n"
             "1. CERO EMOJIS.\n"
             "2. No agregues preámbulos, títulos generales ni frases como 'INFORME ESTRATÉGICO', 'Atelier DrapeMind', 'Tipo de informe', 'Periodo' o '1. RESUMEN EJECUTIVO'.\n"
-            "3. Empieza directamente con la síntesis.\n"
+            "3. Empieza directamente con la síntesis del texto.\n"
             "4. Separa las dos secciones exactamente con la palabra: [SECCION_DIAGNOSTICO].\n"
-        )
-        system_prompt = (
-            "Eres un Consultor Senior de Retail de Moda de Lujo. "
-            "REGLAS: CERO EMOJIS. Lenguaje ejecutivo, cuantitativo, elegante y riguroso. Sin introducciones de relleno."
         )
         raw_res, _ = await call_gemma(system_prompt, prompt)
         if raw_res and len(raw_res) > 80:
@@ -540,6 +591,7 @@ async def generar_informe_empresarial_ia(
     return ExecutiveReportResponse(
         tipo_reporte=payload.tipo_reporte,
         periodo=payload.periodo,
+        modelo_utilizado=nombre_modelo,
         indicadores_clave=indicadores,
         resumen_ejecutivo=executive_body,
         diagnostico_rendimiento=diagnostic_body,
