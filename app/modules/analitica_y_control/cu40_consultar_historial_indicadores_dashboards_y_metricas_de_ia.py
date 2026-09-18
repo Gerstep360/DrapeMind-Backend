@@ -99,11 +99,33 @@ def sales_history(
     db: Session = Depends(get_db),
 ) -> list[dict]:
     from sqlalchemy import text
-    rows = db.execute(
-        text("SELECT * FROM vw_historial_ventas ORDER BY completed_at DESC NULLS LAST LIMIT :limit"),
-        {"limit": limit},
-    )
-    return [dict(row._mapping) for row in rows]
+    try:
+        rows = db.execute(
+            text("SELECT * FROM vw_historial_ventas ORDER BY completed_at DESC NULLS LAST LIMIT :limit"),
+            {"limit": limit},
+        )
+        return [dict(row._mapping) for row in rows]
+    except Exception:
+        # Fallback resiliente directo a tablas base
+        orders = (
+            db.query(Order)
+            .order_by(Order.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+        return [
+            {
+                "pedido_id": o.id,
+                "usuario_id": o.usuario_id,
+                "canal": o.canal,
+                "tipo_entrega": o.tipo_entrega,
+                "estado_pedido": o.estado,
+                "total": float(o.total),
+                "created_at": o.created_at.isoformat() if o.created_at else None,
+                "completed_at": o.updated_at.isoformat() if o.updated_at else None,
+            }
+            for o in orders
+        ]
 
 
 @router.get("/metrics/sales-inventory", summary="CU-40: Métricas de ventas e inventario")
@@ -112,15 +134,23 @@ def sales_inventory_metrics(
     db: Session = Depends(get_db),
 ) -> dict:
     from sqlalchemy import text
-    sales = db.execute(text(
-        "SELECT COUNT(*) AS pedidos_entregados, COALESCE(SUM(total),0) AS ingresos "
-        "FROM pedidos WHERE estado='ENTREGADO'"
-    )).mappings().one()
-    inventory = db.execute(text(
-        "SELECT COUNT(*) AS variantes, COALESCE(SUM(stock_total-stock_reservado),0) AS unidades_disponibles, "
-        "COUNT(*) FILTER (WHERE stock_total-stock_reservado <= 3) AS stock_bajo FROM variantes_producto WHERE activo"
-    )).mappings().one()
-    return {"ventas": dict(sales), "inventario": dict(inventory)}
+    try:
+        sales = db.execute(text(
+            "SELECT COUNT(*) AS pedidos_entregados, COALESCE(SUM(total),0) AS ingresos "
+            "FROM pedidos WHERE estado='ENTREGADO'"
+        )).mappings().one()
+        inventory = db.execute(text(
+            "SELECT COUNT(*) AS variantes, COALESCE(SUM(stock_total-stock_reservado),0) AS unidades_disponibles, "
+            "COUNT(*) FILTER (WHERE stock_total-stock_reservado <= 3) AS stock_bajo FROM variantes_producto WHERE activo"
+        )).mappings().one()
+        return {"ventas": dict(sales), "inventario": dict(inventory)}
+    except Exception:
+        total_delivered = db.scalar(select(func.count(Order.id)).where(Order.estado == "ENTREGADO")) or 0
+        total_rev = db.scalar(select(func.coalesce(func.sum(Payment.monto), 0)).where(Payment.estado == "APROBADO")) or Decimal("0.00")
+        return {
+            "ventas": {"pedidos_entregados": total_delivered, "ingresos": float(total_rev)},
+            "inventario": {"variantes": 0, "unidades_disponibles": 0, "stock_bajo": 0},
+        }
 
 
 @router.get("/metrics/ai", summary="CU-40: Métricas de uso de IA")
@@ -129,5 +159,26 @@ def ai_metrics(
     db: Session = Depends(get_db),
 ) -> list[dict]:
     from sqlalchemy import text
-    return [dict(row._mapping) for row in db.execute(text("SELECT * FROM vw_resumen_ai ORDER BY tipo"))]
+    try:
+        return [dict(row._mapping) for row in db.execute(text("SELECT * FROM vw_resumen_ai ORDER BY tipo"))]
+    except Exception:
+        # Fallback directo agrupando AIInteraction
+        summary_rows = (
+            db.query(
+                AIInteraction.tipo,
+                func.count(AIInteraction.id).label("total"),
+                func.avg(AIInteraction.duracion_ms).label("duracion_promedio"),
+            )
+            .group_by(AIInteraction.tipo)
+            .all()
+        )
+        return [
+            {
+                "tipo": r[0],
+                "total": r[1],
+                "duracion_promedio_ms": round(float(r[2] or 0), 2),
+            }
+            for r in summary_rows
+        ]
+
 

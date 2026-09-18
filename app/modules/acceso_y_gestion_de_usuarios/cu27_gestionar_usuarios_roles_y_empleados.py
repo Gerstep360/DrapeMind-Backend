@@ -29,7 +29,7 @@ class AdminUserUpdate(BaseModel):
     telefono: str | None = None
     rol: Role | None = None
     estado: UserStatus | None = None
-
+    password: str | None = Field(default=None, min_length=8, max_length=72)
 
 
 @router.get(
@@ -42,13 +42,24 @@ def listar_usuarios(
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     rol: Role | None = None,
+    q: str | None = None,
     _admin: User = Depends(require_role(Role.ADMIN)),
     db: Session = Depends(get_db),
 ) -> list[User]:
     """CU-27: Consulta administrativa de usuarios del sistema."""
+    from sqlalchemy import or_
     query = select(User)
     if rol:
         query = query.where(User.rol == rol)
+    if q and q.strip():
+        term = f"%{q.strip()}%"
+        query = query.where(
+            or_(
+                User.nombre.ilike(term),
+                User.email.ilike(term),
+                User.telefono.ilike(term),
+            )
+        )
     query = query.order_by(User.id.desc()).offset(offset).limit(limit)
     return list(db.scalars(query).all())
 
@@ -115,7 +126,7 @@ def crear_usuario_administrativo(
     "/users/{user_id}",
     response_model=UserOut,
     summary="CU-27: Actualizar rol o estado de usuario",
-    description="Permite al administrador modificar roles y suspender o activar cuentas.",
+    description="Permite al administrador modificar roles, contraseñas y suspender o activar cuentas.",
 )
 def actualizar_usuario_administrativo(
     user_id: int,
@@ -123,7 +134,7 @@ def actualizar_usuario_administrativo(
     _admin: User = Depends(require_role(Role.ADMIN)),
     db: Session = Depends(get_db),
 ) -> User:
-    """CU-27: Modificación de roles y estado de cuenta."""
+    """CU-27: Modificación de roles, credenciales y estado de cuenta."""
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
@@ -136,7 +147,34 @@ def actualizar_usuario_administrativo(
         user.nombre = payload.nombre
     if payload.telefono is not None:
         user.telefono = payload.telefono
+    if payload.password is not None and payload.password.strip():
+        user.password_hash = get_password_hash(payload.password)
 
     db.commit()
     db.refresh(user)
     return user
+
+
+@router.delete(
+    "/users/{user_id}",
+    summary="CU-27: Alternar estado o suspender usuario",
+)
+def eliminar_o_suspender_usuario(
+    user_id: int,
+    _admin: User = Depends(require_role(Role.ADMIN)),
+    db: Session = Depends(get_db),
+) -> dict:
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    if user.id == _admin.id:
+        raise HTTPException(status_code=400, detail="No puedes desactivar tu propia cuenta administradora")
+
+    if user.estado == UserStatus.ACTIVO:
+        user.estado = UserStatus.SUSPENDIDO
+    else:
+        user.estado = UserStatus.ACTIVO
+
+    db.commit()
+    return {"message": f"Usuario {user.nombre} ahora está {user.estado.value}", "estado": user.estado.value}
+

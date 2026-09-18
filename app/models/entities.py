@@ -359,3 +359,60 @@ class UserStyleProfile(TimestampMixin, Base):
     adn_estilo_ia: Mapped[str | None] = mapped_column(Text)
     primer_outfit_ia: Mapped[dict | None] = mapped_column(JSONB)
     completado: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class Supplier(TimestampMixin, Base):
+    __tablename__ = "proveedores"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    nombre_empresa: Mapped[str] = mapped_column(String(150), nullable=False)
+    nit: Mapped[str | None] = mapped_column(String(50))
+    contacto_nombre: Mapped[str | None] = mapped_column(String(120))
+    telefono: Mapped[str | None] = mapped_column(String(50))
+    email: Mapped[str | None] = mapped_column(String(150))
+    ciudad: Mapped[str] = mapped_column(String(100), default="La Paz")
+    direccion: Mapped[str | None] = mapped_column(String(250))
+    categoria_suministro: Mapped[str] = mapped_column(String(100), default="Telas y Confección")
+    activo: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class Promotion(TimestampMixin, Base):
+    __tablename__ = "promociones"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    codigo: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
+    descripcion: Mapped[str | None] = mapped_column(String(255))
+    tipo_descuento: Mapped[str] = mapped_column(String(20), default="PORCENTAJE")
+    valor_descuento: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    monto_minimo_compra: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0.00"))
+    fecha_inicio: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    fecha_fin: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    limite_usos: Mapped[int | None] = mapped_column(Integer)
+    usos_actuales: Mapped[int] = mapped_column(Integer, default=0)
+    activo: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class Season(TimestampMixin, Base):
+    __tablename__ = "temporadas_colecciones"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    nombre: Mapped[str] = mapped_column(String(120), nullable=False)
+    codigo: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
+    descripcion: Mapped[str | None] = mapped_column(Text)
+    fecha_inicio: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    fecha_fin: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    activo: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class SupplierProduct(TimestampMixin, Base):
+    __tablename__ = "proveedor_suministros"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    proveedor_id: Mapped[int] = mapped_column(ForeignKey("proveedores.id", ondelete="CASCADE"), index=True)
+    nombre_suministro: Mapped[str] = mapped_column(String(150), nullable=False)
+    sku_proveedor: Mapped[str | None] = mapped_column(String(60))
+    categoria: Mapped[str] = mapped_column(String(100), default="Telas y Confección")
+    unidad_medida: Mapped[str] = mapped_column(String(30), default="Metros")
+    costo_unitario: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    cantidad_disponible: Mapped[int] = mapped_column(Integer, default=0)
+    tiempo_entrega_dias: Mapped[int] = mapped_column(Integer, default=5)
+    estado: Mapped[str] = mapped_column(String(30), default="DISPONIBLE")
+    activo: Mapped[bool] = mapped_column(Boolean, default=True)
+
+

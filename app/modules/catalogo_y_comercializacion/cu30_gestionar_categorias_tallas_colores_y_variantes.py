@@ -130,3 +130,73 @@ def actualizar_variante(
     product = db.get(Product, variant.producto_id)
     return variant_payload(variant, product)
 
+
+@router.delete(
+    "/categories/{category_id}",
+    summary="CU-30: Alternar estado o desactivar categoría",
+)
+def eliminar_o_desactivar_categoria(
+    category_id: int,
+    _admin: User = Depends(require_role(Role.ADMIN)),
+    db: Session = Depends(get_db),
+) -> dict:
+    cat = db.get(Category, category_id)
+    if not cat:
+        raise HTTPException(404, "Categoría no encontrada")
+    cat.activo = not cat.activo
+    db.commit()
+    return {"message": f"Categoría {'activada' if cat.activo else 'desactivada'} correctamente", "activo": cat.activo}
+
+
+@router.get(
+    "/variants",
+    response_model=list[VariantOut],
+    summary="CU-30: Listar variantes administrativas",
+    description="Permite consultar variantes con filtros por producto, SKU, color y estado.",
+)
+def listar_variantes_admin(
+    producto_id: int | None = None,
+    q: str | None = None,
+    activo_only: bool = False,
+    limit: int = 100,
+    offset: int = 0,
+    _admin: User = Depends(require_role(Role.ADMIN, Role.VENDEDOR, Role.ENCARGADO)),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    stmt = select(ProductVariant, Product).join(Product, Product.id == ProductVariant.producto_id)
+    if producto_id is not None:
+        stmt = stmt.where(ProductVariant.producto_id == producto_id)
+    if activo_only:
+        stmt = stmt.where(ProductVariant.activo.is_(True))
+    if q and q.strip():
+        term = f"%{q.strip()}%"
+        from sqlalchemy import or_
+        stmt = stmt.where(
+            or_(
+                ProductVariant.sku.ilike(term),
+                ProductVariant.color.ilike(term),
+                ProductVariant.talla.ilike(term),
+                Product.nombre.ilike(term),
+            )
+        )
+    stmt = stmt.order_by(Product.nombre.asc(), ProductVariant.sku.asc()).offset(offset).limit(limit)
+    return [variant_payload(v, p) for v, p in db.execute(stmt)]
+
+
+@router.delete(
+    "/variants/{variant_id}",
+    summary="CU-30: Alternar estado o desactivar variante",
+)
+def eliminar_o_desactivar_variante(
+    variant_id: int,
+    _admin: User = Depends(require_role(Role.ADMIN)),
+    db: Session = Depends(get_db),
+) -> dict:
+    variant = db.get(ProductVariant, variant_id)
+    if not variant:
+        raise HTTPException(404, "Variante no encontrada")
+    variant.activo = not variant.activo
+    db.commit()
+    return {"message": f"Variante {'activada' if variant.activo else 'desactivada'} correctamente", "activo": variant.activo}
+
+

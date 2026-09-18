@@ -28,8 +28,11 @@ def _branch_payload(branch: Branch, city: City | None = None) -> dict:
 
 
 @router.get("/cities", response_model=list[CityOut], summary="CU-28: Listar ciudades con sucursales")
-def listar_ciudades(db: Session = Depends(get_db)) -> list[City]:
-    return list(db.scalars(select(City).where(City.activo.is_(True)).order_by(City.nombre)))
+def listar_ciudades(include_inactive: bool = False, db: Session = Depends(get_db)) -> list[City]:
+    stmt = select(City)
+    if not include_inactive:
+        stmt = stmt.where(City.activo.is_(True))
+    return list(db.scalars(stmt.order_by(City.nombre)))
 
 
 @router.post("/cities", response_model=CityOut, status_code=status.HTTP_201_CREATED, summary="CU-28: Crear ciudad")
@@ -49,14 +52,50 @@ def crear_ciudad(
     return city
 
 
+@router.put("/cities/{city_id}", response_model=CityOut, summary="CU-28: Actualizar ciudad")
+def actualizar_ciudad(
+    city_id: int,
+    payload: CityInput,
+    admin: User = Depends(require_role(Role.ADMIN)),
+    db: Session = Depends(get_db),
+) -> City:
+    city = db.get(City, city_id)
+    if not city:
+        raise HTTPException(404, "Ciudad no encontrada")
+    for field, val in payload.model_dump().items():
+        setattr(city, field, val)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(409, "Error de integridad al actualizar ciudad") from exc
+    db.refresh(city)
+    return city
+
+
+@router.delete("/cities/{city_id}", summary="CU-28: Alternar estado o eliminar ciudad")
+def eliminar_o_desactivar_ciudad(
+    city_id: int,
+    admin: User = Depends(require_role(Role.ADMIN)),
+    db: Session = Depends(get_db),
+) -> dict:
+    city = db.get(City, city_id)
+    if not city:
+        raise HTTPException(404, "Ciudad no encontrada")
+    city.activo = not city.activo
+    db.commit()
+    return {"message": f"Ciudad {'activada' if city.activo else 'desactivada'} correctamente", "activo": city.activo}
+
+
 @router.get("", response_model=list[BranchOut], summary="CU-28: Listar sucursales")
-def listar_sucursales(ciudad_id: int | None = None, db: Session = Depends(get_db)) -> list[dict]:
+def listar_sucursales(ciudad_id: int | None = None, include_inactive: bool = False, db: Session = Depends(get_db)) -> list[dict]:
     stmt = (
         select(Branch, City)
         .join(City, City.id == Branch.ciudad_id)
-        .where(Branch.activo.is_(True), City.activo.is_(True))
         .order_by(City.nombre, Branch.nombre)
     )
+    if not include_inactive:
+        stmt = stmt.where(Branch.activo.is_(True), City.activo.is_(True))
     if ciudad_id is not None:
         stmt = stmt.where(Branch.ciudad_id == ciudad_id)
     return [_branch_payload(branch, city) for branch, city in db.execute(stmt)]
@@ -90,4 +129,46 @@ def crear_sucursal(
         raise HTTPException(409, "El código de sucursal ya existe") from exc
     db.refresh(branch)
     return _branch_payload(branch, city)
+
+
+@router.put("/{branch_id}", response_model=BranchOut, summary="CU-28: Actualizar sucursal")
+def actualizar_sucursal(
+    branch_id: int,
+    payload: BranchInput,
+    admin: User = Depends(require_role(Role.ADMIN)),
+    db: Session = Depends(get_db),
+) -> dict:
+    branch = db.get(Branch, branch_id)
+    if not branch:
+        raise HTTPException(404, "Sucursal no encontrada")
+    city = db.get(City, payload.ciudad_id)
+    if not city:
+        raise HTTPException(404, "Ciudad asignada no encontrada")
+
+    for field, val in payload.model_dump().items():
+        setattr(branch, field, val)
+
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(409, "Código de sucursal duplicado u otro conflicto") from exc
+
+    db.refresh(branch)
+    return _branch_payload(branch, city)
+
+
+@router.delete("/{branch_id}", summary="CU-28: Alternar estado o dar de baja sucursal")
+def eliminar_o_desactivar_sucursal(
+    branch_id: int,
+    admin: User = Depends(require_role(Role.ADMIN)),
+    db: Session = Depends(get_db),
+) -> dict:
+    branch = db.get(Branch, branch_id)
+    if not branch:
+        raise HTTPException(404, "Sucursal no encontrada")
+    branch.activo = not branch.activo
+    db.commit()
+    return {"message": f"Sucursal {'activada' if branch.activo else 'desactivada'} correctamente", "activo": branch.activo}
+
 

@@ -445,3 +445,154 @@ class ARConfig(BaseModel):
     available_variants: list[dict[str, Any]] = Field(default_factory=list)
     tracking: dict[str, Any] = Field(default_factory=dict)
     limitations: list[str] = Field(default_factory=list)
+
+
+class SupplierInput(BaseModel):
+    nombre_empresa: str = Field(min_length=2, max_length=150)
+    nit: str | None = Field(default=None, max_length=50)
+    contacto_nombre: str | None = Field(default=None, max_length=120)
+    telefono: str | None = Field(default=None, max_length=50)
+    email: str | None = Field(default=None, max_length=150)
+    ciudad: str = Field(default="La Paz", max_length=100)
+    direccion: str | None = Field(default=None, max_length=250)
+    categoria_suministro: str = Field(default="Telas y Confección", max_length=100)
+    activo: bool = True
+
+
+class SupplierOut(ORMModel):
+    id: int
+    nombre_empresa: str
+    nit: str | None
+    contacto_nombre: str | None
+    telefono: str | None
+    email: str | None
+    ciudad: str
+    direccion: str | None
+    categoria_suministro: str
+    activo: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class PromotionInput(BaseModel):
+    codigo: str = Field(min_length=2, max_length=50)
+    descripcion: str | None = Field(default=None, max_length=255)
+    tipo_descuento: Literal["PORCENTAJE", "MONTO_FIJO"] = "PORCENTAJE"
+    valor_descuento: Decimal = Field(gt=0)
+    monto_minimo_compra: Decimal = Field(default=Decimal("0.00"), ge=0)
+    fecha_inicio: datetime | None = None
+    fecha_fin: datetime | None = None
+    limite_usos: int | None = Field(default=None, ge=1)
+    activo: bool = True
+
+
+class PromotionOut(ORMModel):
+    id: int
+    codigo: str
+    descripcion: str | None
+    tipo_descuento: str
+    valor_descuento: Decimal
+    monto_minimo_compra: Decimal
+    fecha_inicio: datetime | None
+    fecha_fin: datetime | None
+    limite_usos: int | None
+    usos_actuales: int
+    activo: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class SeasonInput(BaseModel):
+    nombre: str = Field(min_length=2, max_length=120)
+    codigo: str = Field(min_length=2, max_length=50)
+    descripcion: str | None = None
+    fecha_inicio: datetime | None = None
+    fecha_fin: datetime | None = None
+    activo: bool = True
+
+
+class SeasonOut(ORMModel):
+    id: int
+    nombre: str
+    codigo: str
+    descripcion: str | None
+    fecha_inicio: datetime | None
+    fecha_fin: datetime | None
+    activo: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+# CU-25: Asistencia IA para Fichas de Prendas
+class ProductAiAssistExtendedRequest(BaseModel):
+    nombre_borrador: str = Field(min_length=2, max_length=150)
+    material: str | None = Field(default="Lino y Algodón", max_length=100)
+    estilo_objetivo: str | None = Field(default="Elegante Moderno", max_length=100)
+    categoria_sugerida: str | None = Field(default=None, max_length=100)
+    genero_objetivo: str = Field(default="UNISEX", max_length=30)
+    detalles_confeccion: str | None = Field(default=None, max_length=500)
+    descripcion_imagen: str | None = Field(default=None, max_length=2000)
+
+
+class ProductAiAssistExtendedResponse(BaseModel):
+    titulo_comercial: str
+    descripcion_editorial: str
+    guia_cuidado: str
+    tags_estilo: list[str]
+    silueta_corte: str
+    precio_sugerido_estimado: Decimal
+    categoria_recomendada: str
+
+
+# CU-26: Generación de Reportes Empresariales IA
+class ExecutiveReportRequest(BaseModel):
+    tipo_reporte: Literal[
+        "VENTAS_Y_TENDENCIAS",
+        "INVENTARIO_Y_STOCK",
+        "ASISTENCIA_IA_Y_CLIENTES",
+        "ESTRATEGICO_GLOBAL",
+    ] = "VENTAS_Y_TENDENCIAS"
+    periodo: Literal["MES_ACTUAL", "TRIMESTRE", "HISTORICO"] = "MES_ACTUAL"
+    enfoque_especifico: str | None = Field(default=None, max_length=300)
+
+
+class ExecutiveReportResponse(BaseModel):
+    tipo_reporte: str
+    periodo: str
+    indicadores_clave: dict[str, Any]
+    resumen_ejecutivo: str
+    diagnostico_rendimiento: str
+    cuellos_de_botella: list[str]
+    recomendaciones_estrategicas: list[str]
+    fecha_generacion: str
+
+
+# CU-33: Suministros y Lotes de Proveedor
+class SupplierProductInput(BaseModel):
+    nombre_suministro: str = Field(min_length=2, max_length=150)
+    sku_proveedor: str | None = Field(default=None, max_length=60)
+    categoria: str = Field(default="Telas y Confección", max_length=100)
+    unidad_medida: str = Field(default="Metros", max_length=30)
+    costo_unitario: Decimal = Field(gt=0)
+    cantidad_disponible: int = Field(default=0, ge=0)
+    tiempo_entrega_dias: int = Field(default=5, ge=1)
+    estado: Literal["DISPONIBLE", "BAJO_PEDIDO", "AGOTADO"] = "DISPONIBLE"
+    activo: bool = True
+
+
+class SupplierProductOut(ORMModel):
+    id: int
+    proveedor_id: int
+    nombre_suministro: str
+    sku_proveedor: str | None
+    categoria: str
+    unidad_medida: str
+    costo_unitario: Decimal
+    cantidad_disponible: int
+    tiempo_entrega_dias: int
+    estado: str
+    activo: bool
+    created_at: datetime
+    updated_at: datetime
+
+
