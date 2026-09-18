@@ -257,7 +257,6 @@ def seed_users(db, branches: list[Branch], log_fn: Callable[[str], None] = print
                     ciudad="Santa Cruz de la Sierra" if "Santa Cruz" in u["direccion"] else "La Paz",
                     departamento="Santa Cruz" if "Santa Cruz" in u["direccion"] else "La Paz",
                     es_principal=True,
-                    activo=True,
                 )
                 db.add(addr)
                 db.flush()
