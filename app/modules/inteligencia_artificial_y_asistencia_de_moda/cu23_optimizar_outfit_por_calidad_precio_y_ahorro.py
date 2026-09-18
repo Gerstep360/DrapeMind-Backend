@@ -25,4 +25,4 @@ async def optimizar_outfit_valor(
     db: Session = Depends(get_db),
 ) -> dict:
     """CU-23: Análisis de ahorro y calidad."""
-    return await run_ai_action(db, user, "value", payload.objetivo, payload.sesion_id)
+    return await run_ai_action(db, user, "value", payload.objetivo, payload.sesion_id, model_choice=payload.modelo_ia)

@@ -22,6 +22,9 @@ def create_tables():
                 SupplierProduct.__table__,
             ],
         )
+        from sqlalchemy import text
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE promociones ADD COLUMN IF NOT EXISTS producto_id BIGINT REFERENCES productos(id) ON DELETE SET NULL;"))
         print("Tablas 'proveedores', 'promociones', 'temporadas_colecciones' y 'proveedor_suministros' verificadas/creadas correctamente.")
     except Exception as exc:
         print(f"Aviso: No se pudo conectar a PostgreSQL ({exc}). Las tablas se crearán al correr migraciones o conectar la base de datos.")

@@ -73,7 +73,7 @@ async def complete_outfit(
 async def style_check(
     payload: CartAnalysisRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ) -> dict:
-    return await run_ai_action(db, user, "style", payload.objetivo, payload.sesion_id)
+    return await run_ai_action(db, user, "style", payload.objetivo, payload.sesion_id, model_choice=payload.modelo_ia)
 
 
 @router.post(
@@ -83,7 +83,7 @@ async def style_check(
 async def value_check(
     payload: CartAnalysisRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ) -> dict:
-    return await run_ai_action(db, user, "value", payload.objetivo, payload.sesion_id)
+    return await run_ai_action(db, user, "value", payload.objetivo, payload.sesion_id, model_choice=payload.modelo_ia)
 
 
 @router.post(

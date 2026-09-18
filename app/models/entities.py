@@ -387,6 +387,7 @@ class Promotion(TimestampMixin, Base):
     fecha_fin: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     limite_usos: Mapped[int | None] = mapped_column(Integer)
     usos_actuales: Mapped[int] = mapped_column(Integer, default=0)
+    producto_id: Mapped[int | None] = mapped_column(ForeignKey("productos.id", ondelete="SET NULL"), nullable=True)
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
 
 

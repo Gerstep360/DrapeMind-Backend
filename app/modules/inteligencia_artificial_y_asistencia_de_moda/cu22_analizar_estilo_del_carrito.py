@@ -25,4 +25,4 @@ async def analizar_estilo_carrito(
     db: Session = Depends(get_db),
 ) -> dict:
     """CU-22: Crítica y score de estilo del carrito."""
-    return await run_ai_action(db, user, "style", payload.objetivo, payload.sesion_id)
+    return await run_ai_action(db, user, "style", payload.objetivo, payload.sesion_id, model_choice=payload.modelo_ia)

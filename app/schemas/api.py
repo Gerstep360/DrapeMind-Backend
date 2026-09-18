@@ -478,12 +478,13 @@ class SupplierOut(ORMModel):
 class PromotionInput(BaseModel):
     codigo: str = Field(min_length=2, max_length=50)
     descripcion: str | None = Field(default=None, max_length=255)
-    tipo_descuento: Literal["PORCENTAJE", "MONTO_FIJO"] = "PORCENTAJE"
+    tipo_descuento: Literal["PORCENTAJE", "MONTO_FIJO", "DOS_POR_UNO", "COMPRA_MINIMA"] = "PORCENTAJE"
     valor_descuento: Decimal = Field(gt=0)
     monto_minimo_compra: Decimal = Field(default=Decimal("0.00"), ge=0)
     fecha_inicio: datetime | None = None
     fecha_fin: datetime | None = None
     limite_usos: int | None = Field(default=None, ge=1)
+    producto_id: int | None = Field(default=None, ge=1)
     activo: bool = True
 
 
@@ -498,6 +499,9 @@ class PromotionOut(ORMModel):
     fecha_fin: datetime | None
     limite_usos: int | None
     usos_actuales: int
+    producto_id: int | None = None
+    producto_nombre: str | None = None
+    producto_imagen: str | None = None
     activo: bool
     created_at: datetime
     updated_at: datetime
