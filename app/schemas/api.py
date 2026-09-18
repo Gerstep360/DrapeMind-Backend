@@ -396,8 +396,9 @@ class OutfitRequest(BaseModel):
 
 
 class CartAnalysisRequest(BaseModel):
-    objetivo: Literal["estilo", "ahorro", "calidad_precio"] = "estilo"
+    objetivo: str = Field(default="estilo", description="Objetivo o descripción de análisis de estilo/ahorro")
     sesion_id: int | None = None
+    modelo_ia: Literal["ALTAIR", "ALTAIR_MINI", "ALTAIR_VARIABLE", "mini", "dynamic", "gemma"] = "ALTAIR_MINI"
 
 
 class RecommendationApply(BaseModel):

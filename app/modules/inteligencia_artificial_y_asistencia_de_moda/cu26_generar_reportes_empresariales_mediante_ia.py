@@ -139,7 +139,7 @@ async def generar_informe_empresarial_ia(
     if total_revenue == Decimal("0.00"):
         total_revenue = db.scalar(
             select(func.coalesce(func.sum(Order.total), Decimal("0.00"))).where(
-                Order.estado.in_(["COMPLETADO", "CONFIRMADO", "ENTREGADO", "PAGADO"]),
+                Order.estado.in_(["ENTREGADO", "PAGADO", "LISTO", "ENVIADO"]),
                 *order_filter,
             )
         ) or Decimal("0.00")
@@ -186,7 +186,7 @@ async def generar_informe_empresarial_ia(
 
     # 3. Consultas Analíticas Específicas para Tablas y Enfoque Directivo
     # A) Top Clientes por Facturación (auditoría de clientes clave)
-    completed_filter = [Order.estado.in_(["COMPLETADO", "CONFIRMADO", "ENTREGADO", "PAGADO", "LISTO"])]
+    completed_filter = [Order.estado.in_(["ENTREGADO", "PAGADO", "LISTO", "ENVIADO"])]
     top_users_query = (
         select(
             User.nombre,
