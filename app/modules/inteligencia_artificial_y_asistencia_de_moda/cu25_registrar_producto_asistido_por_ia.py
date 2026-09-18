@@ -116,13 +116,29 @@ async def estudio_creacion_producto_ia(
         "Redacta una descripción editorial elegante de máximo 3 oraciones, resaltando el tacto de la tela y el acabado sastrero."
     )
 
-    system_prompt = (
-        "Eres Altair, Director Creativo y Redactor Sastrero de DrapeMind Atelier.\n"
-        "REGLAS:\n"
-        "1. CERO EMOJIS: Jamás uses emojis ni caracteres especiales decorativos.\n"
-        "2. Tono: Lujo silencioso, sobrio, técnico y sofisticado.\n"
-        "3. Precisión en tejidos y confección."
-    )
+    # Selección y personalización según el modelo de IA elegido
+    model_choice = getattr(payload, "modelo_ia", "ALTAIR_MINI") or "ALTAIR_MINI"
+    if model_choice == "ALTAIR_MINI":
+        nombre_modelo_usado = "Altair Mini (Scout 0.6B)"
+        system_prompt = (
+            "Eres Altair Mini, redactor ágil de catálogo sastrero de DrapeMind Atelier.\n"
+            "REGLAS: CERO EMOJIS. Descripción directa, comercial, precisa y de lectura rápida (máximo 2 oraciones)."
+        )
+    elif model_choice == "ALTAIR_VARIABLE":
+        nombre_modelo_usado = "Altair Variable (Híbrido)"
+        system_prompt = (
+            "Eres Altair Variable, motor adaptativo de catálogo de DrapeMind Atelier.\n"
+            "REGLAS: CERO EMOJIS. Estilo moderno, dinámico y equilibrado entre elegancia y practicidad textil."
+        )
+    else:
+        nombre_modelo_usado = "Altair Principal (Gemma 4 E2B)"
+        system_prompt = (
+            "Eres Altair Principal, Director Creativo y Redactor Sastrero de DrapeMind Atelier.\n"
+            "REGLAS:\n"
+            "1. CERO EMOJIS: Jamás uses emojis ni caracteres especiales decorativos.\n"
+            "2. Tono: Lujo silencioso, sobrio, técnico y sofisticado.\n"
+            "3. Precisión en tejidos y confección."
+        )
 
     editorial_text = ""
     try:
@@ -165,4 +181,5 @@ async def estudio_creacion_producto_ia(
         silueta_corte=silueta_def,
         precio_sugerido_estimado=precio_estimado,
         categoria_recomendada=categoria_rec,
+        modelo_utilizado=nombre_modelo_usado,
     )

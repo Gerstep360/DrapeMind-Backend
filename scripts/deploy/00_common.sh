@@ -49,7 +49,7 @@ fi
 
 log_info()    { echo -e "  ${COLOR_PRIMARY}${ICON_CHEVRON}${NC} ${BOLD}$1${NC}"; }
 log_success() { echo -e "  ${COLOR_SUCCESS}${ICON_CHECK}${NC} ${BOLD}$1${NC}"; }
-log_warn()    { echo -e "  ${COLOR_WARNING}⚠${NC} ${YELLOW}$1${NC}"; }
+log_warn()    { echo -e "  ${COLOR_WARNING}[WARN]${NC} ${YELLOW}$1${NC}"; }
 log_error()   { echo -e "  ${COLOR_DANGER}${ICON_CROSS}${NC} ${RED}${BOLD}$1${NC}" >&2; }
 
 # Limpieza segura del cursor al salir

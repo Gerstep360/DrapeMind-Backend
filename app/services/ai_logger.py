@@ -85,7 +85,7 @@ class AILogger:
 
         banner = (
             "════════════════════════════════════════════════════════════════════════════════\n"
-            f"✦ [NUEVO MENSAJE] Chat: #{chat_id} | Usuario: {user_name} (ID: {user_id}) | {now_str}\n"
+            f"[NUEVO MENSAJE] Chat: #{chat_id} | Usuario: {user_name} (ID: {user_id}) | {now_str}\n"
             f"  Mensaje: \"{preview}\"\n"
             f"  Arquitectura IA: {mode_str}\n"
             "════════════════════════════════════════════════════════════════════════════════"
@@ -133,10 +133,10 @@ class AILogger:
         perf_alert = ""
         if duration_ms > 15000:
             perf_status = "LENTO"
-            perf_alert = " ⚠️ [ALERTA RENDIMIENTO: Latencia de Scout elevada (>15s)]"
+            perf_alert = " [ALERTA RENDIMIENTO: Latencia de Scout elevada (>15s)]"
         elif pred_tps and pred_tps < 6.0:
             perf_status = "DEGRADADO"
-            perf_alert = f" ⚠️ [ALERTA RENDIMIENTO: Velocidad de generación Scout baja ({pred_tps_str})]"
+            perf_alert = f" [ALERTA RENDIMIENTO: Velocidad de generación Scout baja ({pred_tps_str})]"
 
         # Clasificacion del enrutamiento
         if decision_type == "finish":
@@ -196,13 +196,13 @@ class AILogger:
         is_error: bool = False,
     ) -> None:
         """Registra la ejecucion de una herramienta del atelier."""
-        status_badge = "❌ ERROR" if is_error else "✔ OK"
+        status_badge = "[ERROR]" if is_error else "[OK]"
         args_str = json.dumps(args, ensure_ascii=False)
         if len(args_str) > 100:
             args_str = args_str[:97] + "..."
 
         banner = (
-            f"│ ⚡ [HERRAMIENTA EJECUTADA] {tool_name} [{status_badge}]\n"
+            f"│ [*] [HERRAMIENTA EJECUTADA] {tool_name} [{status_badge}]\n"
             f"│    Args: {args_str}\n"
             f"│    Resultados: {results_count} item(s) | Tiempo: {duration_ms:.1f}ms"
         )
@@ -246,13 +246,13 @@ class AILogger:
         perf_alert = ""
         if ttft_seconds and ttft_seconds > 8.0:
             perf_status = "LENTO (TTFT)"
-            perf_alert = f" ⚠️ [ALERTA GEMMA: Primer token demoró {ttft_str}]"
+            perf_alert = f" [ALERTA GEMMA: Primer token demoró {ttft_str}]"
         elif pred_tps and pred_tps < 4.0:
             perf_status = "DEGRADADO (TPS)"
-            perf_alert = f" ⚠️ [ALERTA GEMMA: Velocidad de generación baja: {pred_tps_str}]"
+            perf_alert = f" [ALERTA GEMMA: Velocidad de generación baja: {pred_tps_str}]"
         elif total_seconds > 60.0:
             perf_status = "TIEMPO EXCESIVO"
-            perf_alert = f" ⚠️ [ALERTA GEMMA: Inferencia total superó 60s ({total_seconds:.1f}s)]"
+            perf_alert = f" [ALERTA GEMMA: Inferencia total superó 60s ({total_seconds:.1f}s)]"
 
         banner = (
             f"┌─── [GEMMA 4 - INFERENCIA MODELO GRANDE] ────────────────────────────────────\n"
@@ -338,24 +338,24 @@ class AILogger:
 
         # Diagnostico general de rendimiento del turno
         if duration_s < 5.0:
-            perf_badge = "🟢 EXCELENTE (< 5s)"
+            perf_badge = "[OPTIMO] EXCELENTE (< 5s)"
             perf_verdict = "optimal"
         elif duration_s < 18.0:
-            perf_badge = "🟢 BUENO (Respuesta fluida)"
+            perf_badge = "[BUENO] BUENO (Respuesta fluida)"
             perf_verdict = "good"
         elif duration_s < 35.0:
-            perf_badge = "🟡 MODERADO (Carga aceptable)"
+            perf_badge = "[MODERADO] MODERADO (Carga aceptable)"
             perf_verdict = "moderate"
         else:
-            perf_badge = "🔴 LENTO (> 35s - Revisar concurrencia o recursos)"
+            perf_badge = "[LENTO] LENTO (> 35s - Revisar concurrencia o recursos)"
             perf_verdict = "slow"
 
         banner = (
             "╔══════════════════════════════════════════════════════════════════════════════\n"
-            f"║ ✔ [TURNO COMPLETADO] Chat: #{chat_id} | Usuario: {user_name}\n"
+            f"║ [OK] [TURNO COMPLETADO] Chat: #{chat_id} | Usuario: {user_name}\n"
             f"║ Duración Total del Turno: {duration_s:.2f}s ({duration_ms:.0f}ms)\n"
             "║──────────────────────────────────────────────────────────────────────────────\n"
-            "║ 📊 RESUMEN DE ENRUTAMIENTO Y CONSUMO DE TOKENS:\n"
+            "║ [RESUMEN] ENRUTAMIENTO Y CONSUMO DE TOKENS:\n"
             f"║   • Enrutamiento: {route_label}\n"
             f"║   • Modelos Usados: {model_summary}\n"
             f"║   • Llamadas: Scout={scout_calls} | Gemma 4={gemma_calls}\n"

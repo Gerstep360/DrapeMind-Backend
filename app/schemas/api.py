@@ -532,6 +532,7 @@ class ProductAiAssistExtendedRequest(BaseModel):
     genero_objetivo: str = Field(default="UNISEX", max_length=30)
     detalles_confeccion: str | None = Field(default=None, max_length=500)
     descripcion_imagen: str | None = Field(default=None, max_length=2000)
+    modelo_ia: Literal["ALTAIR", "ALTAIR_MINI", "ALTAIR_VARIABLE"] = "ALTAIR_MINI"
 
 
 class ProductAiAssistExtendedResponse(BaseModel):
@@ -542,6 +543,7 @@ class ProductAiAssistExtendedResponse(BaseModel):
     silueta_corte: str
     precio_sugerido_estimado: Decimal
     categoria_recomendada: str
+    modelo_utilizado: str = "Altair Mini (Scout 0.6B)"
 
 
 # CU-26: Generación de Reportes Empresariales IA
@@ -553,7 +555,7 @@ class ExecutiveReportRequest(BaseModel):
         "ESTRATEGICO_GLOBAL",
     ] = "VENTAS_Y_TENDENCIAS"
     periodo: Literal["MES_ACTUAL", "TRIMESTRE", "HISTORICO"] = "MES_ACTUAL"
-    modelo_ia: Literal["ALTAIR", "ALTAIR_MINI", "ALTAIR_VARIABLE"] = "ALTAIR"
+    modelo_ia: Literal["ALTAIR", "ALTAIR_MINI", "ALTAIR_VARIABLE"] = "ALTAIR_MINI"
     enfoque_especifico: str | None = Field(default=None, max_length=300)
 
 

@@ -204,9 +204,9 @@ class CartSkill(BaseAiSkill):
                 "Para realizar una asesoría y calificación estilística de 1 al 10, puedes explorar el showroom o indicarme una ocasión para diseñar un outfit a medida."
             )
             suggested_actions = [
-                {"label": "👔 Armar outfit para cena", "prompt": "Arma un outfit elegante para una cena con presupuesto de Bs 700"},
-                {"label": "⚖️ Optimizar outfit y calidad", "prompt": "Optimiza mi outfit para gastar bien en ropa que dure"},
-                {"label": "✨ Piezas exclusivas del atelier", "prompt": "Muéstrame las piezas más exclusivas y de tendencia del showroom"},
+                {"label": "Armar outfit para cena", "prompt": "Arma un outfit elegante para una cena con presupuesto de Bs 700"},
+                {"label": "Optimizar outfit y calidad", "prompt": "Optimiza mi outfit para gastar bien en ropa que dure"},
+                {"label": "Piezas exclusivas del atelier", "prompt": "Muéstrame las piezas más exclusivas y de tendencia del showroom"},
             ]
 
         return {

@@ -73,13 +73,9 @@ update_backend_code() {
     tui_step 1 5 "Sincronizando Código Fuente desde el Repositorio Git"
     _sync_git_repo() {
         cd "${BACKEND_DIR}"
-        if ! git diff --quiet || ! git diff --cached --quiet 2>/dev/null; then
-            git stash push -u -m "autostash_deploy_$(date +%s)" >/dev/null 2>&1 || true
-        fi
-        git fetch origin Main --quiet 2>&1
-        if ! git pull origin Main --quiet 2>&1; then
-            git reset --hard origin/Main >/dev/null 2>&1
-        fi
+        git fetch origin Main --quiet 2>&1 || git fetch --all --quiet 2>&1
+        git reset --hard origin/Main >/dev/null 2>&1 || git reset --hard origin/main >/dev/null 2>&1 || git reset --hard HEAD >/dev/null 2>&1
+        git clean -fd >/dev/null 2>&1 || true
         chmod +x "${BACKEND_DIR}"/*.sh "${BACKEND_DIR}"/scripts/deploy/*.sh 2>/dev/null || true
     }
     tui_spin_cmd "Descargando commits recientes desde origin/Main" _sync_git_repo
