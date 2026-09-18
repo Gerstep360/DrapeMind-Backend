@@ -38,5 +38,16 @@ def realizar_checkout(
         None,
         {"ADMIN", "VENDEDOR"},
     )
+    from app.services.push_notifications import dispatch_notification
+    background_tasks.add_task(
+        dispatch_notification,
+        db,
+        order.usuario_id,
+        "Compra Registrada",
+        f"Tu pedido #{order.id} ha sido registrado exitosamente por Bs. {float(order.total):,.2f}.",
+        "COMPRA",
+        {"screen": "/orders", "order_id": order.id},
+    )
     return order
+
 

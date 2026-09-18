@@ -163,6 +163,17 @@ def crear_promocion(
             "producto_nombre": serialized.get("producto_nombre"),
         },
     )
+    from app.services.push_notifications import dispatch_notification
+    background_tasks.add_task(
+        dispatch_notification,
+        db,
+        None,
+        f"Nueva Promoción: {promo.codigo}",
+        promo.descripcion or f"Disfruta de descuentos exclusivos en Atelier DrapeMind.",
+        "PROMOCION",
+        {"screen": "/catalog", "promo_codigo": promo.codigo},
+    )
+
 
     return serialized
 

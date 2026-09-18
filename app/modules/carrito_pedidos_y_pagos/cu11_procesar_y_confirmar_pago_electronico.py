@@ -113,7 +113,18 @@ def mock_confirm(
         "status": payment.estado,
     }
     background_tasks.add_task(event_hub.publish, event_payload, current_user.id)
+    from app.services.push_notifications import dispatch_notification
+    background_tasks.add_task(
+        dispatch_notification,
+        db,
+        current_user.id,
+        "Pago Aprobado",
+        f"Tu pago para el pedido #{payment.pedido_id} ha sido confirmado exitosamente.",
+        "COMPRA",
+        {"screen": "/orders", "order_id": payment.pedido_id},
+    )
     return payment
+
 
 
 @router.get(
@@ -178,6 +189,16 @@ async def payment_webhook(
             background_tasks.add_task(
                 event_hub.publish, event, None, {"ADMIN", "VENDEDOR"}
             )
+            from app.services.push_notifications import dispatch_notification
+            background_tasks.add_task(
+                dispatch_notification,
+                db,
+                order.usuario_id,
+                "Pago Aprobado",
+                f"Tu pago para el pedido #{payment.pedido_id} ha sido aprobado exitosamente.",
+                "COMPRA",
+                {"screen": "/orders", "order_id": payment.pedido_id},
+            )
     return {"status": "ok", "payment_id": payment.id}
 
 
@@ -213,5 +234,15 @@ def simulate_qr_payment(
         background_tasks.add_task(event_hub.publish, event, order.usuario_id)
         background_tasks.add_task(
             event_hub.publish, event, None, {"ADMIN", "VENDEDOR"}
+        )
+        from app.services.push_notifications import dispatch_notification
+        background_tasks.add_task(
+            dispatch_notification,
+            db,
+            order.usuario_id,
+            "Pago QR Aprobado",
+            f"Tu pago QR para el pedido #{payment.pedido_id} ha sido confirmado exitosamente.",
+            "COMPRA",
+            {"screen": "/orders", "order_id": payment.pedido_id},
         )
     return {"status": "approved", "order_id": payment.pedido_id, "payment_id": payment.id}

@@ -8,7 +8,7 @@ sys.path.insert(0, str(backend_dir))
 
 from app.db.base import Base
 from app.db.session import engine
-from app.models import Promotion, Season, Supplier, SupplierProduct
+from app.models import Notification, Promotion, Season, Supplier, SupplierProduct, UserDevice
 
 
 def create_tables():
@@ -20,15 +20,20 @@ def create_tables():
                 Promotion.__table__,
                 Season.__table__,
                 SupplierProduct.__table__,
+                UserDevice.__table__,
+                Notification.__table__,
             ],
         )
         from sqlalchemy import text
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE promociones ADD COLUMN IF NOT EXISTS producto_id BIGINT REFERENCES productos(id) ON DELETE SET NULL;"))
-        print("Tablas 'proveedores', 'promociones', 'temporadas_colecciones' y 'proveedor_suministros' verificadas/creadas correctamente.")
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_dispositivos_usuario_user_id ON dispositivos_usuario (usuario_id);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_notificaciones_usuario_id ON notificaciones (usuario_id);"))
+        print("Tablas 'dispositivos_usuario' y 'notificaciones' verificadas/creadas correctamente.")
     except Exception as exc:
         print(f"Aviso: No se pudo conectar a PostgreSQL ({exc}). Las tablas se crearán al correr migraciones o conectar la base de datos.")
 
 
 if __name__ == "__main__":
     create_tables()
+

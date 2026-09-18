@@ -35,6 +35,12 @@ async def stripe_sandbox_confirm(payload: StripeSandboxConfirmRequest,
     order = db.get(Order, payment.pedido_id)
     await event_hub.publish({"type": "payment_updated", "payment_id": payment.id,
         "order_id": payment.pedido_id, "status": payment.estado}, order.usuario_id)
+    from app.services.push_notifications import dispatch_notification
+    await dispatch_notification(
+        db, order.usuario_id, "Compra Stripe Confirmada",
+        f"Tu pago con tarjeta para el pedido #{order.id} por Bs. {float(payment.monto):,.2f} ha sido procesado exitosamente.",
+        "COMPRA", {"screen": "/orders", "order_id": order.id}
+    )
     return {
         "id": payment.id, "pedido_id": payment.pedido_id, "estado": payment.estado,
         "monto": float(payment.monto), "metodo": payment.metodo,
@@ -49,4 +55,11 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         order = db.get(Order, payment.pedido_id)
         await event_hub.publish({"type": "payment_updated", "payment_id": payment.id,
             "order_id": payment.pedido_id, "status": payment.estado}, order.usuario_id)
+        from app.services.push_notifications import dispatch_notification
+        await dispatch_notification(
+            db, order.usuario_id, "Pago Stripe Aprobado",
+            f"Tu pago Stripe para el pedido #{order.id} ha sido confirmado.",
+            "COMPRA", {"screen": "/orders", "order_id": order.id}
+        )
     return {"received": True}
+

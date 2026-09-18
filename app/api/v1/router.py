@@ -12,11 +12,16 @@ from app.modules.reservas_y_atencion_en_tienda import (
     admin_reservations_router, reservations_router,
 )
 from app.api.v1.endpoints.admin import ai_runtime_router
+from app.api.v1.endpoints.notifications import router as notifications_router
 from app.modules.sucursales_inventario_y_proveedores import (
     admin_branches_inventory_router, branches_router,
 )
 
 api_router = APIRouter()
+
+# Notificaciones y Dispositivos Multi-Terminal (1:N)
+api_router.include_router(notifications_router, tags=["Notificaciones y Dispositivos Push"])
+
 
 # PK-01: Acceso y gestión de usuarios
 api_router.include_router(auth_router, prefix="/auth", tags=["PK-01: Acceso y gestión de usuarios"])

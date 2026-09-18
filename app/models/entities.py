@@ -417,3 +417,30 @@ class SupplierProduct(TimestampMixin, Base):
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
+class UserDevice(TimestampMixin, Base):
+    __tablename__ = "dispositivos_usuario"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id", ondelete="CASCADE"), index=True)
+    token: Mapped[str] = mapped_column(String(500), unique=True, index=True)
+    dispositivo_id: Mapped[str | None] = mapped_column(String(120))
+    plataforma: Mapped[str] = mapped_column(String(30), default="android")
+    modelo: Mapped[str | None] = mapped_column(String(100))
+    activo: Mapped[bool] = mapped_column(Boolean, default=True)
+    ultimo_uso: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    __table_args__ = (UniqueConstraint("usuario_id", "token", name="uq_dispositivo_usuario_token"),)
+
+
+class Notification(TimestampMixin, Base):
+    __tablename__ = "notificaciones"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id", ondelete="CASCADE"), index=True, nullable=True)
+    titulo: Mapped[str] = mapped_column(String(150), nullable=False)
+    mensaje: Mapped[str] = mapped_column(Text, nullable=False)
+    tipo: Mapped[str] = mapped_column(String(50), default="GENERAL")
+    data_payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    leido: Mapped[bool] = mapped_column(Boolean, default=False)
+    leido_en: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    dispositivo_origen_id: Mapped[str | None] = mapped_column(String(120))
+
+
+

@@ -910,9 +910,23 @@ async def run_ai_action(
         from app.services.store import get_product_detail
         products = [get_product_detail(db, item["id"]) for item in done.get("action_items", [])
                     if item.get("accion") == "AGREGAR"]
+        from app.services.push_notifications import dispatch_notification
+        try:
+            summary = interaction.respuesta[:120] + "..." if len(interaction.respuesta) > 120 else interaction.respuesta
+            await dispatch_notification(
+                db=db,
+                user_id=user.id,
+                titulo="Altair AI: Respuesta Lista",
+                mensaje=summary or "Altair AI ha respondido a tu consulta de moda.",
+                tipo="AI_RESPUESTA",
+                payload={"screen": "/ai_studio", "sesion_id": session.id, "modelo": interaction.modelo},
+            )
+        except Exception as _ex:
+            logger.warning("Error despachando notificacion push de chat IA: %s", _ex)
         return {"sesion_id": session.id, "interaccion_id": interaction.id,
                 "respuesta": interaction.respuesta, "productos": products,
                 "recomendaciones": [], "modelo": interaction.modelo}
+
     elif action == "search":
         kind = "PRODUCT_SEARCH"
         extractor = ""
@@ -1052,6 +1066,20 @@ async def run_ai_action(
     except Exception:
         db.rollback()
         raise
+
+    from app.services.push_notifications import dispatch_notification
+    try:
+        summary_ans = answer[:120] + "..." if len(answer) > 120 else answer
+        await dispatch_notification(
+            db=db,
+            user_id=user.id,
+            titulo="Altair AI: Análisis Finalizado",
+            mensaje=summary_ans or "Altair AI ha finalizado tu consulta de estilo.",
+            tipo="AI_RESPUESTA",
+            payload={"screen": "/ai_studio", "sesion_id": session.id, "modelo": target_model_name},
+        )
+    except Exception as _ex:
+        logger.warning("Error despachando notificacion push de accion IA: %s", _ex)
 
     return {
         "sesion_id": session.id, "interaccion_id": interaction.id, "respuesta": answer,

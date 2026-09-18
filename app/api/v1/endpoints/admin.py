@@ -1,7 +1,7 @@
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -93,7 +93,9 @@ def update_category(
 
 @router.post("/products", response_model=ProductOut, status_code=201, summary="Crear producto")
 def create_product(
-    payload: ProductInput, admin: User = Depends(require_roles(Role.ADMIN)),
+    payload: ProductInput,
+    background_tasks: BackgroundTasks,
+    admin: User = Depends(require_roles(Role.ADMIN)),
     db: Session = Depends(get_db),
 ) -> Product:
     if not db.get(Category, payload.categoria_id):
@@ -102,7 +104,18 @@ def create_product(
     db.add(product)
     db.commit()
     db.refresh(product)
+    from app.services.push_notifications import dispatch_notification
+    background_tasks.add_task(
+        dispatch_notification,
+        db,
+        None,
+        "Nueva Prenda en Catálogo",
+        f"Descubre la nueva prenda exclusiva: {product.nombre}.",
+        "NUEVA_ROPA",
+        {"screen": "/catalog", "product_id": product.id},
+    )
     return product
+
 
 
 @router.put("/products/{product_id}", response_model=ProductOut, summary="Actualizar producto")

@@ -588,6 +588,19 @@ async def generar_informe_empresarial_ia(
         f"Promocionar prendas sastreras con mayor volumen disponible ({stock_total_units} unidades en red) mediante recomendaciones del asistente Altair."
     )
 
+    from app.services.push_notifications import dispatch_notification
+    try:
+        await dispatch_notification(
+            db=db,
+            user_id=_admin.id,
+            titulo="Reporte Empresarial Generado",
+            mensaje=f"El informe estratégico de {payload.tipo_reporte} ({periodo_humano}) ha sido procesado con {nombre_modelo}.",
+            tipo="REPORTE_GENERADO",
+            payload={"screen": "/reports", "periodo": payload.periodo, "tipo": payload.tipo_reporte},
+        )
+    except Exception as _ex:
+        pass
+
     return ExecutiveReportResponse(
         tipo_reporte=payload.tipo_reporte,
         periodo=payload.periodo,
@@ -601,3 +614,4 @@ async def generar_informe_empresarial_ia(
         recomendaciones_estrategicas=recommendations,
         fecha_generacion=datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M UTC"),
     )
+

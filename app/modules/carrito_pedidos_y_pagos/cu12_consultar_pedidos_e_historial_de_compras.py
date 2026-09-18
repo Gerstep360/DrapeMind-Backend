@@ -107,7 +107,27 @@ def update_status(
     background_tasks.add_task(
         event_hub.publish, event, None, {"ADMIN", "VENDEDOR"}
     )
+    from app.services.push_notifications import dispatch_notification
+    estado_labels = {
+        "PAGADO": "Pagado y confirmado",
+        "PREPARANDO": "En preparacion en atelier",
+        "LISTO": "Listo para entrega / retiro",
+        "ENVIADO": "Enviado en camino a destino",
+        "ENTREGADO": "Entregado con exito",
+        "CANCELADO": "Cancelado",
+    }
+    label = estado_labels.get(order.estado, order.estado)
+    background_tasks.add_task(
+        dispatch_notification,
+        db,
+        order.usuario_id,
+        f"Pedido #{order.id}: {label}",
+        f"Tu pedido #{order.id} ha cambiado al estado: {label}.",
+        "PEDIDO_PROCESO",
+        {"screen": "/orders", "order_id": order.id, "status": order.estado},
+    )
     return order
+
 
 
 @router.post(
