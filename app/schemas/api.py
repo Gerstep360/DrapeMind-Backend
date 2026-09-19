@@ -562,6 +562,7 @@ class ExecutiveReportRequest(BaseModel):
     periodo: Literal["MES_ACTUAL", "TRIMESTRE", "HISTORICO"] = "MES_ACTUAL"
     modelo_ia: Literal["ALTAIR", "ALTAIR_MINI", "ALTAIR_VARIABLE"] = "ALTAIR_MINI"
     enfoque_especifico: str | None = Field(default=None, max_length=300)
+    seed: int | None = Field(default=None, description="Semilla generativa para variar el estilo y perspectiva analitica")
 
 
 class ReportTable(BaseModel):
@@ -575,6 +576,8 @@ class ExecutiveReportResponse(BaseModel):
     tipo_reporte: str
     periodo: str
     modelo_utilizado: str = "Altair (Gemma 4 E2B)"
+    semilla_generativa: int | None = None
+    angulo_estrategico: str | None = None
     indicadores_clave: dict[str, Any]
     resumen_ejecutivo: str
     diagnostico_rendimiento: str
@@ -583,6 +586,7 @@ class ExecutiveReportResponse(BaseModel):
     cuellos_de_botella: list[str]
     recomendaciones_estrategicas: list[str]
     fecha_generacion: str
+
 
 
 # CU-33: Suministros y Lotes de Proveedor

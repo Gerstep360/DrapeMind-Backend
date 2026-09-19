@@ -187,17 +187,30 @@ def format_messages_for_gemma(messages: list[dict[str, Any]]) -> list[dict[str, 
     return clean_messages
 
 
-async def call_gemma(system: str, user: str, model: str | None = None) -> tuple[str, dict[str, int | None]]:
+async def call_gemma(
+    system: str,
+    user: str,
+    model: str | None = None,
+    temperature: float | None = None,
+    seed: int | None = None,
+    response_format: dict[str, Any] | None = None,
+    max_tokens: int | None = None,
+) -> tuple[str, dict[str, int | None]]:
     combined = f"[INSTRUCCIÓN DE ESTILO Y PERSONALIDAD]\n{system}\n\n[MENSAJE ACTUAL]\n{user}" if system else user
     target_model = model or settings.AI_MODEL
-    payload = {
+    payload: dict[str, Any] = {
         "model": target_model,
         "messages": [{"role": "user", "content": combined}],
-        "temperature": settings.AI_TEMPERATURE,
-        "max_tokens": settings.AI_MAX_TOKENS,
+        "temperature": temperature if temperature is not None else settings.AI_TEMPERATURE,
+        "max_tokens": max_tokens or settings.AI_MAX_TOKENS,
         "stream": False,
     }
+    if seed is not None:
+        payload["seed"] = seed
+    if response_format is not None:
+        payload["response_format"] = response_format
     headers = {"Authorization": f"Bearer {settings.AI_API_KEY}"}
+
     try:
         async with model_runtime.lease():
             async with httpx.AsyncClient(timeout=settings.AI_TIMEOUT_SECONDS) as client:
