@@ -211,9 +211,10 @@ async def call_gemma(
         payload["response_format"] = response_format
     headers = {"Authorization": f"Bearer {settings.AI_API_KEY}"}
 
+    call_timeout = max(float(settings.AI_TIMEOUT_SECONDS), 180.0) if (max_tokens and max_tokens > 800) else float(settings.AI_TIMEOUT_SECONDS)
     try:
         async with model_runtime.lease():
-            async with httpx.AsyncClient(timeout=settings.AI_TIMEOUT_SECONDS) as client:
+            async with httpx.AsyncClient(timeout=call_timeout) as client:
                 response = await client.post(
                     f"{settings.AI_BASE_URL.rstrip('/')}/chat/completions",
                     json=payload,

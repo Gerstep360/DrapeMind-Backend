@@ -565,27 +565,48 @@ class ExecutiveReportRequest(BaseModel):
     seed: int | None = Field(default=None, description="Semilla generativa para variar el estilo y perspectiva analitica")
 
 
-class ReportTable(BaseModel):
-    titulo: str
-    columnas: list[str]
-    filas: list[list[Any]]
-    resumen: str | None = None
+class TablaDinamica(BaseModel):
+    titulo: str = Field(description="Título descriptivo asignado a la tabla por la IA")
+    columnas: list[str] = Field(default_factory=list, description="Nombres de las columnas pertinentes")
+    filas: list[list[Any]] = Field(default_factory=list, description="Celdas de datos ordenadas por fila")
+    nota_al_pie: str | None = Field(None, description="Conclusión puntual o aclaratoria de la tabla")
 
 
-class ExecutiveReportResponse(BaseModel):
-    tipo_reporte: str
-    periodo: str
-    modelo_utilizado: str = "Altair (Gemma 4 E2B)"
-    semilla_generativa: int | None = None
-    angulo_estrategico: str | None = None
-    indicadores_clave: dict[str, Any]
-    resumen_ejecutivo: str
-    diagnostico_rendimiento: str
-    enfoque_personalizado: str | None = None
-    tablas_analiticas: list[ReportTable] = Field(default_factory=list)
-    cuellos_de_botella: list[str]
-    recomendaciones_estrategicas: list[str]
-    fecha_generacion: str
+class SeccionDinamica(BaseModel):
+    titulo: str = Field(description="Título analítico original inventado según los hallazgos")
+    contenido: str = Field(description="Desarrollo analítico y cuantitativo de la sección")
+    tablas: list[TablaDinamica] = Field(
+        default_factory=list,
+        description="Tablas de soporte generadas solo si los datos lo justifican",
+    )
+
+
+class ReporteDinamicoIA(BaseModel):
+    titulo_reporte: str = Field(description="Título principal contextualizado al informe")
+    tesis_central: str = Field(description="Conclusión o hallazgo principal en uno o dos párrafos")
+    secciones: list[SeccionDinamica] = Field(
+        default_factory=list,
+        description="Conjunto de secciones estructuradas libremente según el criterio del análisis",
+    )
+    indicadores_clave: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Indicadores cuantitativos extraídos de la base de datos",
+    )
+    tipo_reporte: str | None = Field(default=None)
+    periodo: str | None = Field(default=None)
+    modelo_utilizado: str | None = Field(default="Altair (Gemma 4 E2B)")
+    semilla_generativa: int | None = Field(default=None)
+    enfoque_personalizado: str | None = Field(default=None)
+    fecha_generacion: str | None = Field(default=None)
+    resumen_ejecutivo: str | None = Field(default=None)
+    diagnostico_rendimiento: str | None = Field(default=None)
+    tablas_analiticas: list[Any] = Field(default_factory=list)
+    cuellos_de_botella: list[str] = Field(default_factory=list)
+    recomendaciones_estrategicas: list[str] = Field(default_factory=list)
+
+
+ExecutiveReportResponse = ReporteDinamicoIA
+ReportTable = TablaDinamica
 
 
 

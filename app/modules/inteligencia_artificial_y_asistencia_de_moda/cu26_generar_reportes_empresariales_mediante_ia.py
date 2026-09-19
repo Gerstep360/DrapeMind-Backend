@@ -1,4 +1,4 @@
-"""CU-26: Generar reportes empresariales mediante IA real.
+"""CU-26: Generar reportes empresariales mediante IA con estructura totalmente libre y dinámica.
 Paquete: Inteligencia artificial y asistencia de moda (PK-05).
 """
 import json
@@ -8,7 +8,6 @@ from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select, desc
 from sqlalchemy.orm import Session
 
@@ -28,30 +27,17 @@ from app.models import (
     Role,
     User,
 )
-from app.schemas.api import ExecutiveReportRequest, ExecutiveReportResponse, ReportTable
+from app.schemas.api import (
+    ExecutiveReportRequest,
+    ExecutiveReportResponse,
+    ReporteDinamicoIA,
+    SeccionDinamica,
+    TablaDinamica,
+)
 from app.services.ai import call_gemma
 from app.services.push_notifications import dispatch_notification
 
 router = APIRouter()
-
-
-# 1. Esquema Pydantic para el contenido cualitativo generado por la IA
-class AIReportContent(BaseModel):
-    resumen_ejecutivo: str = Field(description="Síntesis directiva del desempeño del negocio")
-    diagnostico_rendimiento: str = Field(description="Diagnóstico operativo y financiero detallado")
-    analisis_enfoque: str | None = Field(None, description="Respuesta analítica al enfoque específico solicitado por el directorio")
-    cuellos_de_botella: list[str] = Field(description="Entre 2 y 4 cuellos de botella reales detectados según las métricas")
-    recomendaciones_estrategicas: list[str] = Field(description="Entre 3 y 5 acciones concretas priorizadas")
-
-    @field_validator("cuellos_de_botella", "recomendaciones_estrategicas", mode="before")
-    @classmethod
-    def parse_list_items(cls, v: Any) -> list[str]:
-        if isinstance(v, str):
-            lines = [line.strip().lstrip("•-*0123456789. ") for line in v.split("\n") if line.strip()]
-            return [l for l in lines if l]
-        if isinstance(v, list):
-            return [str(x).strip() for x in v if str(x).strip()]
-        return []
 
 
 def _extract_json_payload(text: str) -> dict:
@@ -73,48 +59,62 @@ def _extract_json_payload(text: str) -> dict:
         raise
 
 
-# 2. Motor de inferencia cualitativa con IA real
-async def generar_analisis_ia(
+# -----------------------------------------------------------------
+# 1. Motor de IA con Libertad Estructural Absoluta (Sin Plantillas)
+# -----------------------------------------------------------------
+async def generar_reporte_totalmente_libre(
     contexto_datos: dict,
     enfoque: str | None,
     modelo_ia: str | None = None,
     seed: int | None = None,
-) -> AIReportContent:
-    """Invoca el LLM exigiendo Structured Output JSON validado contra Pydantic."""
+) -> ReporteDinamicoIA:
+    """La IA decide títulos, secciones, narrativa y tablas analíticas según los datos reales."""
     system_prompt = (
-        "Eres un consultor estratégico senior de retail de lujo y alta costura. "
-        "Analiza rigurosamente los datos cuantitativos provistos del negocio y genera un diagnóstico "
-        "estratégico directivo en formato JSON válido según el esquema solicitado. CERO EMOJIS."
+        "Eres un auditor y consultor directivo senior de alta costura y retail de lujo. "
+        "Tu labor es auditar los datos y armar un informe a tu propio criterio profesional. "
+        "No uses plantillas genéricas, ni títulos repetitivos de manual (prohibido usar 'Resumen Ejecutivo', "
+        "'Diagnóstico', 'Cuellos de Botella' o listas numeradas rígidas). "
+        "Determina los títulos, la cantidad de secciones, la narrativa y si necesitas apoyar tus argumentos con "
+        "tablas o no. Formato exclusivo: JSON válido. CERO EMOJIS."
     )
 
     user_prompt = f"""
-Métricas y datos operativos reales del negocio:
+Datos reales extraídos de la base de datos:
 {json.dumps(contexto_datos, indent=2, default=str, ensure_ascii=False)}
 
-Enfoque específico solicitado por el directorio:
-{enfoque or "Diagnóstico general de rentabilidad, eficiencia operativa y gestión de atelier"}
+Petición del usuario / Enfoque directivo:
+{enfoque or "Auditoría general del estado del negocio, rentabilidad y operaciones"}
 
-Genera el análisis estratégico completo en formato JSON con la siguiente estructura exacta:
+INSTRUCCIONES DE GENERACIÓN:
+1. Diseña la estructura del reporte como mejor consideres para comunicar la situación real.
+2. Define títulos descriptivos que reflejen el hallazgo de cada bloque (por ejemplo: 'Concentración de ingresos en alta costura masculina', 'Descalce de inventario en cortes de lino', etc.).
+3. Genera tablas cuantitativas ÚNICAMENTE en las secciones donde una tabla aporte valor para entender las cifras. Define tú las columnas y filas usando los datos provistos. Si una sección se explica mejor con prosa, no incluyas tablas en ella.
+4. Genera entre 2 y 5 secciones según la complejidad de los datos.
+5. Moneda en Bolivianos (Bs).
+
+ESTRUCTURA JSON EXACTA REQUERIDA:
 {{
-  "resumen_ejecutivo": "Síntesis directiva del desempeño del negocio basada en las métricas",
-  "diagnostico_rendimiento": "Diagnóstico operativo, comercial y financiero exhaustivo",
-  "analisis_enfoque": "Análisis y respuesta profunda al enfoque específico solicitado por el directorio",
-  "cuellos_de_botella": [
-    "Cuello de botella 1 detectado en los datos",
-    "Cuello de botella 2 detectado en los datos"
-  ],
-  "recomendaciones_estrategicas": [
-    "Acción estratégica priorizada 1",
-    "Acción estratégica priorizada 2",
-    "Acción estratégica priorizada 3"
+  "titulo_reporte": "Título principal contextualizado al informe",
+  "tesis_central": "Conclusión o hallazgo principal en uno o dos párrafos",
+  "secciones": [
+    {{
+      "titulo": "Título analítico original inventado según los hallazgos",
+      "contenido": "Desarrollo analítico y cuantitativo de la sección",
+      "tablas": [
+        {{
+          "titulo": "Título descriptivo asignado a la tabla",
+          "columnas": ["Columna A", "Columna B"],
+          "filas": [["Dato 1", "Dato 2"]],
+          "nota_al_pie": "Conclusión puntual o aclaratoria de la tabla (opcional)"
+        }}
+      ]
+    }}
   ]
 }}
 
-REGLAS ESTRICTAS:
-1. Responde EXCLUSIVAMENTE con el objeto JSON válido. Cero texto o explicaciones antes o después del JSON.
-2. CERO EMOJIS.
-3. No inventes métricas cuantitativas que contradigan los datos provistos.
-4. Moneda en Bolivianos (Bs).
+REGLAS OBLIGATORIAS:
+- Responde EXCLUSIVAMENTE con el objeto JSON válido. Cero preámbulos o comentarios fuera del JSON.
+- CERO EMOJIS.
 """
 
     try:
@@ -124,10 +124,10 @@ REGLAS ESTRICTAS:
             response_format={"type": "json_object"},
             seed=seed,
             temperature=0.35,
-            max_tokens=1600,
+            max_tokens=1500,
         )
         data = _extract_json_payload(raw_response)
-        return AIReportContent.model_validate(data)
+        return ReporteDinamicoIA.model_validate(data)
     except Exception as e:
         raise HTTPException(
             status_code=502,
@@ -135,7 +135,9 @@ REGLAS ESTRICTAS:
         )
 
 
-# 3. Extracción de métricas de base de datos (SQLAlchemy)
+# -----------------------------------------------------------------
+# 2. Extracción de Métricas Puras de Base de Datos (SQLAlchemy)
+# -----------------------------------------------------------------
 def recopilar_metricas_bd(db: Session, periodo: str):
     """Extrae exclusivamente los datos duros cuantitativos de la base de datos."""
     now = datetime.now(timezone.utc)
@@ -231,7 +233,7 @@ def recopilar_metricas_bd(db: Session, periodo: str):
         "periodo_auditado": periodo_humano,
     }
 
-    # Top Clientes
+    # Clientes con mayor volumen
     completed_filter = [Order.estado.in_(["ENTREGADO", "PAGADO", "LISTO", "ENVIADO"])]
     if start_date:
         completed_filter.append(Order.created_at >= start_date)
@@ -246,7 +248,7 @@ def recopilar_metricas_bd(db: Session, periodo: str):
         .where(*completed_filter)
         .group_by(User.id)
         .order_by(desc("total_gastado"))
-        .limit(5)
+        .limit(6)
     )
     top_users = db.execute(top_users_query).all()
     if not top_users:
@@ -260,11 +262,11 @@ def recopilar_metricas_bd(db: Session, periodo: str):
             .join(Order, Order.usuario_id == User.id)
             .group_by(User.id)
             .order_by(desc("total_gastado"))
-            .limit(5)
+            .limit(6)
         )
         top_users = db.execute(fallback_users_query).all()
 
-    # Top Prendas
+    # Artículos más demandados
     top_products_query = (
         select(
             OrderItem.nombre_snapshot,
@@ -277,11 +279,11 @@ def recopilar_metricas_bd(db: Session, periodo: str):
         .outerjoin(Category, Category.id == Product.categoria_id)
         .group_by(OrderItem.nombre_snapshot, Category.nombre)
         .order_by(desc("unidades_vendidas"))
-        .limit(5)
+        .limit(6)
     )
     top_products = db.execute(top_products_query).all()
 
-    # Stock Crítico
+    # Variantes con stock crítico
     critical_stock_query = (
         select(
             Product.nombre,
@@ -297,11 +299,11 @@ def recopilar_metricas_bd(db: Session, periodo: str):
             (ProductVariant.stock_total - ProductVariant.stock_reservado) <= 3,
         )
         .order_by((ProductVariant.stock_total - ProductVariant.stock_reservado).asc())
-        .limit(5)
+        .limit(6)
     )
     critical_stock = db.execute(critical_stock_query).all()
 
-    # Ventas por Sede
+    # Rendimiento por sedes y canales
     branch_sales_query = (
         select(
             func.coalesce(Branch.nombre, "Canal Digital / Online").label("sede"),
@@ -313,100 +315,127 @@ def recopilar_metricas_bd(db: Session, periodo: str):
         .outerjoin(City, City.id == Branch.ciudad_id)
         .group_by(Branch.nombre, City.nombre)
         .order_by(desc("facturado"))
-        .limit(5)
+        .limit(6)
     )
     branch_sales = db.execute(branch_sales_query).all()
 
     return indicadores, top_users, top_products, critical_stock, branch_sales, periodo_humano
 
 
-# 4. Construcción de tablas analíticas basadas en datos reales
-def armar_tablas_analiticas(top_users, top_products, critical_stock, branch_sales) -> list[ReportTable]:
-    tablas: list[ReportTable] = []
+# -----------------------------------------------------------------
+# 3. Endpoint Principal CU-26 con Estructura Dinámica y Libre
+# -----------------------------------------------------------------
+@router.post(
+    "/reports/generate",
+    response_model=ReporteDinamicoIA,
+    summary="CU-26: Generar informe empresarial estructurado por IA",
+    description="La IA diseña libremente títulos, secciones, narrativa y tablas analíticas según los datos reales.",
+)
+async def generar_informe_empresarial_ia(
+    payload: ExecutiveReportRequest,
+    _admin: User = Depends(require_role(Role.ADMIN)),
+    db: Session = Depends(get_db),
+) -> ReporteDinamicoIA:
+    # 1. Extracción de datos crudos (sin lógica de presentación)
+    indicadores, top_users, top_products, critical_stock, branch_sales, periodo_humano = recopilar_metricas_bd(
+        db, payload.periodo
+    )
 
-    if top_users:
-        filas_usuarios = [
-            [
-                u.nombre or f"Cliente #{idx+1}",
-                u.email or "Sin correo",
-                f"{u.total_pedidos} orden{'es' if u.total_pedidos != 1 else ''}",
-                f"Bs {float(u.total_gastado):,.2f}",
-                "VIP Atelier" if float(u.total_gastado) >= 1500 or u.total_pedidos >= 3 else "Frecuente",
-            ]
-            for idx, u in enumerate(top_users)
-        ]
-        tablas.append(
-            ReportTable(
-                titulo="Clientes con Mayor Volumen de Compra y Facturación",
-                columnas=["Cliente", "Correo de Contacto", "Pedidos Realizados", "Inversión Total", "Segmento"],
-                filas=filas_usuarios,
-                resumen=f"El cliente con mayor volumen de compra es {top_users[0].nombre or 'Cliente Principal'} con una inversión total de Bs {float(top_users[0].total_gastado):,.2f}.",
-            )
-        )
-
-    if top_products:
-        filas_prendas = [
-            [
-                p.nombre_snapshot or "Prenda Sastrera",
-                p.categoria or "Línea General",
-                f"{p.unidades_vendidas} uds",
-                f"Bs {float(p.total_facturado):,.2f}",
-                "Alta Rotación" if p.unidades_vendidas >= 4 else "Demanda Moderada",
-            ]
+    # 2. Contexto completo para el LLM
+    contexto_datos = {
+        "periodo_analizado": periodo_humano,
+        "indicadores_generales": indicadores,
+        "clientes_destacados": [
+            {
+                "nombre": u.nombre or "Cliente",
+                "email": u.email,
+                "pedidos": u.total_pedidos,
+                "facturado_bob": float(u.total_gastado),
+            }
+            for u in top_users
+        ],
+        "articulos_vendidos": [
+            {
+                "prenda": p.nombre_snapshot or "Prenda",
+                "categoria": p.categoria,
+                "unidades": p.unidades_vendidas,
+                "subtotal_bob": float(p.total_facturado),
+            }
             for p in top_products
-        ]
-        tablas.append(
-            ReportTable(
-                titulo="Prendas Sastreras con Mayor Demanda y Rotación Comercial",
-                columnas=["Prenda / Modelo", "Colección", "Unidades Vendidas", "Facturación Bruta", "Rotación"],
-                filas=filas_prendas,
-                resumen=f"La prenda líder en ventas es '{top_products[0].nombre_snapshot}' con {top_products[0].unidades_vendidas} unidades desplazadas.",
-            )
-        )
-
-    if critical_stock:
-        filas_stock = [
-            [
-                s.nombre,
-                s.categoria,
-                str(s.talla),
-                str(s.color),
-                f"{s.disponible} uds",
-                "CRÍTICA (URGENTE)" if s.disponible <= 1 else "Reposición Regular",
-            ]
+        ],
+        "inventario_critico": [
+            {
+                "prenda": s.nombre,
+                "talla": str(s.talla),
+                "color": str(s.color),
+                "stock_restante": s.disponible,
+            }
             for s in critical_stock
-        ]
-        tablas.append(
-            ReportTable(
-                titulo="Inventario en Umbral de Stock Crítico (<= 3 Unidades)",
-                columnas=["Prenda", "Línea", "Talla", "Color", "Stock Disponible", "Prioridad Taller"],
-                filas=filas_stock,
-                resumen=f"Se identifican {len(critical_stock)} variantes prioritarias para reposición inmediata con proveedores de tela.",
-            )
-        )
-
-    if branch_sales and any(b.total_pedidos > 0 for b in branch_sales):
-        filas_canales = [
-            [
-                b.sede,
-                b.ciudad,
-                f"{b.total_pedidos} pedidos",
-                f"Bs {float(b.facturado):,.2f}",
-            ]
+        ],
+        "desempeno_canales": [
+            {
+                "canal_sucursal": b.sede,
+                "ciudad": b.ciudad,
+                "pedidos": b.total_pedidos,
+                "total_bob": float(b.facturado),
+            }
             for b in branch_sales
-        ]
-        tablas.append(
-            ReportTable(
-                titulo="Distribución de Facturación por Sedes y Canales",
-                columnas=["Canal / Sucursal", "Ciudad", "Pedidos", "Facturación Neta"],
-                filas=filas_canales,
-                resumen=f"Canal principal: {branch_sales[0].sede} con Bs {float(branch_sales[0].facturado):,.2f}.",
-            )
+        ],
+    }
+
+    # 3. La IA genera títulos, estructura, tablas y análisis
+    reporte_final = await generar_reporte_totalmente_libre(
+        contexto_datos=contexto_datos,
+        enfoque=payload.enfoque_especifico,
+        modelo_ia=payload.modelo_ia,
+        seed=payload.seed,
+    )
+
+    # Mapeo del nombre del modelo para la respuesta
+    nombre_modelo = "Gemma-4-E2B-Instruct"
+    if payload.modelo_ia == "ALTAIR_MINI":
+        nombre_modelo = "Altair Mini (Scout 0.6B - Inferencia Rápida)"
+    elif payload.modelo_ia == "ALTAIR_VARIABLE":
+        nombre_modelo = "Altair Variable (Orquestación Híbrida Dinámica)"
+    elif payload.modelo_ia == "ALTAIR":
+        nombre_modelo = "Altair Principal (Gemma 4 E2B - Razonamiento Profundo)"
+
+    # Enriquecer reporte con métricas cuantitativas y metadatos
+    reporte_final.indicadores_clave = indicadores
+    reporte_final.tipo_reporte = payload.tipo_reporte
+    reporte_final.periodo = payload.periodo
+    reporte_final.modelo_utilizado = nombre_modelo
+    reporte_final.semilla_generativa = payload.seed
+    reporte_final.enfoque_personalizado = payload.enfoque_especifico
+    reporte_final.fecha_generacion = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M UTC")
+    reporte_final.resumen_ejecutivo = reporte_final.tesis_central
+    if reporte_final.secciones:
+        reporte_final.diagnostico_rendimiento = reporte_final.secciones[0].contenido
+
+    # Despachar notificación al usuario administrador
+    try:
+        await dispatch_notification(
+            db=db,
+            user_id=_admin.id,
+            titulo="Reporte Empresarial Generado",
+            mensaje=f"'{reporte_final.titulo_reporte}' ({periodo_humano}) ha sido procesado con {nombre_modelo}.",
+            tipo="REPORTE_GENERADO",
+            payload={
+                "screen": "/reports",
+                "periodo": payload.periodo,
+                "tipo": payload.tipo_reporte,
+                "seed": payload.seed,
+            },
         )
+    except Exception:
+        pass
 
-    return tablas
+    return reporte_final
 
 
+# -----------------------------------------------------------------
+# 4. Endpoint Resumen Ejecutivo Básico
+# -----------------------------------------------------------------
 @router.post(
     "/reports/executive-summary",
     summary="CU-26: Generar resumen ejecutivo inteligente de ventas y tendencias (Básico)",
@@ -448,120 +477,3 @@ async def generar_resumen_ejecutivo_ia(
         },
         "informe_ejecutivo": summary,
     }
-
-
-# 5. Endpoint Principal CU-26 con IA Real y Structured Outputs
-@router.post(
-    "/reports/generate",
-    response_model=ExecutiveReportResponse,
-    summary="CU-26: Generar informe empresarial con IA real",
-    description="Extrae datos reales con SQLAlchemy y delega a la IA el análisis cualitativo en JSON estructurado.",
-)
-async def generar_informe_empresarial_ia(
-    payload: ExecutiveReportRequest,
-    _admin: User = Depends(require_role(Role.ADMIN)),
-    db: Session = Depends(get_db),
-) -> ExecutiveReportResponse:
-    # 1. Extracción de métricas de BD (SQLAlchemy)
-    indicadores, top_users, top_products, critical_stock, branch_sales, periodo_humano = recopilar_metricas_bd(
-        db, payload.periodo
-    )
-
-    # 2. Ensamblado del contexto real para el modelo de IA
-    contexto_analitico = {
-        "tipo_reporte": payload.tipo_reporte,
-        "periodo": periodo_humano,
-        "indicadores_generales": indicadores,
-        "top_clientes": [
-            {
-                "nombre": u.nombre or "Cliente",
-                "email": u.email,
-                "pedidos": u.total_pedidos,
-                "total_gastado": float(u.total_gastado),
-            }
-            for u in top_users
-        ],
-        "top_prendas": [
-            {
-                "prenda": p.nombre_snapshot or "Prenda",
-                "categoria": p.categoria,
-                "unidades": p.unidades_vendidas,
-                "facturado": float(p.total_facturado),
-            }
-            for p in top_products
-        ],
-        "stock_critico": [
-            {
-                "prenda": s.nombre,
-                "talla": str(s.talla),
-                "color": str(s.color),
-                "disponible": s.disponible,
-                "categoria": s.categoria,
-            }
-            for s in critical_stock
-        ],
-        "ventas_por_sede": [
-            {
-                "sede": b.sede,
-                "ciudad": b.ciudad,
-                "pedidos": b.total_pedidos,
-                "facturado": float(b.facturado),
-            }
-            for b in branch_sales
-        ],
-    }
-
-    # 3. La IA procesa y genera todo el análisis cualitativo estructurado
-    analisis_ia = await generar_analisis_ia(
-        contexto_datos=contexto_analitico,
-        enfoque=payload.enfoque_especifico,
-        modelo_ia=payload.modelo_ia,
-        seed=payload.seed,
-    )
-
-    # 4. Construcción de tablas analíticas basadas en datos duros
-    tablas = armar_tablas_analiticas(top_users, top_products, critical_stock, branch_sales)
-
-    # Mapeo del nombre del modelo para la respuesta
-    nombre_modelo = "Gemma-4-E2B-Instruct"
-    if payload.modelo_ia == "ALTAIR_MINI":
-        nombre_modelo = "Altair Mini (Scout 0.6B - Inferencia Rápida)"
-    elif payload.modelo_ia == "ALTAIR_VARIABLE":
-        nombre_modelo = "Altair Variable (Orquestación Híbrida Dinámica)"
-    elif payload.modelo_ia == "ALTAIR":
-        nombre_modelo = "Altair Principal (Gemma 4 E2B - Razonamiento Profundo)"
-
-    # Despachar notificación al usuario administrador
-    try:
-        await dispatch_notification(
-            db=db,
-            user_id=_admin.id,
-            titulo="Reporte Empresarial Generado",
-            mensaje=f"El informe estratégico de {payload.tipo_reporte} ({periodo_humano}) ha sido procesado con {nombre_modelo}.",
-            tipo="REPORTE_GENERADO",
-            payload={
-                "screen": "/reports",
-                "periodo": payload.periodo,
-                "tipo": payload.tipo_reporte,
-                "seed": payload.seed,
-            },
-        )
-    except Exception:
-        pass
-
-    # 5. Respuesta limpia y validada
-    return ExecutiveReportResponse(
-        tipo_reporte=payload.tipo_reporte,
-        periodo=payload.periodo,
-        modelo_utilizado=nombre_modelo,
-        semilla_generativa=payload.seed,
-        angulo_estrategico=None,
-        indicadores_clave=indicadores,
-        resumen_ejecutivo=analisis_ia.resumen_ejecutivo,
-        diagnostico_rendimiento=analisis_ia.diagnostico_rendimiento,
-        enfoque_personalizado=analisis_ia.analisis_enfoque,
-        tablas_analiticas=tablas,
-        cuellos_de_botella=analisis_ia.cuellos_de_botella,
-        recomendaciones_estrategicas=analisis_ia.recomendaciones_estrategicas,
-        fecha_generacion=datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M UTC"),
-    )
