@@ -90,6 +90,9 @@ class Settings(BaseSettings):
     STRIPE_SECRET_KEY: str = ""
     STRIPE_PUBLISHABLE_KEY: str = ""
     AR_ASSET_BASE_URL: str = "http://localhost:8000/static/ar"
+    FCM_SERVER_KEY: str | None = None
+    FIREBASE_CREDENTIALS_PATH: str | None = None
+    FIREBASE_PROJECT_ID: str = "drapemind-5bd6e"
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod

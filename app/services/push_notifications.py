@@ -34,7 +34,7 @@ async def send_fcm_message(
     # registrar el despacho estructurado para simulacion y pruebas.
     if not fcm_server_key:
         logger.info(
-            "[FCM Push Dispatch] Despachando a %d dispositivos vinculados (titulo='%s', silent=%s)",
+            "[FCM Push Dispatch] Simulado para %d dispositivos vinculados (titulo='%s', silent=%s). Para activar push en background configure FCM_SERVER_KEY o Firebase Service Account.",
             len(tokens),
             title,
             silent,
@@ -65,6 +65,9 @@ async def send_fcm_message(
                     "body": body,
                     "sound": "default",
                     "badge": 1,
+                    "android_channel_id": "drapemind_alerts",
+                    "channel_id": "drapemind_alerts",
+                    "click_action": "FLUTTER_NOTIFICATION_CLICK",
                 }
             else:
                 payload["content_available"] = True

@@ -56,7 +56,7 @@ def _serialize_promo(db: Session, promo: Promotion) -> dict:
         prod = db.get(Product, promo.producto_id)
         if prod:
             data["producto_nombre"] = prod.nombre
-            data["producto_imagen"] = prod.imagen_principal or (prod.imagenes[0] if prod.imagenes else None)
+            data["producto_imagen"] = prod.imagenes[0] if (getattr(prod, "imagenes", None) and len(prod.imagenes) > 0) else None
     return data
 
 
