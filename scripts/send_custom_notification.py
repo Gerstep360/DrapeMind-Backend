@@ -41,6 +41,8 @@ def get_users_summary(db):
 async def send_to_user(db, user_id, title, message, screen, notification_type):
     payload = {
         "screen": screen,
+        "enlace": screen,
+        "url": screen,
         "action": "NAVIGATE",
     }
     notif = await dispatch_notification(
