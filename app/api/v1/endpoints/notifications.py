@@ -9,6 +9,7 @@ from app.api.deps import get_current_user
 from app.db.session import get_db
 from app.models.entities import Notification, User, UserDevice
 from app.services.push_notifications import dispatch_notification, sync_silent_dismissal
+from app.services.realtime import event_hub
 
 router = APIRouter()
 
@@ -251,3 +252,20 @@ async def send_test_notification(
         "notification_id": notif.id if notif else None,
         "message": "Notificacion despachada a todos los dispositivos vinculados.",
     }
+
+
+class BroadcastPayload(BaseModel):
+    event: dict[str, Any]
+    user_id: int | None = None
+
+
+@router.post(
+    "/notifications/broadcast",
+    summary="Difusion de eventos WebSocket para Web y terminales conectados",
+    description="Permite que procesos auxiliares y tareas en segundo plano emitan eventos en tiempo real.",
+)
+async def broadcast_notification_event(
+    payload: BroadcastPayload,
+) -> dict[str, str]:
+    await event_hub.publish(payload.event, user_id=payload.user_id)
+    return {"status": "broadcasted"}

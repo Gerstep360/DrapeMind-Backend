@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from sqlalchemy import BigInteger, Boolean, DateTime, Enum, ForeignKey, Integer, Numeric, SmallInteger, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import ARRAY, CITEXT, JSONB, UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
@@ -16,6 +16,7 @@ class Role(str, enum.Enum):
     VENDEDOR = "VENDEDOR"
     ENCARGADO = "ENCARGADO"
     CAJERO = "CAJERO"
+    PROVEEDOR = "PROVEEDOR"
 
 
 class UserStatus(str, enum.Enum):
@@ -372,7 +373,18 @@ class Supplier(TimestampMixin, Base):
     ciudad: Mapped[str] = mapped_column(String(100), default="La Paz")
     direccion: Mapped[str | None] = mapped_column(String(250))
     categoria_suministro: Mapped[str] = mapped_column(String(100), default="Telas y Confección")
+    usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True, index=True)
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    usuario: Mapped[User | None] = relationship("User", foreign_keys=[usuario_id], lazy="joined")
+
+    @property
+    def usuario_email(self) -> str | None:
+        return self.usuario.email if self.usuario else None
+
+    @property
+    def usuario_nombre(self) -> str | None:
+        return self.usuario.nombre if self.usuario else None
 
 
 class Promotion(TimestampMixin, Base):

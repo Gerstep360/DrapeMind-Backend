@@ -461,6 +461,12 @@ class SupplierInput(BaseModel):
     activo: bool = True
 
 
+class SupplierAccountCreate(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=6, max_length=100)
+    nombre: str | None = Field(default=None, max_length=120)
+
+
 class SupplierOut(ORMModel):
     id: int
     nombre_empresa: str
@@ -472,6 +478,9 @@ class SupplierOut(ORMModel):
     direccion: str | None
     categoria_suministro: str
     activo: bool
+    usuario_id: int | None = None
+    usuario_email: str | None = None
+    usuario_nombre: str | None = None
     created_at: datetime
     updated_at: datetime
 

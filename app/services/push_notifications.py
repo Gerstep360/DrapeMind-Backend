@@ -370,6 +370,19 @@ async def dispatch_notification(
     }
     await event_hub.publish(ws_event, user_id=user_id)
 
+    # Si este proceso no tiene clientes conectados (ej. scripts CLI, workers),
+    # reenviar al proceso principal de Uvicorn via HTTP loopback local
+    if len(event_hub.connections) == 0:
+        try:
+            backend_port = os.environ.get("PORT", "8045")
+            async with httpx.AsyncClient(timeout=1.0) as http_client:
+                await http_client.post(
+                    f"http://127.0.0.1:{backend_port}/api/v1/notifications/broadcast",
+                    json={"event": ws_event, "user_id": user_id},
+                )
+        except Exception:
+            pass
+
     # 2. Consultar tokens activos en tabla de dispositivos (1:N)
     stmt = select(UserDevice).where(UserDevice.activo == True)  # noqa: E712
     if user_id is not None:
