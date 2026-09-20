@@ -315,6 +315,7 @@ class CheckoutRequest(BaseModel):
     direccion_id: int | None = None
     costo_envio: Decimal = Field(default=0, ge=0)
     observacion: str | None = Field(default=None, max_length=300)
+    codigo_promocion: str | None = Field(default=None, max_length=50)
 
     @model_validator(mode="after")
     def require_address_for_delivery(self) -> "CheckoutRequest":

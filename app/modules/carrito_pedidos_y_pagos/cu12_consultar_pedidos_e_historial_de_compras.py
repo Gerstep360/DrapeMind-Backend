@@ -314,9 +314,13 @@ def download_receipt(
             f"   SKU: {item.sku_snapshot} | Precio: Bs {item.precio_unitario:.2f} | Subtotal: Bs {item.subtotal:.2f}"
         )
 
-    lines.extend([
+    summary_lines = [
         "--------------------------------------------------",
-        f"Subtotal Prendas : Bs {sum((i.subtotal for i in items), Decimal('0')):.2f}",
+        f"Subtotal Prendas : Bs {order.subtotal:.2f}",
+    ]
+    if order.descuento > Decimal("0.00"):
+        summary_lines.append(f"Descuento Cupón  : -Bs {order.descuento:.2f}")
+    summary_lines.extend([
         f"Costo de Envío   : Bs {order.costo_envio:.2f}",
         f"TOTAL PAGADO     : Bs {order.total:.2f} BOB",
         "--------------------------------------------------",
@@ -326,6 +330,7 @@ def download_receipt(
         "Documento interno informativo y comprobante de entrega.",
         "==================================================",
     ])
+    lines.extend(summary_lines)
 
     return PlainTextResponse(
         "\n".join(lines),

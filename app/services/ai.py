@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.models import (
     AIInteraction, AIRecommendation, AISession, Product, ProductVariant, User,
+    UserStyleProfile,
 )
 from app.services.store import cart_payload, replace_cart_item, search_products
 from app.services.ai_tools import TOOLS
@@ -33,6 +34,7 @@ logger = logging.getLogger("drapemind.ai")
 SYSTEM_PROMPT = (
     "Eres Altair, el Personal Stylist & Asesor de Imagen de DrapeMind Atelier. "
     "La moneda oficial es el Boliviano (Bs o BOB); nunca uses euros (€) ni dólares ($). "
+    "Respeta estrictamente el género del usuario (HOMBRE o MUJER) y sus tallas registradas en su perfil de estilo. "
     "Usa solo datos verificados por FastAPI, no inventes stock ni precios y responde de forma elocuente, breve y accionable."
 )
 
@@ -212,27 +214,34 @@ async def call_gemma(
     headers = {"Authorization": f"Bearer {settings.AI_API_KEY}"}
 
     call_timeout = max(float(settings.AI_TIMEOUT_SECONDS), 180.0) if (max_tokens and max_tokens > 800) else float(settings.AI_TIMEOUT_SECONDS)
-    try:
-        async with model_runtime.lease():
-            async with httpx.AsyncClient(timeout=call_timeout) as client:
-                response = await client.post(
-                    f"{settings.AI_BASE_URL.rstrip('/')}/chat/completions",
-                    json=payload,
-                    headers=headers,
-                )
-                response.raise_for_status()
-                data = response.json()
-    except (httpx.HTTPError, KeyError, ValueError, ModelRuntimeError) as exc:
-        raise HTTPException(
-            status_code=503,
-            detail="El servidor local de Gemma no esta disponible o devolvio una respuesta invalida",
-        ) from exc
-    usage = data.get("usage", {})
-    return data["choices"][0]["message"]["content"], {
-        "prompt_tokens": usage.get("prompt_tokens"),
-        "completion_tokens": usage.get("completion_tokens"),
-        "model": target_model,
-    }
+    last_exc = None
+    for attempt in range(2):
+        try:
+            async with model_runtime.lease():
+                async with httpx.AsyncClient(timeout=call_timeout) as client:
+                    response = await client.post(
+                        f"{settings.AI_BASE_URL.rstrip('/')}/chat/completions",
+                        json=payload,
+                        headers=headers,
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                    usage = data.get("usage", {})
+                    return data["choices"][0]["message"]["content"], {
+                        "prompt_tokens": usage.get("prompt_tokens"),
+                        "completion_tokens": usage.get("completion_tokens"),
+                        "model": target_model,
+                    }
+        except (httpx.HTTPError, KeyError, ValueError, ModelRuntimeError) as exc:
+            last_exc = exc
+            if attempt == 0:
+                await asyncio.sleep(1.5)
+                continue
+
+    raise HTTPException(
+        status_code=503,
+        detail="El servidor local de Gemma no esta disponible o devolvio una respuesta invalida",
+    ) from last_exc
 
 
 def _extract_json(value: str) -> dict:
@@ -843,8 +852,8 @@ def get_ai_session(db: Session, user_id: int, session_id: int | None) -> AISessi
     return session
 
 
-def _available_candidates(db: Session, limit: int = 30) -> list[dict[str, Any]]:
-    return search_products(db, only_available=True, limit=limit)
+def _available_candidates(db: Session, limit: int = 30, gender: str | None = None) -> list[dict[str, Any]]:
+    return search_products(db, only_available=True, limit=limit, gender=gender)
 
 
 def _save_interaction(
@@ -914,6 +923,19 @@ async def run_ai_action(
     products: list[dict[str, Any]] = []
     recommendations: list[dict[str, Any]] = []
 
+    profile = db.scalar(select(UserStyleProfile).where(UserStyleProfile.usuario_id == user.id))
+    user_gender = profile.genero if profile else None
+    profile_summary = ""
+    if profile:
+        profile_summary = (
+            f" [Perfil Onboarding: Género={profile.genero or 'No especificado'}, "
+            f"Talla Superior={profile.talla_superior or 'N/A'}, "
+            f"Talla Inferior={profile.talla_inferior or 'N/A'}, "
+            f"Calzado={profile.talla_calzado or 'N/A'}, "
+            f"Estilos={', '.join(profile.estilos_preferidos or [])}, "
+            f"Colores={', '.join(profile.colores_favoritos or [])}]"
+        )
+
     if action == "chat":
         events = []
         async def collect(event):
@@ -943,23 +965,31 @@ async def run_ai_action(
 
     elif action == "search":
         kind = "PRODUCT_SEARCH"
-        extractor = ""
-        try:
-            extractor, _ = await call_gemma(
-                "Extrae solo palabras clave concretas de ropa de la consulta. Devuelve una frase corta, sin explicacion.",
-                message,
-                model=model_choice,
-            )
-        except Exception:
-            extractor = message
-        products = search_products(db, query=extractor.strip()[:150], only_available=True, limit=20)
-        if not products:
+        products = search_products(db, query=message.strip()[:150], gender=user_gender, only_available=True, limit=20)
+        if not products and user_gender:
             products = search_products(db, query=message.strip()[:150], only_available=True, limit=20)
-        prompt = f"Consulta: {message}\nProductos encontrados por FastAPI: {json.dumps(products, default=str)}\nResume los mejores resultados."
+        compact_products = [
+            {
+                "id": p.get("id"),
+                "nombre": p.get("nombre"),
+                "precio_bs": str(p.get("precio")),
+                "marca": p.get("marca"),
+                "material": p.get("material"),
+                "genero": str(p.get("genero_objetivo")),
+            }
+            for p in products[:8]
+        ]
+        prompt = (
+            f"Consulta: {message}{profile_summary}\n"
+            f"Prendas disponibles en catálogo: {json.dumps(compact_products, default=str)}\n"
+            "Resume brevemente las mejores opciones acordes al género y tallas del perfil del usuario de forma elocuente y estilizada."
+        )
     elif action in {"outfit", "complete"}:
         kind = "COMPLETE_OUTFIT" if action == "complete" else "GENERATE_OUTFIT"
         tool = "search_products + get_stock"
-        candidates = _available_candidates(db, 30)
+        candidates = _available_candidates(db, 30, gender=user_gender)
+        if not candidates and user_gender:
+            candidates = _available_candidates(db, 30)
         if budget is not None:
             candidates = [p for p in candidates if p["precio"] <= budget]
         products = _pick_variants(db, [p["id"] for p in candidates])
@@ -969,8 +999,8 @@ async def run_ai_action(
                 raise HTTPException(404, "Producto base no encontrado")
             message = f"{message}. Prenda base: {base.nombre} (id {base.id})"
         prompt = (
-            f"Solicitud: {message}\nOpciones reales: {json.dumps(products, default=str)}\n"
-            "Propone un outfit coherente usando de 2 a 4 opciones e incluye sus IDs."
+            f"Solicitud: {message}{profile_summary}\nOpciones reales en inventario: {json.dumps(products, default=str)}\n"
+            "Propone un outfit coherente usando de 2 a 4 opciones del inventario respetando el género y las tallas del usuario."
         )
     elif action in {"style", "value"}:
         kind = "STYLE_CHECK" if action == "style" else "VALUE_CHECK"
@@ -978,11 +1008,36 @@ async def run_ai_action(
         cart = cart_payload(db, user.id)
         if not cart["items"]:
             raise HTTPException(409, "El carrito esta vacio")
-        products = _available_candidates(db, 30)
+        raw_candidates = _available_candidates(db, 15, gender=user_gender)
+        if not raw_candidates and user_gender:
+            raw_candidates = _available_candidates(db, 15)
+        products = raw_candidates[:6]
+        compact_cart = [
+            {
+                "id": it["id"],
+                "nombre": it["nombre"],
+                "precio_bs": str(it["precio_unitario"]),
+                "color": it["color"],
+                "talla": it["talla"],
+            }
+            for it in cart["items"]
+        ]
+        compact_alternatives = [
+            {
+                "id": p.get("id"),
+                "nombre": p.get("nombre"),
+                "precio_bs": str(p.get("precio")),
+                "marca": p.get("marca"),
+                "material": p.get("material"),
+                "categoria": p.get("categoria_nombre"),
+            }
+            for p in products
+        ]
         prompt = (
-            f"Objetivo: {message}\nCarrito real: {json.dumps(cart, default=str)}\n"
-            f"Alternativas reales: {json.dumps(products, default=str)}\n"
-            "Analiza el carrito y propone mejoras concretas solo con esos productos."
+            f"Objetivo: {message}{profile_summary}\n"
+            f"Prendas en perchero: {json.dumps(compact_cart, default=str)}\n"
+            f"Alternativas en catálogo: {json.dumps(compact_alternatives, default=str)}\n"
+            "Analiza el perchero y fundamenta recomendaciones de estilo, combinación y optimización basadas exclusivamente en las prendas y perfil del usuario."
         )
     else:
         raise HTTPException(400, "Accion de IA no soportada")
@@ -992,39 +1047,21 @@ async def run_ai_action(
     usage: dict[str, Any] = {"prompt_tokens": 0, "completion_tokens": 0, "model": target_model_name}
     try:
         raw_answer, raw_usage = await call_gemma(SYSTEM_PROMPT, prompt, model=model_choice)
-        if raw_answer and len(raw_answer.strip()) > 20:
+        if raw_answer and len(raw_answer.strip()) > 10:
             answer = raw_answer.strip()
             usage = raw_usage
-    except Exception:
-        # Fallback sastrero de alta fidelidad sin arrojar 503 cuando el motor local esté ocupado o no disponible
-        pass
+    except Exception as _ai_err:
+        logger.warning("Error invocando gemma en run_ai_action: %s", _ai_err)
+        raise HTTPException(
+            status_code=503,
+            detail="El motor de inteligencia artificial no está disponible temporalmente. Intente nuevamente en unos instantes."
+        )
 
     if not answer:
-        if action == "style":
-            items_desc = ", ".join([f"{it['nombre']} (x{it['cantidad']})" for it in cart.get("items", [])])
-            total_cart = cart.get("total", "0.00")
-            answer = (
-                "Análisis de Estilo y Coherencia del Perchero (Altair AI):\n\n"
-                f"Evaluación de la selección activa ({len(cart.get('items', []))} prendas, total Bs {total_cart}):\n"
-                f"• Piezas auditadas: {items_desc}.\n"
-                "• Coherencia Cromática: La selección de tonos mantiene un contraste balanceado y sobrio, apto para un guardarropa atemporal.\n"
-                "• Armonía de Siluetas: Las piezas presentan equilibrio en caídas y proporciones sastreras, facilitando combinaciones armónicas.\n"
-                "• Veredicto Atelier: Conjunto aprobado con alta coherencia estética. Se sugiere complementar con calzado en tonos neutros o accesorios discretos."
-            )
-        elif action == "value":
-            answer = (
-                "Optimización de Relación Calidad, Precio y Ahorro (Altair AI):\n\n"
-                f"Auditoría algorítmica sobre las {len(cart.get('items', []))} prendas del perchero:\n"
-                "• Análisis de Fibras y Confección: Se auditó la relación entre nivel de calidad textil y costo unitario.\n"
-                "• Alternativas Identificadas: A continuación se detallan reemplazos disponibles en catálogo con nivel sastrero equivalente o superior y ahorro directo en el monto total."
-            )
-        elif action in {"outfit", "complete"}:
-            answer = (
-                "Propuesta de Outfit Curado por Altair Atelier:\n\n"
-                "Combinación armada a partir de las piezas disponibles en inventario con coherencia estilística en cortes y texturas."
-            )
-        else:
-            answer = f"Búsqueda asistida por catálogo completada para: {message}."
+        raise HTTPException(
+            status_code=502,
+            detail="El modelo de inteligencia artificial no devolvió una respuesta válida."
+        )
 
     try:
         interaction = _save_interaction(db, session, kind, message, answer, tool, started, usage)
@@ -1046,6 +1083,8 @@ async def run_ai_action(
             cart = cart_payload(db, user.id)
             for item in cart["items"]:
                 origin = db.get(Product, item["producto_id"])
+                if not origin:
+                    continue
                 alternative = db.execute(
                     select(ProductVariant, Product)
                     .join(Product, Product.id == ProductVariant.producto_id)
@@ -1073,8 +1112,18 @@ async def run_ai_action(
                     db.add(rec)
                     db.flush()
                     recommendations.append({
-                        "id": rec.id, "item_id": item["id"], "producto_id": product.id,
-                        "variante_id": variant.id, "nombre": product.nombre, "ahorro": str(saving),
+                        "id": rec.id,
+                        "item_id": item["id"],
+                        "producto_id": product.id,
+                        "variante_id": variant.id,
+                        "nombre": product.nombre,
+                        "nombre_original": origin.nombre,
+                        "precio_original": str(origin.precio),
+                        "precio_recomendado": str(product.precio),
+                        "ahorro": str(saving),
+                        "talla": variant.talla,
+                        "color": variant.color,
+                        "imagen": variant.imagen or (product.imagenes[0] if product.imagenes else None),
                     })
         db.commit()
     except Exception:

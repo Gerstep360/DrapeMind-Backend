@@ -115,17 +115,22 @@ async def dispatch_notification(
     notification: Notification | None = None
 
     if not silent:
-        notification = Notification(
-            usuario_id=user_id,
-            titulo=titulo,
-            mensaje=mensaje,
-            tipo=tipo,
-            data_payload=payload_data,
-            leido=False,
-        )
-        db.add(notification)
-        db.commit()
-        db.refresh(notification)
+        try:
+            notification = Notification(
+                usuario_id=user_id,
+                titulo=titulo,
+                mensaje=mensaje,
+                tipo=tipo,
+                data_payload=payload_data,
+                leido=False,
+            )
+            db.add(notification)
+            db.commit()
+            db.refresh(notification)
+        except Exception as _db_err:
+            db.rollback()
+            logger.warning("No se pudo persistir la notificacion en BD: %s", _db_err)
+            notification = None
 
     # 1. Enviar evento en tiempo real a traves de WebSockets
     ws_event = {

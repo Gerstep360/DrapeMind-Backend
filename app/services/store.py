@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.models import (
     Address, Branch, BranchStaff, BranchStock, Cart, CartItem, Gender, InventoryMovement,
-    Order, OrderItem, Payment, Product, ProductVariant, Reservation,
+    Order, OrderItem, Payment, Product, ProductVariant, Promotion, Reservation,
     ReservationItem, Role, User,
 )
 
@@ -72,6 +72,29 @@ def _clean_search_tokens(query: str) -> list[str]:
     return filtered if filtered else [t for t in tokens if not t.isdigit()]
 
 
+def normalize_gender(gender_val: str | Gender | None) -> Gender | None:
+    if gender_val is None:
+        return None
+    if isinstance(gender_val, Gender):
+        return gender_val
+    val = str(gender_val).strip().lower()
+    if val in ("hombre", "masculino", "varon", "caballero", "male", "men", "m"):
+        return Gender.HOMBRE
+    if val in ("mujer", "femenino", "dama", "female", "women", "f"):
+        return Gender.MUJER
+    if val in ("unisex", "ambos", "todos"):
+        return Gender.UNISEX
+    if val in ("otro", "other"):
+        return Gender.OTRO
+    try:
+        return Gender(val.upper())
+    except Exception:
+        try:
+            return Gender[val.upper()]
+        except Exception:
+            return None
+
+
 def search_products(
     db: Session,
     query: str | None = None,
@@ -111,20 +134,18 @@ def search_products(
             stmt = stmt.where(Product.precio >= min_price)
         if max_price is not None:
             stmt = stmt.where(Product.precio <= max_price)
-        if gender and gender.upper() != "TODOS":
-            g_up = gender.upper()
-            try:
-                target_gender = Gender[g_up]
-                if target_gender in (Gender.HOMBRE, Gender.MUJER):
-                    stmt = stmt.where(Product.genero_objetivo.in_([target_gender, Gender.UNISEX]))
-                else:
-                    stmt = stmt.where(Product.genero_objetivo == target_gender)
-            except (KeyError, ValueError):
-                pass
+        
+        norm_g = normalize_gender(gender)
+        if norm_g:
+            if norm_g in (Gender.HOMBRE, Gender.MUJER):
+                stmt = stmt.where(Product.genero_objetivo.in_([norm_g, Gender.UNISEX]))
+            elif norm_g != Gender.UNISEX:
+                stmt = stmt.where(Product.genero_objetivo == norm_g)
+
         if color:
-            stmt = stmt.where(ProductVariant.color.ilike(f"%{color}%"))
+            stmt = stmt.where(ProductVariant.color.ilike(f"%{color.strip()}%"))
         if size:
-            stmt = stmt.where(ProductVariant.talla.ilike(size))
+            stmt = stmt.where(ProductVariant.talla.ilike(f"%{size.strip()}%"))
         if only_available:
             stmt = stmt.having(stock > 0)
         return stmt
@@ -601,7 +622,15 @@ def expire_due_reservations(db: Session, limit: int = 100) -> int:
     return len(due)
 
 
-def checkout_cart(db: Session, user: User, delivery_type: str, address_id: int | None, shipping: Decimal, observation: str | None) -> Order:
+def checkout_cart(
+    db: Session,
+    user: User,
+    delivery_type: str,
+    address_id: int | None,
+    shipping: Decimal,
+    observation: str | None,
+    promotion_code: str | None = None,
+) -> Order:
     cart = get_active_cart(db, user.id, create=False)
     items = db.scalars(select(CartItem).where(CartItem.carrito_id == cart.id if cart else -1)).all()
     if not items:
@@ -617,10 +646,49 @@ def checkout_cart(db: Session, user: User, delivery_type: str, address_id: int |
             "telefono_contacto": address.telefono_contacto,
         }
     subtotal = sum((item.precio_referencia * item.cantidad for item in items), Decimal("0.00"))
+
+    # Aplicación y validación de código de promoción
+    descuento = Decimal("0.00")
+    promo_tag = ""
+    if promotion_code:
+        code_clean = promotion_code.strip().upper()
+        promo = db.query(Promotion).filter(Promotion.codigo == code_clean, Promotion.activo.is_(True)).first()
+        if promo:
+            now = datetime.now(timezone.utc)
+            valida = True
+            if promo.fecha_inicio and promo.fecha_inicio > now:
+                valida = False
+            if promo.fecha_fin and promo.fecha_fin < now:
+                valida = False
+            if promo.limite_usos and promo.usos_actuales >= promo.limite_usos:
+                valida = False
+            if promo.monto_minimo_compra > Decimal("0.00") and subtotal < promo.monto_minimo_compra:
+                valida = False
+            if valida and promo.producto_id:
+                cart_prod_ids = [
+                    db.scalar(select(ProductVariant.producto_id).where(ProductVariant.id == it.variante_id))
+                    for it in items
+                ]
+                if promo.producto_id not in cart_prod_ids:
+                    valida = False
+            if valida:
+                if promo.tipo_descuento == "PORCENTAJE":
+                    descuento = (subtotal * (promo.valor_descuento / Decimal("100"))).quantize(Decimal("0.01"))
+                elif promo.tipo_descuento == "DOS_POR_UNO":
+                    descuento = (subtotal * Decimal("0.50")).quantize(Decimal("0.01"))
+                else:
+                    descuento = min(promo.valor_descuento, subtotal)
+                descuento = min(descuento, subtotal)
+                promo.usos_actuales += 1
+                promo_tag = f"[Cupón: {promo.codigo}]"
+
+    total_amount = max(Decimal("0.00"), subtotal - descuento + shipping)
+    final_obs = f"{observation} {promo_tag}".strip() if promo_tag else observation
+
     order = Order(
         usuario_id=user.id, estado="PENDIENTE_PAGO", canal="MOBILE", tipo_entrega=delivery_type,
-        subtotal=subtotal, descuento=0, costo_envio=shipping, total=subtotal + shipping,
-        direccion_entrega_snapshot=address_snapshot, observacion=observation,
+        subtotal=subtotal, descuento=descuento, costo_envio=shipping, total=total_amount,
+        direccion_entrega_snapshot=address_snapshot, observacion=final_obs,
     )
     db.add(order)
     db.flush()

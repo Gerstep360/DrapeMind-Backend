@@ -9,8 +9,11 @@ from sqlalchemy.orm import Session
 
 from app.models import (
     Branch, BranchStock, Favorite, Order, Payment, Product, ProductVariant, Reservation, User,
+    UserStyleProfile,
 )
-from app.services.store import cart_payload, get_product_detail, product_payload, search_products
+from app.services.store import (
+    cart_payload, get_product_detail, normalize_gender, product_payload, search_products,
+)
 
 
 class EmptyArgs(BaseModel):
@@ -22,6 +25,7 @@ class SearchProductsArgs(BaseModel):
     category_id: int | None = Field(default=None, json_schema_extra={"x-context-only": True})
     min_price: Decimal | None = Field(default=None, ge=0)
     max_price: Decimal | None = Field(default=None, ge=0)
+    gender: str | None = Field(default=None, max_length=20, json_schema_extra={"x-user-grounded": True})
     color: str | None = Field(default=None, max_length=60, json_schema_extra={"x-user-grounded": True})
     size: str | None = Field(default=None, max_length=20, json_schema_extra={"x-user-grounded": True})
     limit: int = Field(default=12, ge=1, le=30)
@@ -180,14 +184,34 @@ class ToolDefinition:
 
 def _search(context: ToolContext, raw: BaseModel) -> Any:
     args = SearchProductsArgs.model_validate(raw)
+    effective_gender = args.gender
+    effective_size = args.size
+
+    if context.user:
+        profile = context.db.scalar(
+            select(UserStyleProfile).where(UserStyleProfile.usuario_id == context.user.id)
+        )
+        if profile:
+            if not effective_gender and profile.genero:
+                effective_gender = profile.genero
+            if not effective_size and args.query:
+                q_low = unicodedata.normalize("NFKD", args.query.lower())
+                if any(k in q_low for k in ["zapato", "zapatilla", "calzado", "bota", "mocas", "chelsea"]):
+                    effective_size = profile.talla_calzado
+                elif any(k in q_low for k in ["jean", "pantalon", "falda", "short", "jogger", "palazzo", "chino"]):
+                    effective_size = profile.talla_inferior
+                elif any(k in q_low for k in ["polera", "camisa", "blusa", "chamarra", "hoodie", "sueter", "polo", "top"]):
+                    effective_size = profile.talla_superior
+
     return search_products(
         context.db,
         query=args.query,
         category_id=args.category_id,
         min_price=args.min_price,
         max_price=args.max_price,
+        gender=effective_gender,
         color=args.color,
-        size=args.size,
+        size=effective_size,
         only_available=True,
         limit=args.limit,
     )
@@ -411,14 +435,26 @@ def _recommend_outfit(context: ToolContext, raw: BaseModel) -> Any:
                     "calidad_nivel": base_prod.calidad_nivel,
                 }
 
-    effective_occasion = args.occasion or "estilo atelier"
+    profile = None
+    if context.user:
+        profile = context.db.scalar(
+            select(UserStyleProfile).where(UserStyleProfile.usuario_id == context.user.id)
+        )
+
+    effective_top_size = args.top_size or (profile.talla_superior if profile else None)
+    effective_bottom_size = args.bottom_size or (profile.talla_inferior if profile else None)
+    effective_shoe_size = args.shoe_size or (profile.talla_calzado if profile else None)
+    effective_occasion = args.occasion or (profile.ocasiones_frecuentes[0] if profile and profile.ocasiones_frecuentes else "estilo atelier")
+    effective_budget = args.max_budget or (float(profile.presupuesto_habitual) if profile and profile.presupuesto_habitual else None)
+
     has_any_anchor = bool(
         target_base_id
-        or args.top_size or args.top_sizes
-        or args.bottom_size or args.bottom_sizes
-        or args.shoe_size or args.shoe_sizes
-        or args.max_budget
+        or effective_top_size or args.top_sizes
+        or effective_bottom_size or args.bottom_sizes
+        or effective_shoe_size or args.shoe_sizes
+        or effective_budget
         or args.occasion
+        or profile
     )
     if not has_any_anchor:
         return {
@@ -427,17 +463,11 @@ def _recommend_outfit(context: ToolContext, raw: BaseModel) -> Any:
             "instruction": "Pregunta por la ocasión, tallas o prenda base para armar el outfit personalizado.",
         }
 
-    norm_gender = None
-    if args.gender:
-        g_val = normalized(args.gender)
-        if any(k in g_val for k in ["hombre", "masculin", "varon", "chico", "caballero"]):
-            norm_gender = "HOMBRE"
-        elif any(k in g_val for k in ["mujer", "femenin", "dama", "chica"]):
-            norm_gender = "MUJER"
-        elif "unisex" in g_val:
-            norm_gender = "UNISEX"
+    raw_gender = args.gender or (profile.genero if profile else None)
+    norm_gender_enum = normalize_gender(raw_gender)
+    norm_gender = norm_gender_enum.value if norm_gender_enum else None
 
-    all_available = search_products(context.db, only_available=True, limit=80)
+    all_available = search_products(context.db, gender=norm_gender, only_available=True, limit=80)
     if norm_gender:
         candidates = [p for p in all_available if p.get("genero_objetivo") in (norm_gender, "UNISEX")]
     else:
@@ -445,8 +475,8 @@ def _recommend_outfit(context: ToolContext, raw: BaseModel) -> Any:
     if args.exclude_product_ids:
         excluded = set(args.exclude_product_ids)
         candidates = [p for p in candidates if p.get("id") not in excluded]
-    if args.max_budget and not target_base_id:
-        candidates = [p for p in candidates if float(p.get("precio", 0)) <= args.max_budget]
+    if effective_budget and not target_base_id:
+        candidates = [p for p in candidates if float(p.get("precio", 0)) <= effective_budget]
 
     product_ids = [item["id"] for item in candidates]
     variants = context.db.scalars(
@@ -466,11 +496,11 @@ def _recommend_outfit(context: ToolContext, raw: BaseModel) -> Any:
     for candidate in candidates:
         name = normalized(candidate["nombre"])
         if any(k in name for k in ["zapato", "zapatilla", "bota", "mocas", "chelsea", "oxford"]):
-            requested_sizes = args.shoe_sizes or ([args.shoe_size] if args.shoe_size else [])
+            requested_sizes = args.shoe_sizes or ([effective_shoe_size] if effective_shoe_size else [])
         elif any(k in name for k in ["jean", "pantalon", "jogger", "falda", "palazzo", "chino"]):
-            requested_sizes = args.bottom_sizes or ([args.bottom_size] if args.bottom_size else [])
+            requested_sizes = args.bottom_sizes or ([effective_bottom_size] if effective_bottom_size else [])
         elif any(k in name for k in ["polera", "camisa", "blusa", "polo", "hoodie"]):
-            raw_top_sizes = args.top_sizes or ([args.top_size] if args.top_size else [])
+            raw_top_sizes = args.top_sizes or ([effective_top_size] if effective_top_size else [])
             requested_sizes = [s for s in raw_top_sizes if not (s.isdigit() and int(s) > 36)]
         else:
             requested_sizes = []

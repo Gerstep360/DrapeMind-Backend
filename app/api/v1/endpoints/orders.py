@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from decimal import Decimal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import PlainTextResponse
@@ -27,7 +28,12 @@ def receipt(order_id: int, current_user: User = Depends(get_current_user), db: S
     lines = ["DRAPEMIND — COMPROBANTE DE COMPRA", "Comprobante interno, no es una factura fiscal.",
              f"Pedido: {order.codigo_publico}", f"Sucursal: {order.sucursal_id or 'Venta online'}", ""]
     lines += [f"{item.cantidad} x {item.nombre_snapshot} | {item.color_snapshot} | {item.talla_snapshot} | Bs {item.subtotal:.2f}" for item in items]
-    lines += ["", f"Total: Bs {order.total:.2f}", f"Estado: {order.estado}",
+    lines += ["", f"Subtotal: Bs {order.subtotal:.2f}"]
+    if order.descuento > Decimal("0.00"):
+        lines.append(f"Descuento: -Bs {order.descuento:.2f}")
+    if order.costo_envio > Decimal("0.00"):
+        lines.append(f"Envío: Bs {order.costo_envio:.2f}")
+    lines += [f"Total: Bs {order.total:.2f}", f"Estado: {order.estado}",
               "Pago: " + ", ".join(p.metodo for p in payments)]
     return PlainTextResponse("\n".join(lines), headers={"Content-Disposition": f'attachment; filename="comprobante-{order_id}.txt"'})
 
@@ -44,7 +50,7 @@ def checkout(
 ) -> Order:
     order = checkout_cart(
         db, current_user, payload.tipo_entrega, payload.direccion_id,
-        payload.costo_envio, payload.observacion,
+        payload.costo_envio, payload.observacion, payload.codigo_promocion,
     )
     background_tasks.add_task(
         event_hub.publish,
