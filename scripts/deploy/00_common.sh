@@ -114,54 +114,26 @@ sync_parent_config() {
     done
 }
 
-# Spinner de Animación para Comandos en Terminal
+# Ejecutor Limpio de Comandos para Instalacion y Actualizacion
 tui_spin_cmd() {
     local label="$1"
     shift
     local log_file="/tmp/drapemind-task-$$.log"
 
-    # Si no hay terminal interactiva, ejecutar directamente
-    if [[ ! -t 1 ]]; then
-        log_info "${label}..."
-        "$@"
-        return $?
-    fi
-
-    # Ejecutar comando en segundo plano redirigiendo salida
-    "$@" > "${log_file}" 2>&1 &
-    local pid=$!
-
-    local spin_chars=('-' '\' '|' '/')
-    local i=0
+    log_info "${label}..."
     local start_time
     start_time=$(date +%s)
 
-    # Ocultar cursor
-    tput civis 2>/dev/null || printf "\033[?25l"
-
-    while kill -0 "${pid}" 2>/dev/null; do
-        local now
-        now=$(date +%s)
-        local elapsed=$(( now - start_time ))
-        local char="${spin_chars[i % 10]}"
-        printf "\r  ${COLOR_PRIMARY}${char}${NC} ${BOLD}%s${NC} ${COLOR_MUTED}(%ds)${NC} \033[K" "${label}" "${elapsed}"
-        i=$((i + 1))
-        sleep 0.08
-    done
-
-    # Restaurar cursor
-    tput cnorm 2>/dev/null || printf "\033[?25h"
-
-    wait "${pid}"
-    local exit_code=$?
-    local total_time=$(( $(date +%s) - start_time ))
-
-    if [[ ${exit_code} -eq 0 ]]; then
-        printf "\r  ${COLOR_SUCCESS}${ICON_CHECK}${NC} ${BOLD}%s${NC} ${COLOR_MUTED}(completado en %ds)${NC}\033[K\n" "${label}" "${total_time}"
+    # Ejecutar comando redirigiendo salida a log temporal
+    if "$@" > "${log_file}" 2>&1; then
+        local total_time=$(( $(date +%s) - start_time ))
+        log_success "${label} (completado en ${total_time}s)"
         rm -f "${log_file}"
         return 0
     else
-        printf "\r  ${COLOR_DANGER}${ICON_CROSS}${NC} ${BOLD}%s${NC} ${COLOR_DANGER}(falló tras %ds)${NC}\033[K\n" "${label}" "${total_time}"
+        local exit_code=$?
+        local total_time=$(( $(date +%s) - start_time ))
+        log_error "${label} (falló tras ${total_time}s - código ${exit_code})"
         if [[ -f "${log_file}" ]]; then
             echo -e "${COLOR_MUTED}  ┌── Detalle del error: ─────────────────────────────────────────────┐${NC}"
             while IFS= read -r line; do

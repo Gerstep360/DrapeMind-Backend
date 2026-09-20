@@ -24,12 +24,11 @@ setup_python_venv() {
 
     if [[ ! -d ".venv" ]]; then
         tui_spin_cmd "Creando entorno virtual Python con ${PYTHON_BIN}" ${PYTHON_BIN} -m venv .venv
+        tui_spin_cmd "Actualizando gestor de paquetes pip" \
+            "${BACKEND_DIR}/.venv/bin/python" -m pip install --quiet --upgrade pip
     else
         log_info "Entorno virtual existente detectado en ${DIM}${BACKEND_DIR}/.venv${NC}"
     fi
-
-    tui_spin_cmd "Actualizando gestor de paquetes pip" \
-        "${BACKEND_DIR}/.venv/bin/python" -m pip install --quiet --upgrade pip
 
     tui_spin_cmd "Instalando dependencias de requirements.txt (FastAPI, Uvicorn, SQLAlchemy)" \
         "${BACKEND_DIR}/.venv/bin/pip" install --quiet -r "${BACKEND_DIR}/requirements.txt"
