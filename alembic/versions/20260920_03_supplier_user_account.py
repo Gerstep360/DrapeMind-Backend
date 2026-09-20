@@ -17,19 +17,13 @@ def upgrade() -> None:
     # 1. Agregar valor PROVEEDOR al enum rol_usuario si no existe
     op.execute("ALTER TYPE rol_usuario ADD VALUE IF NOT EXISTS 'PROVEEDOR'")
 
-    # 2. Agregar columna usuario_id a proveedores
-    op.add_column(
-        "proveedores",
-        sa.Column(
-            "usuario_id",
-            sa.BigInteger(),
-            sa.ForeignKey("usuarios.id", ondelete="SET NULL"),
-            nullable=True,
-        ),
-    )
-    op.create_index("ix_proveedores_usuario_id", "proveedores", ["usuario_id"])
+    # 2. Agregar columna usuario_id de manera idempotente
+    op.execute("ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS usuario_id BIGINT REFERENCES usuarios(id) ON DELETE SET NULL")
+
+    # 3. Crear indice de manera idempotente
+    op.execute("CREATE INDEX IF NOT EXISTS ix_proveedores_usuario_id ON proveedores(usuario_id)")
 
 
 def downgrade() -> None:
-    op.drop_index("ix_proveedores_usuario_id", table_name="proveedores")
-    op.drop_column("proveedores", "usuario_id")
+    op.execute("DROP INDEX IF EXISTS ix_proveedores_usuario_id")
+    op.execute("ALTER TABLE proveedores DROP COLUMN IF EXISTS usuario_id")
