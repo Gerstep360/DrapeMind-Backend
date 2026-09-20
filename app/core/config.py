@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     DOCS_ENABLED: bool = True
     SECRET_KEY: str = "change-me-with-at-least-32-characters"
     JWT_ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 5256000  # 10 anos: sesion permanente estilo Facebook
     DATABASE_URL: str | None = None
     POSTGRES_HOST: str = "localhost"
     POSTGRES_PORT: int = 5432

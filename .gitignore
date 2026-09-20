@@ -38,3 +38,8 @@ huggingface/
 *.weights
 *.tar.gz
 *.zip
+# Firebase Service Account Credentials
+*firebase*.json
+*service_account*.json
+!mobile/google-services.json
+!mobile/android/app/google-services.json
