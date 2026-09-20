@@ -388,10 +388,93 @@ def seed_categories_from_csv(db, log_fn: Callable[[str], None] = print) -> dict[
     return category_id_map
 
 
+def _classify_product_row(r: dict[str, str]) -> tuple[str, str]:
+    """Clasifica una prenda de productos.csv por genero y familia para un sembrado equilibrado."""
+    gen = (r.get("genero_objetivo") or "UNISEX").strip().upper()
+    if gen not in ("HOMBRE", "MUJER", "UNISEX"):
+        gen = "UNISEX"
+    name = (r.get("nombre") or "").lower()
+    if any(k in name for k in ["dress", "vestido", "skirt", "falda"]):
+        fam = "VESTIDOS_FALDAS"
+    elif any(k in name for k in ["shirt", "camisa", "blouse", "blusa", "t-shirt", "tshirt", "polera", "polo", "top", "tee"]):
+        fam = "TOPS"
+    elif any(k in name for k in ["jean", "trouser", "pantalon", "jogger", "short", "legging"]):
+        fam = "BOTTOMS"
+    elif any(k in name for k in ["jacket", "blazer", "chaqueta", "coat", "sweater", "cardigan", "chamarra", "hoodie", "abrigo"]):
+        fam = "OUTERWEAR"
+    elif any(k in name for k in ["shoe", "boot", "sneaker", "heel", "flat", "sandal", "zapato", "bota", "calzado", "mocas"]):
+        fam = "FOOTWEAR"
+    else:
+        fam = "ACCESORIOS"
+    return gen, fam
+
+
+def sample_balanced_products(
+    all_rows: list[dict[str, str]],
+    limit_products: int | None = None,
+    women_count: int | None = None,
+    men_count: int | None = None,
+    unisex_count: int | None = None,
+) -> list[dict[str, str]]:
+    """Distribuye equitativamente las prendas entre generos y familias para un showroom realista."""
+    has_custom_counts = (women_count is not None) or (men_count is not None) or (unisex_count is not None)
+    if not limit_products and not has_custom_counts:
+        return all_rows
+
+    buckets: dict[str, dict[str, list[dict[str, str]]]] = {
+        "MUJER": {"TOPS": [], "VESTIDOS_FALDAS": [], "BOTTOMS": [], "FOOTWEAR": [], "OUTERWEAR": [], "ACCESORIOS": []},
+        "HOMBRE": {"TOPS": [], "BOTTOMS": [], "FOOTWEAR": [], "OUTERWEAR": [], "ACCESORIOS": [], "VESTIDOS_FALDAS": []},
+        "UNISEX": {"TOPS": [], "FOOTWEAR": [], "ACCESORIOS": [], "BOTTOMS": [], "OUTERWEAR": [], "VESTIDOS_FALDAS": []},
+    }
+
+    for r in all_rows:
+        gen, fam = _classify_product_row(r)
+        buckets[gen][fam].append(r)
+
+    if has_custom_counts:
+        w_target = women_count or 0
+        m_target = men_count or 0
+        u_target = unisex_count or 0
+    else:
+        tot = limit_products or 60
+        w_target = int(tot * 0.45)
+        m_target = int(tot * 0.40)
+        u_target = max(0, tot - w_target - m_target)
+
+    def extract_from_gender(gen: str, target: int) -> list[dict[str, str]]:
+        if target <= 0:
+            return []
+        fams = [f for f, items in buckets[gen].items() if len(items) > 0]
+        if not fams:
+            return []
+        per_fam = max(1, target // len(fams))
+        sampled: list[dict[str, str]] = []
+        for f in fams:
+            sampled.extend(buckets[gen][f][:per_fam])
+        if len(sampled) < target:
+            leftover = [r for f in fams for r in buckets[gen][f] if r not in sampled]
+            sampled.extend(leftover[: target - len(sampled)])
+        elif len(sampled) > target:
+            sampled = sampled[:target]
+        return sampled
+
+    selected = []
+    selected.extend(extract_from_gender("MUJER", w_target))
+    selected.extend(extract_from_gender("HOMBRE", m_target))
+    selected.extend(extract_from_gender("UNISEX", u_target))
+    return selected
+
+
 def seed_products_from_csv(
-    db, category_id_map: dict[int, int], limit_products: int | None = None, log_fn: Callable[[str], None] = print
+    db,
+    category_id_map: dict[int, int],
+    limit_products: int | None = None,
+    women_count: int | None = None,
+    men_count: int | None = None,
+    unisex_count: int | None = None,
+    log_fn: Callable[[str], None] = print,
 ) -> dict[int, int]:
-    """Carga productos desde data/productos.csv respetando el limite maximo solicitado."""
+    """Carga productos desde data/productos.csv con muestreo equilibrado por genero y familias."""
     csv_file = DATA_DIR / "productos.csv"
     if not csv_file.exists():
         log_fn("  ! No se encontro productos.csv en data/; saltando productos.")
@@ -400,12 +483,14 @@ def seed_products_from_csv(
     with csv_file.open("r", encoding="utf-8-sig", newline="") as f:
         all_rows = list(csv.DictReader(f))
 
-    if limit_products and limit_products > 0:
-        rows = all_rows[:limit_products]
-        log_fn(f"  -> Cargando {len(rows)} productos personalizados (de {len(all_rows)} disponibles en CSV)...")
-    else:
-        rows = all_rows
-        log_fn(f"  -> Cargando todos los {len(rows)} productos desde {csv_file.name}...")
+    rows = sample_balanced_products(
+        all_rows,
+        limit_products=limit_products,
+        women_count=women_count,
+        men_count=men_count,
+        unisex_count=unisex_count,
+    )
+    log_fn(f"  -> Cargando {len(rows)} productos con distribucion balanceada por genero y familias de ropa...")
 
     product_id_map: dict[int, int] = {}
     all_cats = {c.id: c.id for c in db.scalars(select(Category))}
@@ -926,6 +1011,9 @@ def reset_sequences(db, log_fn: Callable[[str], None] = print) -> None:
 def run_full_seed(
     products_limit: int | None = None,
     branches_limit: int | None = None,
+    women_count: int | None = None,
+    men_count: int | None = None,
+    unisex_count: int | None = None,
     force: bool = False,
     reset: bool = False,
     log_fn: Callable[[str], None] = print,
@@ -933,6 +1021,9 @@ def run_full_seed(
     """Ejecuta el sembrado completo, modular y configurable de DrapeMind."""
     parser = argparse.ArgumentParser(description="DrapeMind Database Seeder")
     parser.add_argument("--products", "-p", "--limit-products", type=int, default=None, help="Limite maximo de productos a cargar (ej. 50, 100, 200)")
+    parser.add_argument("--women-count", "--women", type=int, default=None, help="Cantidad especifica de prendas de mujer a sembrar")
+    parser.add_argument("--men-count", "--men", type=int, default=None, help="Cantidad especifica de prendas de hombre a sembrar")
+    parser.add_argument("--unisex-count", "--unisex", type=int, default=None, help="Cantidad especifica de prendas unisex a sembrar")
     parser.add_argument("--branches", "-b", type=int, default=None, help="Cantidad de sucursales a crear (1 a 5)")
     parser.add_argument("--reset", action="store_true", help="Limpia las tablas antes de sembrar")
     parser.add_argument("--force", action="store_true", help="Fuerza el sembrado aunque existan productos")
@@ -1058,7 +1149,15 @@ def run_full_seed(
         db.commit()
 
         log_fn(f"\n4. Productos ({final_products or 'Todos'} prendas)...")
-        product_map = seed_products_from_csv(db, category_map, limit_products=final_products, log_fn=log_fn)
+        product_map = seed_products_from_csv(
+            db,
+            category_map,
+            limit_products=final_products,
+            women_count=women_count or cli_args.women_count,
+            men_count=men_count or cli_args.men_count,
+            unisex_count=unisex_count or cli_args.unisex_count,
+            log_fn=log_fn,
+        )
         db.commit()
 
         log_fn("\n5. Variantes de Color y Talla...")

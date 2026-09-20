@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from decimal import Decimal
+import random
 from typing import Any, Callable, Literal
 import unicodedata
 
@@ -470,6 +471,12 @@ def _recommend_outfit(context: ToolContext, raw: BaseModel) -> Any:
     all_available = search_products(context.db, gender=norm_gender, only_available=True, limit=80)
     if norm_gender:
         candidates = [p for p in all_available if p.get("genero_objetivo") in (norm_gender, "UNISEX")]
+        if norm_gender == "HOMBRE":
+            female_terms = ["vestido", "falda", "tacones", "tacon", "bluson", "sosten", "brasier", "panty", "top con tirantes"]
+            candidates = [p for p in candidates if not any(ft in normalized(p.get("nombre")) for ft in female_terms)]
+        elif norm_gender == "MUJER":
+            male_terms = ["boxer", "calzoncillo"]
+            candidates = [p for p in candidates if not any(mt in normalized(p.get("nombre")) for mt in male_terms)]
     else:
         candidates = all_available
     if args.exclude_product_ids:
@@ -614,6 +621,8 @@ def _recommend_outfit(context: ToolContext, raw: BaseModel) -> Any:
         cand_tops = [p for p in all_available if any(k in normalized(p["nombre"]) for k in ["polera", "camisa", "blusa", "polo", "hoodie"])]
         if norm_gender:
             cand_tops = [p for p in cand_tops if p.get("genero_objetivo") in (norm_gender, "UNISEX")]
+            if norm_gender == "HOMBRE":
+                cand_tops = [p for p in cand_tops if not any(ft in normalized(p.get("nombre")) for ft in ["vestido", "falda", "blusa", "bluson", "top con tirantes"])]
         for cand in cand_tops:
             cand_vars = variants_by_product.get(cand["id"], [])
             if cand_vars:
@@ -634,6 +643,8 @@ def _recommend_outfit(context: ToolContext, raw: BaseModel) -> Any:
         cand_bottoms = [p for p in all_available if any(k in normalized(p["nombre"]) for k in ["jean", "pantalon", "jogger", "falda", "palazzo", "chino"])]
         if norm_gender:
             cand_bottoms = [p for p in cand_bottoms if p.get("genero_objetivo") in (norm_gender, "UNISEX")]
+            if norm_gender == "HOMBRE":
+                cand_bottoms = [p for p in cand_bottoms if not any(ft in normalized(p.get("nombre")) for ft in ["falda", "pollera", "pantalon ajustado encaje"])]
         for cand in cand_bottoms:
             cand_vars = variants_by_product.get(cand["id"], [])
             if cand_vars:
@@ -654,6 +665,8 @@ def _recommend_outfit(context: ToolContext, raw: BaseModel) -> Any:
         cand_shoes = [p for p in all_available if any(k in normalized(p["nombre"]) for k in ["zapato", "zapatilla", "bota", "mocas", "chelsea", "oxford"])]
         if norm_gender:
             cand_shoes = [p for p in cand_shoes if p.get("genero_objetivo") in (norm_gender, "UNISEX")]
+            if norm_gender == "HOMBRE":
+                cand_shoes = [p for p in cand_shoes if not any(ft in normalized(p.get("nombre")) for ft in ["tacones", "tacon", "sandalia tacon"])]
         for cand in cand_shoes:
             cand_vars = variants_by_product.get(cand["id"], [])
             if cand_vars:
@@ -678,13 +691,36 @@ def _recommend_outfit(context: ToolContext, raw: BaseModel) -> Any:
     bottom_sizes = args.bottom_sizes or ([args.bottom_size] if args.bottom_size else [])
     shoe_sizes = args.shoe_sizes or ([args.shoe_size] if args.shoe_size else [])
 
+    # Dynamic variety shuffling (preserves user-selected base product if present)
+    def _diversify(items: list[dict[str, Any]], keep_first: bool = False) -> list[dict[str, Any]]:
+        if not items or len(items) <= 1:
+            return items
+        if keep_first:
+            first = items[0]
+            rest = list(items[1:])
+            random.shuffle(rest)
+            return [first] + rest
+        shuffled = list(items)
+        random.shuffle(shuffled)
+        return shuffled
+
+    has_base_top = bool(base_item and any(k in normalized(base_item["nombre"]) for k in ["polera", "camisa", "blusa", "polo", "hoodie"]))
+    has_base_bottom = bool(base_item and any(k in normalized(base_item["nombre"]) for k in ["jean", "pantalon", "jogger", "falda", "palazzo", "chino"]))
+    has_base_footwear = bool(base_item and any(k in normalized(base_item["nombre"]) for k in ["zapato", "zapatilla", "bota", "mocas", "chelsea", "oxford"]))
+    has_base_outer = bool(base_item and not (has_base_top or has_base_bottom or has_base_footwear))
+
+    diversified_tops = _diversify(tops, keep_first=has_base_top)
+    diversified_bottoms = _diversify(bottoms, keep_first=has_base_bottom)
+    diversified_footwear = _diversify(footwear, keep_first=has_base_footwear)
+    diversified_outer = _diversify(outerwear_acc, keep_first=has_base_outer)
+
     return {
         "ocasion": effective_occasion,
         "presupuesto_maximo": args.max_budget,
-        "tops_sugeridos": tops[:4],
-        "inferiores_sugeridos": bottoms[:4],
-        "calzado_sugerido": footwear[:3],
-        "complementos_abrigos": outerwear_acc[:4],
+        "tops_sugeridos": diversified_tops[:4],
+        "inferiores_sugeridos": diversified_bottoms[:4],
+        "calzado_sugerido": diversified_footwear[:3],
+        "complementos_abrigos": diversified_outer[:4],
         "total_opciones": len(candidates),
         "base_product_id": target_base_id,
         "restricciones_solicitadas": {
