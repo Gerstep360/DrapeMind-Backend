@@ -219,7 +219,7 @@ def download_receipt(
                 )
             )
         )
-        if not payments:
+        if not payments and format != "json":
             raise HTTPException(409, "El pedido todavía no tiene un pago aprobado o confirmado")
 
     payments = list(

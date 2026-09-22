@@ -43,3 +43,7 @@ huggingface/
 *service_account*.json
 !mobile/google-services.json
 !mobile/android/app/google-services.json
+
+# Static product uploads
+static/products/*
+!static/products/placeholder.svg

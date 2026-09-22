@@ -415,10 +415,16 @@ def sample_balanced_products(
     women_count: int | None = None,
     men_count: int | None = None,
     unisex_count: int | None = None,
+    tops_count: int | None = None,
+    bottoms_count: int | None = None,
+    shoes_count: int | None = None,
+    dresses_count: int | None = None,
+    outerwear_count: int | None = None,
 ) -> list[dict[str, str]]:
     """Distribuye equitativamente las prendas entre generos y familias para un showroom realista."""
     has_custom_counts = (women_count is not None) or (men_count is not None) or (unisex_count is not None)
-    if not limit_products and not has_custom_counts:
+    has_family_counts = any(c is not None for c in [tops_count, bottoms_count, shoes_count, dresses_count, outerwear_count])
+    if not limit_products and not has_custom_counts and not has_family_counts:
         return all_rows
 
     buckets: dict[str, dict[str, list[dict[str, str]]]] = {
@@ -430,6 +436,30 @@ def sample_balanced_products(
     for r in all_rows:
         gen, fam = _classify_product_row(r)
         buckets[gen][fam].append(r)
+
+    # Si se especificaron metas explicitas por tipo/familia de prenda
+    if has_family_counts:
+        fam_targets = {
+            "TOPS": tops_count or 0,
+            "BOTTOMS": bottoms_count or 0,
+            "FOOTWEAR": shoes_count or 0,
+            "VESTIDOS_FALDAS": dresses_count or 0,
+            "OUTERWEAR": outerwear_count or 0,
+        }
+        selected: list[dict[str, str]] = []
+        for fam, target in fam_targets.items():
+            if target <= 0:
+                continue
+            fam_items: list[dict[str, str]] = []
+            for gen in ["MUJER", "HOMBRE", "UNISEX"]:
+                fam_items.extend(buckets[gen][fam])
+            selected.extend(fam_items[:target])
+
+        if limit_products and len(selected) < limit_products:
+            needed = limit_products - len(selected)
+            remainder = [r for r in all_rows if r not in selected]
+            selected.extend(remainder[:needed])
+        return selected
 
     if has_custom_counts:
         w_target = women_count or 0
@@ -472,6 +502,11 @@ def seed_products_from_csv(
     women_count: int | None = None,
     men_count: int | None = None,
     unisex_count: int | None = None,
+    tops_count: int | None = None,
+    bottoms_count: int | None = None,
+    shoes_count: int | None = None,
+    dresses_count: int | None = None,
+    outerwear_count: int | None = None,
     log_fn: Callable[[str], None] = print,
 ) -> dict[int, int]:
     """Carga productos desde data/productos.csv con muestreo equilibrado por genero y familias."""
@@ -489,6 +524,11 @@ def seed_products_from_csv(
         women_count=women_count,
         men_count=men_count,
         unisex_count=unisex_count,
+        tops_count=tops_count,
+        bottoms_count=bottoms_count,
+        shoes_count=shoes_count,
+        dresses_count=dresses_count,
+        outerwear_count=outerwear_count,
     )
     log_fn(f"  -> Cargando {len(rows)} productos con distribucion balanceada por genero y familias de ropa...")
 
@@ -1014,6 +1054,11 @@ def run_full_seed(
     women_count: int | None = None,
     men_count: int | None = None,
     unisex_count: int | None = None,
+    tops_count: int | None = None,
+    bottoms_count: int | None = None,
+    shoes_count: int | None = None,
+    dresses_count: int | None = None,
+    outerwear_count: int | None = None,
     force: bool = False,
     reset: bool = False,
     log_fn: Callable[[str], None] = print,
@@ -1024,6 +1069,11 @@ def run_full_seed(
     parser.add_argument("--women-count", "--women", type=int, default=None, help="Cantidad especifica de prendas de mujer a sembrar")
     parser.add_argument("--men-count", "--men", type=int, default=None, help="Cantidad especifica de prendas de hombre a sembrar")
     parser.add_argument("--unisex-count", "--unisex", type=int, default=None, help="Cantidad especifica de prendas unisex a sembrar")
+    parser.add_argument("--tops", "--tops-count", type=int, default=None, help="Cantidad especifica de poleras/camisas/blusas a sembrar")
+    parser.add_argument("--bottoms", "--bottoms-count", type=int, default=None, help="Cantidad especifica de pantalones/shorts a sembrar")
+    parser.add_argument("--shoes", "--footwear", "--shoes-count", type=int, default=None, help="Cantidad especifica de zapatos/calzado a sembrar")
+    parser.add_argument("--dresses", "--dresses-count", type=int, default=None, help="Cantidad especifica de vestidos/faldas a sembrar")
+    parser.add_argument("--outerwear", "--outerwear-count", type=int, default=None, help="Cantidad especifica de abrigos/chaquetas a sembrar")
     parser.add_argument("--branches", "-b", type=int, default=None, help="Cantidad de sucursales a crear (1 a 5)")
     parser.add_argument("--reset", action="store_true", help="Limpia las tablas antes de sembrar")
     parser.add_argument("--force", action="store_true", help="Fuerza el sembrado aunque existan productos")
@@ -1040,6 +1090,14 @@ def run_full_seed(
 
     final_products = products_limit or cli_args.products
     final_branches = branches_limit or cli_args.branches
+    final_women = women_count or cli_args.women_count
+    final_men = men_count or cli_args.men_count
+    final_unisex = unisex_count or cli_args.unisex_count
+    final_tops = tops_count or cli_args.tops
+    final_bottoms = bottoms_count or cli_args.bottoms
+    final_shoes = shoes_count or cli_args.shoes
+    final_dresses = dresses_count or cli_args.dresses
+    final_outerwear = outerwear_count or cli_args.outerwear
 
     if cli_args.quick:
         final_products = 40
@@ -1073,10 +1131,11 @@ def run_full_seed(
         print("  [1] Modo Ligero (40 prendas, 2 sucursales) - Ideal para servidores ligeros y login instantaneo")
         print("  [2] Modo Estandar (120 prendas, 3 sucursales) - Recomendado para demos completas")
         print("  [3] Modo Catalogo Completo (887 prendas, 4,296 variantes) - Carga masiva completa")
-        print("  [4] Personalizado (Ingresar cantidad exacta de prendas y sucursales)")
+        print("  [4] Personalizado Rapido (Ingresar cantidad total de prendas y sucursales)")
+        print("  [5] Personalizado Detallado (Elegir por genero y categorias: poleras, pantalones, calzado...)")
         print("=" * 70)
         try:
-            choice = input("  Ingresa tu opcion [1-4, por defecto 1]: ").strip()
+            choice = input("  Ingresa tu opcion [1-5, por defecto 1]: ").strip()
             if choice == "2":
                 final_products = 120
                 final_branches = 3
@@ -1091,6 +1150,35 @@ def run_full_seed(
                 r_in = input("  ¿Deseas limpiar tablas antes de sembrar? (s/n, defecto s): ").strip().lower()
                 if r_in in {"", "s", "si", "y", "yes"}:
                     is_reset = True
+            elif choice == "5":
+                print("\n  --- Configuracion Detallada por Categoria y Genero ---")
+                w_in = input("  Prendas de Mujer (Enter para omitir o ej. 25): ").strip()
+                m_in = input("  Prendas de Hombre (Enter para omitir o ej. 20): ").strip()
+                u_in = input("  Prendas Unisex (Enter para omitir o ej. 15): ").strip()
+                t_in = input("  Poleras / Camisas / Blusas (Tops)? (Enter para omitir o ej. 15): ").strip()
+                bt_in = input("  Pantalones / Shorts (Bottoms)? (Enter para omitir o ej. 15): ").strip()
+                sh_in = input("  Calzado / Zapatos (Footwear)? (Enter para omitir o ej. 10): ").strip()
+                dr_in = input("  Vestidos / Faldas (Dresses)? (Enter para omitir o ej. 10): ").strip()
+                ow_in = input("  Abrigos / Chaquetas (Outerwear)? (Enter para omitir o ej. 10): ").strip()
+                br_in = input("  ¿Cuantas sucursales deseas crear? (1 a 5, defecto 2): ").strip()
+                r_in = input("  ¿Deseas limpiar tablas antes de sembrar? (s/n, defecto s): ").strip().lower()
+
+                final_women = int(w_in) if w_in.isdigit() else None
+                final_men = int(m_in) if m_in.isdigit() else None
+                final_unisex = int(u_in) if u_in.isdigit() else None
+                final_tops = int(t_in) if t_in.isdigit() else None
+                final_bottoms = int(bt_in) if bt_in.isdigit() else None
+                final_shoes = int(sh_in) if sh_in.isdigit() else None
+                final_dresses = int(dr_in) if dr_in.isdigit() else None
+                final_outerwear = int(ow_in) if ow_in.isdigit() else None
+                final_branches = int(br_in) if br_in.isdigit() else 2
+
+                if r_in in {"", "s", "si", "y", "yes"}:
+                    is_reset = True
+
+                cat_sum = sum(filter(None, [final_tops, final_bottoms, final_shoes, final_dresses, final_outerwear]))
+                gen_sum = sum(filter(None, [final_women, final_men, final_unisex]))
+                final_products = cat_sum or gen_sum or 60
             else:
                 final_products = 40
                 final_branches = 2
@@ -1153,9 +1241,14 @@ def run_full_seed(
             db,
             category_map,
             limit_products=final_products,
-            women_count=women_count or cli_args.women_count,
-            men_count=men_count or cli_args.men_count,
-            unisex_count=unisex_count or cli_args.unisex_count,
+            women_count=final_women,
+            men_count=final_men,
+            unisex_count=final_unisex,
+            tops_count=final_tops,
+            bottoms_count=final_bottoms,
+            shoes_count=final_shoes,
+            dresses_count=final_dresses,
+            outerwear_count=final_outerwear,
             log_fn=log_fn,
         )
         db.commit()

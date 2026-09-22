@@ -152,37 +152,40 @@ def _cards_from_tool(
         if card:
             cards.append(card)
     elif tool_name == "recommend_outfit" and isinstance(result, dict):
-        total = 0.0
-        budget = arguments.get("max_budget")
-        for key in (
-            "tops_sugeridos",
-            "inferiores_sugeridos",
-            "calzado_sugerido",
-            "complementos_abrigos",
-        ):
-            options = result.get(key) or []
-            if not options:
-                continue
-            option = options[0]
-            price = float(option.get("precio") or 0)
-            if budget is not None and total + price > float(budget):
-                continue
-            total += price
-            cards.append(
-                {
-                    "id": option.get("producto_id") or option.get("id"),
-                    "variante_id": option.get("variante_id"),
-                    "nombre": option.get("nombre"),
-                    "precio": price,
-                    "color": option.get("color"),
-                    "talla": option.get("talla"),
-                    "imagen": option.get("imagen"),
-                    "accion": "AGREGAR",
-                    "motivo": "Variante y stock verificados por FastAPI",
-                }
-            )
-        result["seleccion"] = cards
-        result["seleccion_total"] = round(total, 2)
+        if result.get("seleccion") and isinstance(result["seleccion"], list) and len(result["seleccion"]) > 0:
+            cards.extend(result["seleccion"])
+        else:
+            total = 0.0
+            budget = arguments.get("max_budget")
+            for key in (
+                "tops_sugeridos",
+                "inferiores_sugeridos",
+                "calzado_sugerido",
+                "complementos_abrigos",
+            ):
+                options = result.get(key) or []
+                if not options:
+                    continue
+                option = options[0]
+                price = float(option.get("precio") or 0)
+                if budget is not None and len(cards) >= 3 and total + price > float(budget):
+                    continue
+                total += price
+                cards.append(
+                    {
+                        "id": option.get("producto_id") or option.get("id"),
+                        "variante_id": option.get("variante_id"),
+                        "nombre": option.get("nombre"),
+                        "precio": price,
+                        "color": option.get("color"),
+                        "talla": option.get("talla"),
+                        "imagen": option.get("imagen"),
+                        "accion": "AGREGAR",
+                        "motivo": "Variante y stock verificados por FastAPI",
+                    }
+                )
+            result["seleccion"] = cards
+            result["seleccion_total"] = round(total, 2)
     elif tool_name == "get_my_cart" and isinstance(result, dict):
         for item in result.get("items") or []:
             cards.append(
@@ -191,12 +194,26 @@ def _cards_from_tool(
                     "item_id": item.get("id"),
                     "variante_id": item.get("variante_id"),
                     "nombre": item.get("nombre"),
-                    "precio": item.get("precio_unitario"),
+                    "precio": float(item.get("precio_unitario") or item.get("precio") or 0),
                     "color": item.get("color"),
                     "talla": item.get("talla"),
                     "imagen": item.get("imagen"),
                     "accion": "QUITAR",
-                    "motivo": "En tu carrito actual",
+                    "motivo": "En tu perchero actual",
+                }
+            )
+        for sug in result.get("sugerencias") or []:
+            cards.append(
+                {
+                    "id": sug.get("producto_id") or sug.get("id"),
+                    "variante_id": sug.get("variante_id"),
+                    "nombre": sug.get("nombre"),
+                    "precio": float(sug.get("precio") or 0),
+                    "color": sug.get("color"),
+                    "talla": sug.get("talla"),
+                    "imagen": sug.get("imagen"),
+                    "accion": "AGREGAR",
+                    "motivo": "Sugerencia para combinar tu estilo",
                 }
             )
     elif tool_name in {"get_my_orders", "get_my_reservations"} and isinstance(result, list):
