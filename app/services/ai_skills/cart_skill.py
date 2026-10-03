@@ -55,18 +55,40 @@ class CartSkill(BaseAiSkill):
 
         # 2. Buscar complementos sugeridos de alta calidad si hay prendas
         if has_items:
+            profile = None
+            if db and user and getattr(user, "id", None):
+                try:
+                    from sqlalchemy import select
+                    from app.models import UserStyleProfile
+                    profile = db.scalar(select(UserStyleProfile).where(UserStyleProfile.usuario_id == user.id))
+                except Exception:
+                    pass
+
             trending = execute_tool("get_trending_pieces", {"limit": 6}, tool_ctx)
             if isinstance(trending, list):
                 for p in trending:
                     if p.get("id") in cart_product_ids:
                         continue
                     detail = get_product_detail(db, p["id"])
-                    variant = next(
-                        (v for v in detail.get("variantes", []) if v.get("activo") and (v.get("stock_disponible") or 0) > 0),
-                        None,
-                    )
-                    if not variant:
+                    vars_list = [v for v in detail.get("variantes", []) if v.get("activo") and (v.get("stock_disponible") or 0) > 0]
+                    if not vars_list:
                         continue
+
+                    variant = None
+                    if profile:
+                        p_name = (p.get("nombre") or "").lower()
+                        pref_size = None
+                        if any(k in p_name for k in ["pantalon", "pantalón", "jean", "falda", "palazzo"]):
+                            pref_size = profile.talla_inferior
+                        elif any(k in p_name for k in ["zapato", "zapatilla", "bota", "mocas"]):
+                            pref_size = profile.talla_calzado
+                        else:
+                            pref_size = profile.talla_superior
+                        if pref_size:
+                            variant = next((v for v in vars_list if str(v.get("talla")).strip().upper() == pref_size.strip().upper()), None)
+                    if not variant:
+                        variant = vars_list[0]
+
                     comp_item = {
                         "id": p.get("id"),
                         "variante_id": variant.get("id"),
@@ -77,7 +99,7 @@ class CartSkill(BaseAiSkill):
                         "precio": float(p.get("precio") or 0),
                         "imagen": variant.get("imagen") or ((p.get("imagenes") or [None])[0]),
                         "accion": "AGREGAR",
-                        "motivo": f"Complemento sugerido · Calidad Q{p.get('calidad_nivel') or 4}",
+                        "motivo": f"Complemento sugerido · Talla {variant.get('talla')}",
                     }
                     action_items.append(comp_item)
                     complements.append({
@@ -172,6 +194,10 @@ class CartSkill(BaseAiSkill):
 
             fallback_text = "\n\n".join(critique_lines)
 
+            suggested_actions.append({
+                "label": "Diseñar outfit completo",
+                "prompt": "Arma un outfit completo y coordinado basado en mi perfil y las prendas de mi perchero",
+            })
             if not bottom_items:
                 suggested_actions.append({
                     "label": "Sumar pantalón a juego",

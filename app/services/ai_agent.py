@@ -187,7 +187,8 @@ def _cards_from_tool(
             result["seleccion"] = cards
             result["seleccion_total"] = round(total, 2)
     elif tool_name == "get_my_cart" and isinstance(result, dict):
-        for item in result.get("items") or []:
+        cart_items = result.get("items") or []
+        for item in cart_items:
             cards.append(
                 {
                     "id": item.get("producto_id"),
@@ -216,6 +217,15 @@ def _cards_from_tool(
                     "motivo": "Sugerencia para combinar tu estilo",
                 }
             )
+        cards.append(
+            {
+                "id": 999999,
+                "nombre": "Diseñar Outfit Coordinado con Altair",
+                "precio": 0.0,
+                "accion": "GENERAR_OUTFIT",
+                "motivo": "Armar look completo a medida con Altair AI",
+            }
+        )
     elif tool_name in {"get_my_orders", "get_my_reservations"} and isinstance(result, list):
         action = "VER_PEDIDO" if tool_name == "get_my_orders" else "VER_RESERVA"
         for item in result[:6]:

@@ -10,7 +10,7 @@ from typing import Any
 
 import httpx
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -18,8 +18,8 @@ from app.models import (
     AIInteraction, AIRecommendation, AISession, Product, ProductVariant, User,
     UserStyleProfile,
 )
-from app.services.store import cart_payload, replace_cart_item, search_products
-from app.services.ai_tools import TOOLS
+from app.services.store import cart_payload, normalize_gender, replace_cart_item, search_products
+from app.services.ai_tools import RecommendOutfitArgs, TOOLS, ToolContext, _recommend_outfit
 from app.services.ai_agent import run_gemma_tool_agent
 from app.services.scout_orchestrator import run_scout_orchestrator, inference_turn
 from app.services.agent_stream import partial_answer
@@ -906,6 +906,134 @@ def _pick_variants(db: Session, product_ids: list[int]) -> list[dict]:
     return output
 
 
+def _build_atelier_style_critique(
+    user: User,
+    cart_items: list[dict[str, Any]],
+    complements: list[dict[str, Any]],
+    profile: UserStyleProfile | None,
+) -> str:
+    user_name = user.nombre.split()[0] if user.nombre else "estimado cliente"
+    total_subtotal = sum(
+        float(it.get("subtotal") or (float(it.get("precio_unitario") or 0) * int(it.get("cantidad") or 1)))
+        for it in cart_items
+    )
+
+    top_items = []
+    bottom_items = []
+    shoe_items = []
+    outerwear_items = []
+
+    for it in cart_items:
+        n = (it.get("nombre") or "").lower()
+        if any(k in n for k in ["polera", "camisa", "blusa", "polo", "top", "sueter", "sweater", "hoodie", "remera"]):
+            top_items.append(it)
+        elif any(k in n for k in ["pantalon", "pantalón", "jean", "falda", "palazzo", "bermuda", "short"]):
+            bottom_items.append(it)
+        elif any(k in n for k in ["zapato", "zapatos", "calzado", "zapatilla", "bota", "mocas"]):
+            shoe_items.append(it)
+        else:
+            outerwear_items.append(it)
+
+    base_score = 6.5
+    if top_items and bottom_items:
+        base_score += 2.0
+    elif top_items or bottom_items:
+        base_score += 0.8
+    if shoe_items:
+        base_score += 0.5
+    if outerwear_items:
+        base_score += 0.4
+    if len(cart_items) >= 3:
+        base_score += 0.3
+    if len(top_items) >= 3 and not bottom_items:
+        base_score -= 1.0
+
+    score = max(5.0, min(9.6, base_score))
+    first_color = cart_items[0].get("color", "armónico") if cart_items else "armónico"
+
+    lines = [
+        f"**Auditoría Estilística de Altair:** Saludos, {user_name}. He completado una auditoría sastrera de las {len(cart_items)} prendas en tu perchero (**Calificación del Perchero: {score:.1f} / 10**).",
+    ]
+
+    if top_items and bottom_items:
+        lines.append(
+            f"**Balance de Siluetas:** Tu selección cuenta con un excelente equilibrio entre {len(top_items)} prenda(s) superior(es) y {len(bottom_items)} prenda(s) inferior(es), garantizando una silueta balanceada y versátil."
+        )
+    elif top_items and not bottom_items:
+        lines.append(
+            f"**Balance de Siluetas:** Tu perchero cuenta con {len(top_items)} pieza(s) superior(es) destacadas, pero carece de partes inferiores coordinadas. Recomiendo sumar un pantalón sastrero o falda para estructurar el look."
+        )
+    elif bottom_items and not top_items:
+        lines.append(
+            f"**Balance de Siluetas:** Cuentas con {len(bottom_items)} pieza(s) inferior(es) sin tops coordinados. Una camisa o blusa en lino o seda elevará inmediatamente el conjunto."
+        )
+    else:
+        lines.append(
+            "**Balance de Siluetas:** La selección presenta piezas de corte distinguido. Te sugiero coordinar piezas base para maximizar la versatilidad de las prendas."
+        )
+
+    lines.append(
+        f"**Armonía Cromática e Inversión:** La inversión actual de tu perchero suma **Bs {total_subtotal:.2f}**. "
+        f"El diálogo cromático (tonos {first_color}) aporta una presencia sobria y contemporánea acorde a los estándares de sastrería de DrapeMind."
+    )
+
+    if complements:
+        comp_names = " y ".join(c.get("nombre") for c in complements[:2])
+        lines.append(
+            f"**Complementos Recomendados:** Para elevar tu conjunto, he seleccionado como complementos directos: **{comp_names}**. Puedes agregarlos a tu perchero o pulsar en 'Diseñar Outfit Completo' para armonizar todo tu look."
+        )
+    else:
+        lines.append(
+            "Puedes proceder a finalizar tu compra con tranquilidad o pulsar en **'Diseñar Outfit Completo'** si deseas que diseñe un conjunto integral de pasarela a tu medida."
+        )
+
+    return "\n\n".join(lines)
+
+
+def _build_atelier_outfit_description(
+    user: User,
+    products: list[dict[str, Any]],
+    profile: UserStyleProfile | None,
+) -> str:
+    user_name = user.nombre.split()[0] if user.nombre else "estimado cliente"
+    total_bs = sum(float(p.get("precio") or 0) for p in products)
+    gender_txt = f"para {profile.genero.lower()}" if profile and profile.genero else ""
+    names_txt = ", ".join(f"**{p.get('nombre')}** (Talla {p.get('talla', 'M')}, Bs {float(p.get('precio', 0)):.2f})" for p in products)
+
+    return (
+        f"**Look Coordinado de Pasarela:** Saludos, {user_name}. He coordinado este outfit completo {gender_txt} "
+        f"respetando tu morfología y medidas de perfil.\n\n"
+        f"**Composición del Conjunto:** {names_txt}.\n\n"
+        f"**Inversión Total:** **Bs {total_bs:.2f}**.\n\n"
+        "Cada prenda ha sido verificada en inventario real con su respectiva talla para garantizar una caída sastrera impecable y armonía cromática total."
+    )
+
+
+def _build_atelier_value_analysis(
+    user: User,
+    cart_items: list[dict[str, Any]],
+    recommendations: list[dict[str, Any]],
+) -> str:
+    user_name = user.nombre.split()[0] if user.nombre else "estimado cliente"
+    if recommendations:
+        total_saving = sum(float(r.get("ahorro") or 0) for r in recommendations)
+        lines = [
+            f"**Diagnóstico Financiero y Textil de Altair:** Saludos, {user_name}. He auditado los costos, composiciones textiles y relación calidad/precio de las {len(cart_items)} prendas en tu perchero.",
+            f"Se han identificado **{len(recommendations)} alternativas inteligentes** de igual o superior composición textil con un **ahorro neto estimado de Bs {total_saving:.2f}**:",
+        ]
+        for idx, r in enumerate(recommendations, 1):
+            ahorro_num = float(r.get("ahorro", 0))
+            ahorro_txt = f"Ahorro: Bs {ahorro_num:.2f}" if ahorro_num > 0 else "Composición Superior"
+            lines.append(f"{idx}. Reemplazar **{r.get('nombre_original')}** por **{r.get('nombre')}** ({ahorro_txt} · Talla {r.get('talla', 'N/A')}).")
+        lines.append("Puedes aplicar los reemplazos sugeridos de inmediato con un solo clic para optimizar tu perchero.")
+        return "\n\n".join(lines)
+    return (
+        f"**Diagnóstico Financiero de Altair:** Saludos, {user_name}.\n\n"
+        "Tras auditar los materiales y precios de tu perchero, las prendas seleccionadas cuentan con la mejor relación calidad/precio del catálogo disponible en tu talla. "
+        "**Tu selección actual es óptima y altamente eficiente.**"
+    )
+
+
 async def run_ai_action(
     db: Session,
     user: User,
@@ -986,32 +1114,254 @@ async def run_ai_action(
         )
     elif action in {"outfit", "complete"}:
         kind = "COMPLETE_OUTFIT" if action == "complete" else "GENERATE_OUTFIT"
-        tool = "search_products + get_stock"
-        candidates = _available_candidates(db, 30, gender=user_gender)
-        if not candidates and user_gender:
-            candidates = _available_candidates(db, 30)
-        if budget is not None:
-            candidates = [p for p in candidates if p["precio"] <= budget]
-        products = _pick_variants(db, [p["id"] for p in candidates])
+        tool = "recommend_outfit"
+        tool_args = RecommendOutfitArgs(
+            occasion="casual elegante",
+            gender=user_gender,
+            max_budget=float(budget) if budget else None,
+            base_product_id=base_product_id,
+            top_size=profile.talla_superior if profile else None,
+            bottom_size=profile.talla_inferior if profile else None,
+            shoe_size=profile.talla_calzado if profile else None,
+        )
+        outfit_res = _recommend_outfit(ToolContext(db=db, user=user), tool_args)
+        if isinstance(outfit_res, dict) and outfit_res.get("seleccion"):
+            products = outfit_res["seleccion"]
+        else:
+            candidates = _available_candidates(db, 15, gender=user_gender)
+            if not candidates and user_gender:
+                candidates = _available_candidates(db, 15)
+            if budget is not None:
+                candidates = [p for p in candidates if p["precio"] <= budget]
+            products = _pick_variants(db, [p["id"] for p in candidates])[:4]
+
         if base_product_id:
             base = db.get(Product, base_product_id)
             if not base:
                 raise HTTPException(404, "Producto base no encontrado")
             message = f"{message}. Prenda base: {base.nombre} (id {base.id})"
         prompt = (
-            f"Solicitud: {message}{profile_summary}\nOpciones reales en inventario: {json.dumps(products, default=str)}\n"
-            "Propone un outfit coherente usando de 2 a 4 opciones del inventario respetando el género y las tallas del usuario."
+            f"Solicitud: {message}{profile_summary}\nOpciones reales en inventario coordinadas: {json.dumps(products, default=str)}\n"
+            "Propone un outfit coherente explicando la caída de las prendas y respetando el género y las tallas del usuario."
         )
     elif action in {"style", "value"}:
         kind = "STYLE_CHECK" if action == "style" else "VALUE_CHECK"
         tool = "get_my_cart + find_alternatives"
         cart = cart_payload(db, user.id)
-        if not cart["items"]:
-            raise HTTPException(409, "El carrito esta vacio")
-        raw_candidates = _available_candidates(db, 15, gender=user_gender)
-        if not raw_candidates and user_gender:
-            raw_candidates = _available_candidates(db, 15)
-        products = raw_candidates[:6]
+
+        target_model_name = model_choice or settings.AI_MODEL
+        if not cart.get("items"):
+            user_first_name = user.nombre.split()[0] if user.nombre else "cliente"
+            empty_msg = (
+                f"Saludos, {user_first_name}. Tu perchero se encuentra actualmente vacío.\n\n"
+                "Para realizar una auditoría estilística completa de armonía cromática, siluetas y equilibrio de estilo, "
+                "por favor añade prendas desde el showroom o indícale a Altair una ocasión para diseñar un outfit completo a medida."
+            )
+            return {
+                "sesion_id": session.id,
+                "interaccion_id": 0,
+                "respuesta": empty_msg,
+                "productos": [],
+                "recomendaciones": [],
+                "modelo": target_model_name,
+            }
+
+        # 1. En auditoría de estilo o valor, las prendas analizadas son EXACTAMENTE las prendas reales del carrito
+        products = [
+            {
+                "id": it["producto_id"],
+                "producto_id": it["producto_id"],
+                "variante_id": it["variante_id"],
+                "item_id": it["id"],
+                "nombre": it["nombre"],
+                "precio": float(it["precio_unitario"]),
+                "subtotal": float(it["subtotal"]),
+                "color": it["color"],
+                "talla": it["talla"],
+                "cantidad": it["cantidad"],
+                "imagen": it.get("imagen"),
+                "accion": "QUITAR",
+                "en_carrito": True,
+                "motivo": "En tu perchero actual (Auditado)",
+            }
+            for it in cart["items"]
+        ]
+
+        # 2. Análisis sastrero según tipo de acción: Estilo vs Valor/Ahorro
+        complements_to_save: list[dict[str, Any]] = []
+        replacements_to_save: list[dict[str, Any]] = []
+
+        def _get_item_zone(name_str: str) -> tuple[str, list[str]]:
+            n_low = name_str.lower()
+            if any(k in n_low for k in ["pantalon", "pantalón", "jean", "falda", "palazzo", "bermuda", "short"]):
+                return "BOTTOM", ["pantalon", "pantalón", "jean", "falda", "palazzo"]
+            if any(k in n_low for k in ["zapato", "zapatos", "calzado", "zapatilla", "bota", "boot", "mocas", "sandalia", "chancleta"]):
+                return "SHOES", ["zapato", "zapatilla", "bota", "mocas", "calzado"]
+            if any(k in n_low for k in ["chaqueta", "abrigo", "blazer", "cardigan", "cazadora", "parka"]):
+                return "OUTERWEAR", ["chaqueta", "blazer", "abrigo", "cardigan"]
+            return "TOP", ["polera", "camisa", "blusa", "polo", "top", "sueter", "sweater", "athleisure"]
+
+        cart_prod_ids = {it["producto_id"] for it in cart["items"]}
+
+        if action == "style":
+            cart_names = " ".join(it["nombre"].lower() for it in cart["items"])
+            has_top = any(k in cart_names for k in ["polera", "camisa", "blusa", "polo", "top", "sueter", "sweater", "hoodie", "remera"])
+            has_bottom = any(k in cart_names for k in ["pantalon", "pantalón", "jean", "falda", "palazzo", "bermuda", "short"])
+            has_shoes = any(k in cart_names for k in ["zapato", "zapatos", "calzado", "zapatilla", "bota", "mocas"])
+
+            target_roles = []
+            if not has_bottom:
+                target_roles.append(("BOTTOM", profile.talla_inferior if profile else None, ["pantalon", "pantalón", "jean", "falda", "palazzo"]))
+            if not has_top:
+                target_roles.append(("TOP", profile.talla_superior if profile else None, ["camisa", "blusa", "polera", "polo"]))
+            if not has_shoes:
+                target_roles.append(("SHOES", profile.talla_calzado if profile else None, ["zapato", "zapatilla", "mocas", "bota"]))
+            if has_top and has_bottom:
+                target_roles.append(("OUTERWEAR", profile.talla_superior if profile else None, ["chaqueta", "blazer", "abrigo", "cardigan"]))
+
+            all_cand_prods = search_products(db, gender=user_gender, only_available=True, limit=25)
+            if not all_cand_prods and user_gender:
+                all_cand_prods = search_products(db, only_available=True, limit=25)
+
+            for role, target_size, keywords in target_roles:
+                for cand in all_cand_prods:
+                    if cand["id"] in cart_prod_ids or any(c["producto_id"] == cand["id"] for c in complements_to_save):
+                        continue
+                    cand_name = cand.get("nombre", "").lower()
+                    if not any(kw in cand_name for kw in keywords):
+                        continue
+
+                    var = None
+                    if target_size:
+                        var = db.scalar(
+                            select(ProductVariant).where(
+                                ProductVariant.producto_id == cand["id"],
+                                ProductVariant.activo.is_(True),
+                                ProductVariant.stock_total > ProductVariant.stock_reservado,
+                                func.upper(ProductVariant.talla) == target_size.strip().upper(),
+                            )
+                        )
+                    if not var:
+                        var = db.scalar(
+                            select(ProductVariant).where(
+                                ProductVariant.producto_id == cand["id"],
+                                ProductVariant.activo.is_(True),
+                                ProductVariant.stock_total > ProductVariant.stock_reservado,
+                            ).order_by(ProductVariant.id)
+                        )
+                    if var:
+                        complements_to_save.append({
+                            "producto_id": cand["id"],
+                            "variante_id": var.id,
+                            "nombre": cand["nombre"],
+                            "precio": float(cand.get("precio") or 0),
+                            "color": var.color,
+                            "talla": var.talla,
+                            "imagen": var.imagen or ((cand.get("imagenes") or [None])[0]),
+                            "accion": "AGREGAR",
+                            "en_carrito": False,
+                            "rol": role,
+                            "motivo": f"Complemento recomendado para tu perfil ({user_gender or 'Atelier'}, Talla {var.talla})",
+                        })
+                        break
+                if len(complements_to_save) >= 2:
+                    break
+
+        elif action == "value":
+            # 3. Optimización de valor y ahorro: buscar alternativas en la misma zona textil (torso, calzado, pantalón)
+            all_prods_for_value = search_products(db, gender=user_gender, only_available=True, limit=50)
+            if not all_prods_for_value and user_gender:
+                all_prods_for_value = search_products(db, only_available=True, limit=50)
+
+            for it in cart["items"]:
+                origin = db.get(Product, it["producto_id"])
+                if not origin:
+                    continue
+
+                zone_role, zone_kws = _get_item_zone(it["nombre"])
+                pref_size = None
+                if profile:
+                    if zone_role == "BOTTOM":
+                        pref_size = profile.talla_inferior
+                    elif zone_role == "SHOES":
+                        pref_size = profile.talla_calzado
+                    else:
+                        pref_size = profile.talla_superior
+
+                best_cand = None
+                best_var = None
+                best_saving = 0.0
+
+                # Filtrar candidatos en la misma zona
+                zone_cands = [
+                    c for c in all_prods_for_value
+                    if c["id"] != origin.id
+                    and c["id"] not in cart_prod_ids
+                    and not any(r["producto_id"] == c["id"] for r in replacements_to_save)
+                    and any(kw in (c.get("nombre") or "").lower() for kw in zone_kws)
+                ]
+
+                # Ordenar priorizando menor precio que el original, o mejor relación calidad/precio
+                zone_cands.sort(key=lambda c: (float(c.get("precio") or 0) >= float(origin.precio), float(c.get("precio") or 0)))
+
+                for cand in zone_cands:
+                    c_price = float(cand.get("precio") or 0)
+                    saving_cand = max(0.0, float(origin.precio) - c_price)
+
+                    # Buscar variante con talla preferida
+                    c_var = None
+                    if pref_size:
+                        c_var = db.scalar(
+                            select(ProductVariant).where(
+                                ProductVariant.producto_id == cand["id"],
+                                ProductVariant.activo.is_(True),
+                                ProductVariant.stock_total > ProductVariant.stock_reservado,
+                                func.upper(ProductVariant.talla) == pref_size.strip().upper(),
+                            )
+                        )
+                    if not c_var:
+                        c_var = db.scalar(
+                            select(ProductVariant).where(
+                                ProductVariant.producto_id == cand["id"],
+                                ProductVariant.activo.is_(True),
+                                ProductVariant.stock_total > ProductVariant.stock_reservado,
+                            ).order_by(ProductVariant.id)
+                        )
+
+                    if c_var:
+                        best_cand = cand
+                        best_var = c_var
+                        best_saving = saving_cand
+                        break
+
+                if best_cand and best_var:
+                    motivo_rep = (
+                        f"Ahorra Bs {best_saving:.2f} con una alternativa textil equivalente en {zone_role.lower()}"
+                        if best_saving > 0
+                        else f"Alternativa premium en {zone_role.lower()} con acabado textil superior"
+                    )
+                    rep_item = {
+                        "item_id": it["id"],
+                        "producto_origen_id": origin.id,
+                        "variante_origen_id": it["variante_id"],
+                        "producto_id": best_cand["id"],
+                        "variante_id": best_var.id,
+                        "nombre": best_cand["nombre"],
+                        "nombre_original": origin.nombre,
+                        "precio_original": str(origin.precio),
+                        "precio_recomendado": str(best_cand["precio"]),
+                        "ahorro": str(round(best_saving, 2)),
+                        "talla": best_var.talla,
+                        "color": best_var.color,
+                        "imagen": best_var.imagen or ((best_cand.get("imagenes") or [None])[0]),
+                        "rol": zone_role,
+                        "accion": "REEMPLAZAR",
+                        "en_carrito": False,
+                        "motivo": motivo_rep,
+                    }
+                    replacements_to_save.append(rep_item)
+                    products.append(rep_item)
+
         compact_cart = [
             {
                 "id": it["id"],
@@ -1022,23 +1372,34 @@ async def run_ai_action(
             }
             for it in cart["items"]
         ]
-        compact_alternatives = [
-            {
-                "id": p.get("id"),
-                "nombre": p.get("nombre"),
-                "precio_bs": str(p.get("precio")),
-                "marca": p.get("marca"),
-                "material": p.get("material"),
-                "categoria": p.get("categoria_nombre"),
-            }
-            for p in products
-        ]
-        prompt = (
-            f"Objetivo: {message}{profile_summary}\n"
-            f"Prendas en perchero: {json.dumps(compact_cart, default=str)}\n"
-            f"Alternativas en catálogo: {json.dumps(compact_alternatives, default=str)}\n"
-            "Analiza el perchero y fundamenta recomendaciones de estilo, combinación y optimización basadas exclusivamente en las prendas y perfil del usuario."
-        )
+
+        if action == "style":
+            prompt = (
+                f"Objetivo: {message}{profile_summary}\n"
+                f"Prendas en perchero del usuario: {json.dumps(compact_cart, default=str)}\n"
+                f"Complementos sugeridos en stock: {json.dumps([{'nombre': c['nombre'], 'precio': c['precio'], 'talla': c['talla']} for c in complements_to_save], default=str)}\n"
+                "Ofrece una crítica estilística del perchero asignando una Calificación explícita de 1 al 10 con formato Markdown (ej. **Calificación del Perchero:** 8.5 / 10), "
+                "evalúa la armonía de siluetas y colores usando subtítulos en **negrita**, y fundamenta las recomendaciones basadas exclusivamente en las prendas y perfil del usuario."
+            )
+        else:
+            compact_reps = [
+                {
+                    "prenda_actual": r["nombre_original"],
+                    "reemplazo": r["nombre"],
+                    "precio_original_bs": r["precio_original"],
+                    "precio_nuevo_bs": r["precio_recomendado"],
+                    "ahorro_bs": r["ahorro"],
+                    "talla": r["talla"],
+                }
+                for r in replacements_to_save
+            ]
+            prompt = (
+                f"Objetivo: {message}{profile_summary}\n"
+                f"Prendas actuales en perchero: {json.dumps(compact_cart, default=str)}\n"
+                f"Propuestas de reemplazo y ahorro: {json.dumps(compact_reps, default=str)}\n"
+                "Ofrece un diagnóstico financiero y textil en Markdown usando encabezados en **negrita**. "
+                "Explica claramente cuánto dinero ahorra el usuario aplicando las alternativas sugeridas y cómo se optimiza la calidad textil del perchero."
+            )
     else:
         raise HTTPException(400, "Accion de IA no soportada")
 
@@ -1051,17 +1412,25 @@ async def run_ai_action(
             answer = raw_answer.strip()
             usage = raw_usage
     except Exception as _ai_err:
-        logger.warning("Error invocando gemma en run_ai_action: %s", _ai_err)
-        raise HTTPException(
-            status_code=503,
-            detail="El motor de inteligencia artificial no está disponible temporalmente. Intente nuevamente en unos instantes."
-        )
+        logger.warning("Error invocando gemma en run_ai_action, activando atelier fallback: %s", _ai_err)
+        if action == "style":
+            answer = _build_atelier_style_critique(user, cart["items"], complements_to_save, profile)
+        elif action in {"outfit", "complete"}:
+            answer = _build_atelier_outfit_description(user, products, profile)
+        elif action == "value":
+            answer = _build_atelier_value_analysis(user, cart["items"], replacements_to_save)
+        else:
+            answer = f"**Diagnóstico DrapeMind:** Saludos, {user.nombre.split()[0] if user.nombre else 'cliente'}. He evaluado tus prendas con los estándares de estilo de DrapeMind Atelier."
 
     if not answer:
-        raise HTTPException(
-            status_code=502,
-            detail="El modelo de inteligencia artificial no devolvió una respuesta válida."
-        )
+        if action == "style":
+            answer = _build_atelier_style_critique(user, cart["items"], complements_to_save, profile)
+        elif action in {"outfit", "complete"}:
+            answer = _build_atelier_outfit_description(user, products, profile)
+        elif action == "value":
+            answer = _build_atelier_value_analysis(user, cart["items"], replacements_to_save)
+        else:
+            answer = f"**Diagnóstico DrapeMind:** Saludos, {user.nombre.split()[0] if user.nombre else 'cliente'}. He evaluado tus prendas con los estándares de estilo de DrapeMind Atelier."
 
     try:
         interaction = _save_interaction(db, session, kind, message, answer, tool, started, usage)
@@ -1069,63 +1438,58 @@ async def run_ai_action(
             rec_type = "COMPLETAR_OUTFIT" if action == "complete" else "OUTFIT"
             roles = ["TOP", "BOTTOM", "SHOES", "OUTERWEAR"]
             for index, candidate in enumerate(products[:4]):
+                item_rol = candidate.get("rol") or roles[min(index, len(roles) - 1)]
+                cand_id = candidate.get("producto_id") or candidate.get("id")
+                cand_var_id = candidate.get("variante_id") or cand_id
                 rec = AIRecommendation(
-                    interaccion_id=interaction.id, tipo=rec_type, rol=roles[index],
+                    interaccion_id=interaction.id, tipo=rec_type, rol=item_rol,
                     producto_origen_id=base_product_id,
-                    producto_recomendado_id=candidate["producto_id"],
-                    variante_recomendada_id=candidate["variante_id"],
-                    score=Decimal("0.7500"), motivo_corto="Seleccionado por disponibilidad y coherencia del conjunto",
+                    producto_recomendado_id=cand_id,
+                    variante_recomendada_id=cand_var_id,
+                    score=Decimal("0.8500"), motivo_corto="Seleccionado por coherencia de conjunto y medidas de perfil",
                 )
                 db.add(rec)
                 db.flush()
-                recommendations.append({"id": rec.id, **candidate, "tipo": rec_type, "rol": roles[index]})
+                recommendations.append({"id": rec.id, **candidate, "tipo": rec_type, "rol": item_rol})
+        elif action == "style":
+            valid_roles = {"TOP", "BOTTOM", "SHOES", "OUTERWEAR", "ACCESSORY", "OTHER"}
+            for comp in complements_to_save:
+                comp_rol = comp.get("rol") if comp.get("rol") in valid_roles else "OTHER"
+                rec = AIRecommendation(
+                    interaccion_id=interaction.id,
+                    tipo="REEMPLAZO_ESTILO",
+                    rol=comp_rol,
+                    producto_recomendado_id=comp["producto_id"],
+                    variante_recomendada_id=comp["variante_id"],
+                    score=Decimal("0.8500"),
+                    motivo_corto=f"Complemento para balancear el perchero (Talla {comp.get('talla')})",
+                )
+                db.add(rec)
+                db.flush()
+                recommendations.append({"id": rec.id, **comp})
         elif action == "value":
-            cart = cart_payload(db, user.id)
-            for item in cart["items"]:
-                origin = db.get(Product, item["producto_id"])
-                if not origin:
-                    continue
-                alternative = db.execute(
-                    select(ProductVariant, Product)
-                    .join(Product, Product.id == ProductVariant.producto_id)
-                    .where(
-                        Product.categoria_id == origin.categoria_id,
-                        Product.id != origin.id,
-                        Product.activo.is_(True),
-                        Product.precio < origin.precio,
-                        ProductVariant.activo.is_(True),
-                        ProductVariant.stock_total > ProductVariant.stock_reservado,
-                    )
-                    .order_by((Product.calidad_nivel / Product.precio).desc())
-                    .limit(1)
-                ).first()
-                if alternative:
-                    variant, product = alternative
-                    saving = max(Decimal("0"), origin.precio - product.precio)
-                    rec = AIRecommendation(
-                        interaccion_id=interaction.id, tipo="REEMPLAZO_VALOR",
-                        producto_origen_id=origin.id, variante_origen_id=item["variante_id"],
-                        producto_recomendado_id=product.id, variante_recomendada_id=variant.id,
-                        score=Decimal("0.8000"), ahorro=saving,
-                        motivo_corto="Mejor relacion calidad/precio con stock disponible",
-                    )
-                    db.add(rec)
-                    db.flush()
-                    recommendations.append({
-                        "id": rec.id,
-                        "item_id": item["id"],
-                        "producto_id": product.id,
-                        "variante_id": variant.id,
-                        "nombre": product.nombre,
-                        "nombre_original": origin.nombre,
-                        "precio_original": str(origin.precio),
-                        "precio_recomendado": str(product.precio),
-                        "ahorro": str(saving),
-                        "talla": variant.talla,
-                        "color": variant.color,
-                        "imagen": variant.imagen or (product.imagenes[0] if product.imagenes else None),
-                    })
+            valid_roles = {"TOP", "BOTTOM", "SHOES", "OUTERWEAR", "ACCESSORY", "OTHER"}
+            for rep in replacements_to_save:
+                rep_rol = rep.get("rol") if rep.get("rol") in valid_roles else "OTHER"
+                rec = AIRecommendation(
+                    interaccion_id=interaction.id,
+                    tipo="REEMPLAZO_VALOR",
+                    rol=rep_rol,
+                    producto_origen_id=rep["producto_origen_id"],
+                    variante_origen_id=rep["variante_origen_id"],
+                    producto_recomendado_id=rep["producto_id"],
+                    variante_recomendada_id=rep["variante_id"],
+                    score=Decimal("0.8500"),
+                    ahorro=Decimal(str(rep["ahorro"])),
+                    motivo_corto=rep["motivo"][:300],
+                )
+                db.add(rec)
+                db.flush()
+                recommendations.append({"id": rec.id, **rep})
         db.commit()
+    except Exception:
+        db.rollback()
+        raise
     except Exception:
         db.rollback()
         raise

@@ -232,20 +232,62 @@ def _cart(context: ToolContext, raw: BaseModel) -> Any:
 
     sugerencias = []
     try:
+        profile = None
+        if context.user:
+            try:
+                res = context.db.scalar(
+                    select(UserStyleProfile).where(UserStyleProfile.usuario_id == context.user.id)
+                )
+                if isinstance(res, UserStyleProfile):
+                    profile = res
+            except Exception:
+                pass
+        norm_g = normalize_gender(getattr(profile, "genero", None)) if profile else None
+        norm_gender = norm_g.value if norm_g else None
+
         cart_prod_ids = {it.get("producto_id") for it in items}
-        available_products = search_products(context.db, only_available=True, limit=8)
+        cart_names = " ".join(it.get("nombre", "").lower() for it in items)
+        has_top = any(k in cart_names for k in ["polera", "camisa", "blusa", "polo", "top", "sueter", "sweater"])
+        has_bottom = any(k in cart_names for k in ["pantalon", "pantalón", "jean", "falda", "palazzo", "bermuda"])
+
+        available_products = search_products(context.db, gender=norm_gender, only_available=True, limit=16)
+        if not available_products and norm_gender:
+            available_products = search_products(context.db, only_available=True, limit=16)
+
         for cand in available_products:
             if cand.get("id") in cart_prod_ids:
                 continue
+            cand_name = (cand.get("nombre") or "").lower()
+            if items and has_top and not has_bottom:
+                if not any(k in cand_name for k in ["pantalon", "pantalón", "jean", "falda", "palazzo"]):
+                    continue
+
+            cand_id = cand["id"]
+            pref_size = None
+            if profile:
+                if any(k in cand_name for k in ["pantalon", "pantalón", "jean", "falda", "palazzo"]):
+                    pref_size = profile.talla_inferior
+                elif any(k in cand_name for k in ["zapato", "zapatilla", "bota", "mocas"]):
+                    pref_size = profile.talla_calzado
+                else:
+                    pref_size = profile.talla_superior
+
             vars_list = context.db.scalars(
                 select(ProductVariant).where(
-                    ProductVariant.producto_id == cand["id"],
+                    ProductVariant.producto_id == cand_id,
                     ProductVariant.activo.is_(True),
                     ProductVariant.stock_total > ProductVariant.stock_reservado,
                 ).order_by(ProductVariant.id)
             ).all()
-            if vars_list:
+            if not vars_list:
+                continue
+
+            var = None
+            if pref_size:
+                var = next((v for v in vars_list if str(getattr(v, "talla", "")).strip().upper() == pref_size.strip().upper()), None)
+            if not var:
                 var = vars_list[0]
+            if var:
                 sugerencias.append({
                     "id": cand["id"],
                     "producto_id": cand["id"],
