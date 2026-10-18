@@ -9,7 +9,7 @@
   y movimiento corto con reduced-motion. Se retiraron mensajes de búsqueda simulados,
   latencias inventadas y respuestas de respaldo atribuidas a Altair.
 - Backend: guardar preferencias no genera texto fijo. Si se solicita inferencia,
-  utiliza el agente existente. El saludo opcional usa Scout real o informa un error.
+  utiliza el agente existente. El saludo opcional usa NVIDIA real o informa un error.
 - CU-16: después de convertir una reserva, se ofrece cobro explícito en efectivo y
   descarga del comprobante no fiscal en la misma vista.
 - CU-24: endpoint formal compatible con recomendación individual y selección completa

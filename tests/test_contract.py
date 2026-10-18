@@ -133,5 +133,5 @@ def test_forgot_password_contract():
         )
     finally:
         app.dependency_overrides.pop(get_db, None)
-    assert res.status_code == 404
-    assert "No existe una cuenta" in res.json()["detail"]
+    assert res.status_code == 409
+    db.commit.assert_not_called()

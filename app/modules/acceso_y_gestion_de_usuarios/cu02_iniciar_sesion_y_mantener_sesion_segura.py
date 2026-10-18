@@ -21,14 +21,7 @@ router = APIRouter()
     description="Permite a un usuario restablecer su contraseña indicando su email registrado.",
 )
 def restablecer_contrasena(payload: ForgotPasswordRequest, db: Session = Depends(get_db)) -> Message:
-    user = db.scalar(select(User).where(func.lower(User.email) == str(payload.email).lower()))
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No existe una cuenta registrada con este correo.")
-    if user.estado != UserStatus.ACTIVO:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="La cuenta se encuentra inactiva o bloqueada.")
-    user.password_hash = hash_password(payload.new_password)
-    db.commit()
-    return Message(message="Contraseña actualizada exitosamente. Ya puedes iniciar sesión con tu nueva contraseña.")
+    raise HTTPException(409, 'La recuperaci?n requiere validaci?n del administrador de tu empresa; no se cambia una contrase?a solo con un correo.')
 
 
 @router.post(
@@ -58,7 +51,7 @@ def iniciar_sesion(payload: LoginRequest, db: Session = Depends(get_db)) -> dict
         )
         is not None
     )
-    token, expires_in = create_access_token(user.id, user.rol.value)
+    token, expires_in = create_access_token(user.id, user.rol.value, tenant_id=user.tenant_id, platform=bool(user.is_platform_admin))
     return {
         "access_token": token,
         "token_type": "bearer",
@@ -94,7 +87,7 @@ def obtener_usuario_actual(
 )
 def refrescar_sesion(user: User = Depends(get_current_user)) -> dict:
     """CU-02: Renueva el token de acceso JWT del usuario activo."""
-    token, expires_in = create_access_token(user.id, user.rol.value)
+    token, expires_in = create_access_token(user.id, user.rol.value, tenant_id=user.tenant_id, platform=bool(user.is_platform_admin))
     return {
         "access_token": token,
         "token_type": "bearer",

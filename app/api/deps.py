@@ -21,11 +21,18 @@ def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        user_id = int(decode_access_token(token)["sub"])
+        claims = decode_access_token(token)
+        user_id = int(claims["sub"])
     except (ValueError, TypeError):
         raise credentials_error
-    user = db.get(User, user_id)
+    from app.core.tenancy import system_scope
+    if claims.get('platform') is True:
+        with system_scope(db): user = db.get(User, user_id)
+    else:
+        user = db.get(User, user_id)
     if not user:
+        raise credentials_error
+    if user.tenant_id != claims.get('tid') or bool(user.is_platform_admin) != (claims.get('platform') is True):
         raise credentials_error
     if user.estado != UserStatus.ACTIVO:
         raise HTTPException(status_code=403, detail="La cuenta no esta activa")
@@ -34,6 +41,8 @@ def get_current_user(
 
 def require_roles(*roles: Role) -> Callable:
     def dependency(current_user: User = Depends(get_current_user)) -> User:
+        if current_user.is_platform_admin or current_user.tenant_id is None:
+            raise HTTPException(403, 'Esta operación requiere un administrador de la empresa')
         if current_user.rol not in roles:
             raise HTTPException(status_code=403, detail="No tiene permisos para esta operacion")
         return current_user

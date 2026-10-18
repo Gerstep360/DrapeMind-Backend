@@ -30,17 +30,17 @@ setup_systemd() {
         if ! id -u drapemind >/dev/null 2>&1; then
             useradd -r -s /bin/false -d "${BACKEND_DIR}" drapemind || true
         fi
-        chown -R drapemind:drapemind "${BACKEND_DIR}/logs" "${BACKEND_DIR}/ai_models" 2>/dev/null || true
+        chown -R drapemind:drapemind "${BACKEND_DIR}/logs" 2>/dev/null || true
     fi
 
-    mkdir -p "${BACKEND_DIR}/logs" "${BACKEND_DIR}/ai_models"
+    mkdir -p "${BACKEND_DIR}/logs"
     chmod -R 775 "${BACKEND_DIR}/logs" 2>/dev/null || true
 
     local SERVICE_DEST="/etc/systemd/system/drapemind-backend.service"
 
     cat <<EOF > "${SERVICE_DEST}"
 [Unit]
-Description=DrapeMind FastAPI Backend and Managed Gemma AI Runtime
+Description=DrapeMind FastAPI Backend with NVIDIA API
 After=network.target postgresql.service
 Wants=postgresql.service
 
@@ -51,9 +51,6 @@ Group=${SERVICE_GROUP}
 WorkingDirectory=${BACKEND_DIR}
 EnvironmentFile=${BACKEND_DIR}/.env
 Environment="PATH=/usr/local/bin:/usr/bin:/bin:${BACKEND_DIR}/.venv/bin"
-Environment="LLAMA_SERVER_PATH=/usr/local/bin/llama-server"
-Environment="LD_LIBRARY_PATH=/usr/local/bin:/usr/local/lib"
-Environment="GGML_BACKEND_PATH=/usr/local/bin"
 ExecStart=${BACKEND_DIR}/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port ${BACKEND_PORT} --workers 1 --proxy-headers --forwarded-allow-ips=127.0.0.1 --ws-ping-interval 60 --ws-ping-timeout 300 --timeout-keep-alive 60
 Restart=on-failure
 RestartSec=5

@@ -8,6 +8,7 @@ from sqlalchemy.dialects.postgresql import ARRAY, CITEXT, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.models.saas import TenantOwned
 
 
 class Role(str, enum.Enum):
@@ -58,11 +59,13 @@ class TimestampMixin:
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
-class User(TimestampMixin, Base):
+class User(TenantOwned, TimestampMixin, Base):
+    tenant_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey('saas_tenants.id', ondelete='RESTRICT'), nullable=True, index=True)
+    is_platform_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     __tablename__ = "usuarios"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     nombre: Mapped[str] = mapped_column(String(120))
-    email: Mapped[str] = mapped_column(CITEXT, unique=True, index=True)
+    email: Mapped[str] = mapped_column(CITEXT, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
     telefono: Mapped[str | None] = mapped_column(String(30))
     rol: Mapped[Role] = mapped_column(role_enum, default=Role.CLIENTE)
@@ -70,7 +73,7 @@ class User(TimestampMixin, Base):
     has_style_profile: bool = False
 
 
-class Address(TimestampMixin, Base):
+class Address(TenantOwned, TimestampMixin, Base):
     __tablename__ = "direcciones"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id", ondelete="CASCADE"))
@@ -86,20 +89,20 @@ class Address(TimestampMixin, Base):
     es_principal: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
-class City(TimestampMixin, Base):
+class City(TenantOwned, TimestampMixin, Base):
     __tablename__ = "ciudades"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     nombre: Mapped[str] = mapped_column(String(100))
     departamento: Mapped[str] = mapped_column(String(100))
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
-    __table_args__ = (UniqueConstraint("nombre", "departamento", name="uq_ciudad_nombre_departamento"),)
+    __table_args__ = (UniqueConstraint("tenant_id", "nombre", "departamento", name="uq_ciudad_nombre_departamento"),)
 
 
-class Branch(TimestampMixin, Base):
+class Branch(TenantOwned, TimestampMixin, Base):
     __tablename__ = "sucursales"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     ciudad_id: Mapped[int] = mapped_column(ForeignKey("ciudades.id", ondelete="RESTRICT"))
-    codigo: Mapped[str] = mapped_column(String(30), unique=True)
+    codigo: Mapped[str] = mapped_column(String(30))
     nombre: Mapped[str] = mapped_column(String(120))
     direccion: Mapped[str] = mapped_column(String(250))
     telefono: Mapped[str | None] = mapped_column(String(30))
@@ -108,27 +111,27 @@ class Branch(TimestampMixin, Base):
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
-class BranchStaff(Base):
+class BranchStaff(TenantOwned, Base):
     __tablename__ = "personal_sucursal"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id", ondelete="CASCADE"))
     sucursal_id: Mapped[int] = mapped_column(ForeignKey("sucursales.id", ondelete="CASCADE"))
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    __table_args__ = (UniqueConstraint("usuario_id", "sucursal_id", name="uq_personal_usuario_sucursal"),)
+    __table_args__ = (UniqueConstraint("tenant_id", "usuario_id", "sucursal_id", name="uq_personal_usuario_sucursal"),)
 
 
-class Category(TimestampMixin, Base):
+class Category(TenantOwned, TimestampMixin, Base):
     __tablename__ = "categorias"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     nombre: Mapped[str] = mapped_column(String(80))
-    slug: Mapped[str] = mapped_column(String(80), unique=True)
+    slug: Mapped[str] = mapped_column(String(80))
     descripcion: Mapped[str | None] = mapped_column(String(250))
     parent_id: Mapped[int | None] = mapped_column(ForeignKey("categorias.id", ondelete="SET NULL"))
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
-class Product(TimestampMixin, Base):
+class Product(TenantOwned, TimestampMixin, Base):
     __tablename__ = "productos"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     categoria_id: Mapped[int] = mapped_column(ForeignKey("categorias.id", ondelete="RESTRICT"))
@@ -146,22 +149,22 @@ class Product(TimestampMixin, Base):
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
-class ProductVariant(TimestampMixin, Base):
+class ProductVariant(TenantOwned, TimestampMixin, Base):
     __tablename__ = "variantes_producto"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     producto_id: Mapped[int] = mapped_column(ForeignKey("productos.id", ondelete="RESTRICT"))
-    sku: Mapped[str] = mapped_column(String(80), unique=True)
+    sku: Mapped[str] = mapped_column(String(80))
     color: Mapped[str] = mapped_column(String(60))
     codigo_color: Mapped[str | None] = mapped_column(String(15))
     talla: Mapped[str] = mapped_column(String(20))
     stock_total: Mapped[int] = mapped_column(Integer, default=0)
     stock_reservado: Mapped[int] = mapped_column(Integer, default=0)
-    codigo_barras: Mapped[str | None] = mapped_column(String(100), unique=True)
+    codigo_barras: Mapped[str | None] = mapped_column(String(100))
     imagen: Mapped[str | None] = mapped_column(String(500))
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
-class BranchStock(TimestampMixin, Base):
+class BranchStock(TenantOwned, TimestampMixin, Base):
     __tablename__ = "stock_sucursal"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     sucursal_id: Mapped[int] = mapped_column(ForeignKey("sucursales.id", ondelete="CASCADE"))
@@ -173,7 +176,7 @@ class BranchStock(TimestampMixin, Base):
     __table_args__ = (UniqueConstraint("sucursal_id", "variante_id", name="uq_stock_sucursal_variante"),)
 
 
-class Favorite(Base):
+class Favorite(TenantOwned, Base):
     __tablename__ = "favoritos"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id", ondelete="CASCADE"))
@@ -181,14 +184,14 @@ class Favorite(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
-class Cart(TimestampMixin, Base):
+class Cart(TenantOwned, TimestampMixin, Base):
     __tablename__ = "carritos"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id", ondelete="CASCADE"))
     estado: Mapped[str] = mapped_column(cart_status_enum, default="ACTIVO")
 
 
-class CartItem(TimestampMixin, Base):
+class CartItem(TenantOwned, TimestampMixin, Base):
     __tablename__ = "items_carrito"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     carrito_id: Mapped[int] = mapped_column(ForeignKey("carritos.id", ondelete="CASCADE"))
@@ -197,7 +200,7 @@ class CartItem(TimestampMixin, Base):
     precio_referencia: Mapped[Decimal] = mapped_column(Numeric(10, 2))
 
 
-class Reservation(TimestampMixin, Base):
+class Reservation(TenantOwned, TimestampMixin, Base):
     __tablename__ = "reservas"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     codigo_publico: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), server_default=func.gen_random_uuid())
@@ -214,7 +217,7 @@ class Reservation(TimestampMixin, Base):
     atendido_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
-class ReservationItem(Base):
+class ReservationItem(TenantOwned, Base):
     __tablename__ = "items_reserva"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     reserva_id: Mapped[int] = mapped_column(ForeignKey("reservas.id", ondelete="CASCADE"))
@@ -224,7 +227,7 @@ class ReservationItem(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
-class Order(TimestampMixin, Base):
+class Order(TenantOwned, TimestampMixin, Base):
     __tablename__ = "pedidos"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     codigo_publico: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), server_default=func.gen_random_uuid())
@@ -245,7 +248,7 @@ class Order(TimestampMixin, Base):
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
-class OrderItem(Base):
+class OrderItem(TenantOwned, Base):
     __tablename__ = "items_pedido"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     pedido_id: Mapped[int] = mapped_column(ForeignKey("pedidos.id", ondelete="RESTRICT"))
@@ -262,7 +265,7 @@ class OrderItem(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
-class Payment(Base):
+class Payment(TenantOwned, Base):
     __tablename__ = "pagos"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     pedido_id: Mapped[int] = mapped_column(ForeignKey("pedidos.id", ondelete="RESTRICT"))
@@ -272,13 +275,13 @@ class Payment(Base):
     moneda: Mapped[str] = mapped_column(String(3), default="BOB")
     estado: Mapped[str] = mapped_column(payment_status_enum, default="PENDIENTE")
     referencia_externa: Mapped[str | None] = mapped_column(String(200), unique=True)
-    idempotency_key: Mapped[str | None] = mapped_column(String(100), unique=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(100))
     qr_payload: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
-class InventoryMovement(Base):
+class InventoryMovement(TenantOwned, Base):
     __tablename__ = "movimientos_inventario"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     variante_id: Mapped[int] = mapped_column(ForeignKey("variantes_producto.id", ondelete="RESTRICT"))
@@ -296,7 +299,7 @@ class InventoryMovement(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
-class AISession(Base):
+class AISession(TenantOwned, Base):
     __tablename__ = "ai_sesiones"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id", ondelete="CASCADE"))
@@ -307,7 +310,7 @@ class AISession(Base):
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
-class AIInteraction(Base):
+class AIInteraction(TenantOwned, Base):
     __tablename__ = "ai_interacciones"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     sesion_id: Mapped[int] = mapped_column(ForeignKey("ai_sesiones.id", ondelete="CASCADE"))
@@ -324,7 +327,7 @@ class AIInteraction(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
-class AIRecommendation(Base):
+class AIRecommendation(TenantOwned, Base):
     __tablename__ = "ai_recomendaciones"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     interaccion_id: Mapped[int] = mapped_column(ForeignKey("ai_interacciones.id", ondelete="CASCADE"))
@@ -344,7 +347,7 @@ class AIRecommendation(Base):
     applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
-class UserStyleProfile(TimestampMixin, Base):
+class UserStyleProfile(TenantOwned, TimestampMixin, Base):
     __tablename__ = "perfiles_estilo_usuario"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id", ondelete="CASCADE"), unique=True, index=True)
@@ -362,7 +365,7 @@ class UserStyleProfile(TimestampMixin, Base):
     completado: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
-class Supplier(TimestampMixin, Base):
+class Supplier(TenantOwned, TimestampMixin, Base):
     __tablename__ = "proveedores"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     nombre_empresa: Mapped[str] = mapped_column(String(150), nullable=False)
@@ -387,10 +390,10 @@ class Supplier(TimestampMixin, Base):
         return self.usuario.nombre if self.usuario else None
 
 
-class Promotion(TimestampMixin, Base):
+class Promotion(TenantOwned, TimestampMixin, Base):
     __tablename__ = "promociones"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    codigo: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
+    codigo: Mapped[str] = mapped_column(String(50), index=True, nullable=False)
     descripcion: Mapped[str | None] = mapped_column(String(255))
     tipo_descuento: Mapped[str] = mapped_column(String(20), default="PORCENTAJE")
     valor_descuento: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
@@ -403,18 +406,18 @@ class Promotion(TimestampMixin, Base):
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
-class Season(TimestampMixin, Base):
+class Season(TenantOwned, TimestampMixin, Base):
     __tablename__ = "temporadas_colecciones"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     nombre: Mapped[str] = mapped_column(String(120), nullable=False)
-    codigo: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
+    codigo: Mapped[str] = mapped_column(String(50), index=True, nullable=False)
     descripcion: Mapped[str | None] = mapped_column(Text)
     fecha_inicio: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     fecha_fin: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
-class SupplierProduct(TimestampMixin, Base):
+class SupplierProduct(TenantOwned, TimestampMixin, Base):
     __tablename__ = "proveedor_suministros"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     proveedor_id: Mapped[int] = mapped_column(ForeignKey("proveedores.id", ondelete="CASCADE"), index=True)
@@ -429,7 +432,7 @@ class SupplierProduct(TimestampMixin, Base):
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
-class UserDevice(TimestampMixin, Base):
+class UserDevice(TenantOwned, TimestampMixin, Base):
     __tablename__ = "dispositivos_usuario"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id", ondelete="CASCADE"), index=True)
@@ -442,7 +445,7 @@ class UserDevice(TimestampMixin, Base):
     __table_args__ = (UniqueConstraint("usuario_id", "token", name="uq_dispositivo_usuario_token"),)
 
 
-class Notification(TimestampMixin, Base):
+class Notification(TenantOwned, TimestampMixin, Base):
     __tablename__ = "notificaciones"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id", ondelete="CASCADE"), index=True, nullable=True)

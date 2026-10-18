@@ -206,7 +206,7 @@ run_install_all() {
     echo ""
 
     if [[ -n "${BACKEND_DIR}" ]]; then
-        echo -e "${COLOR_ACCENT}=== 1/2: INSTALANDO BACKEND (FastAPI + PostgreSQL + Gemma 4) ===${NC}"
+        echo -e "${COLOR_ACCENT}=== 1/2: INSTALANDO BACKEND (FastAPI + PostgreSQL + NVIDIA API) ===${NC}"
         chmod +x "${BACKEND_DIR}/install.sh"
         (cd "${BACKEND_DIR}" && bash "${BACKEND_DIR}/install.sh" --all)
     fi
@@ -274,7 +274,7 @@ verify_all() {
     echo -e "${COLOR_PRIMARY}├──────────────────────────────────────────────────────────────────────────┤${NC}"
     echo -e "${COLOR_PRIMARY}│${NC}  * Frontend Angular / Nginx:  ${STATUS_FE}"
     echo -e "${COLOR_PRIMARY}│${NC}  * Backend FastAPI:           ${STATUS_BE}"
-    echo -e "${COLOR_PRIMARY}│${NC}  * Motor Gemma 4 (Altair):    ${STATUS_AI}"
+    echo -e "${COLOR_PRIMARY}│${NC}  * Conexión NVIDIA (Altair):    ${STATUS_AI}"
     echo -e "${COLOR_PRIMARY}├──────────────────────────────────────────────────────────────────────────┤${NC}"
     echo -e "${COLOR_PRIMARY}│${NC}  * Web Publica:        ${BOLD}https://${SERVER_IP}/DrapeMind/${NC}"
     echo -e "${COLOR_PRIMARY}│${NC}  * API Catalog:        ${BOLD}https://${SERVER_IP}/DrapeMind/api/v1/catalog/products${NC}"
@@ -291,13 +291,13 @@ show_menu() {
     echo -e "${COLOR_PRIMARY}╭── [MENU PRINCIPAL DE GESTION] ───────────────────────────────────────────╮${NC}"
     echo -e "${COLOR_PRIMARY}│${NC}  Accede a los instaladores independientes sin tener que cambiar de carpeta:${COLOR_PRIMARY}│${NC}"
     echo -e "${COLOR_PRIMARY}├────┬─────────────────────────────────────────────────────────────────────┤${NC}"
-    echo -e "${COLOR_PRIMARY}│${BOLD}  1 ${NC}${COLOR_PRIMARY}│${NC}  [1]  ${BOLD}Instalador de Backend${NC} (Python, PostgreSQL, Gemma 4, .env)     ${COLOR_PRIMARY}│${NC}"
+    echo -e "${COLOR_PRIMARY}│${BOLD}  1 ${NC}${COLOR_PRIMARY}│${NC}  [1]  ${BOLD}Instalador de Backend${NC} (Python, PostgreSQL, NVIDIA API, .env)     ${COLOR_PRIMARY}│${NC}"
     echo -e "${COLOR_PRIMARY}│${BOLD}  2 ${NC}${COLOR_PRIMARY}│${NC}  [2]  ${BOLD}Instalador de Frontend / Web${NC} (Angular, Node.js, Nginx Proxy)    ${COLOR_PRIMARY}│${NC}"
     echo -e "${COLOR_PRIMARY}│${BOLD}  3 ${NC}${COLOR_PRIMARY}│${NC}  [3]  ${BOLD}Instalacion Completa${NC} (Desplegar Backend + Frontend de una vez)  ${COLOR_PRIMARY}│${NC}"
     echo -e "${COLOR_PRIMARY}│${BOLD}  4 ${NC}${COLOR_PRIMARY}│${NC}  [4]  ${BOLD}Actualizar Todo desde Git${NC} (Git pull en ambos + Build + Restart)  ${COLOR_PRIMARY}│${NC}"
     echo -e "${COLOR_PRIMARY}│${BOLD}  5 ${NC}${COLOR_PRIMARY}│${NC}  [5]  ${BOLD}Diagnostico Integral de Salud${NC} (Verificar HTTP y WebSockets)    ${COLOR_PRIMARY}│${NC}"
     echo -e "${COLOR_PRIMARY}│${BOLD}  6 ${NC}${COLOR_PRIMARY}│${NC}  [6]  ${BOLD}Ver Logs en Vivo de Backend${NC} (Journalctl drapemind-backend)       ${COLOR_PRIMARY}│${NC}"
-    echo -e "${COLOR_PRIMARY}│${BOLD}  7 ${NC}${COLOR_PRIMARY}│${NC}  [7]  ${BOLD}Ver Logs de Llama / IA en Vivo${NC} (Tokens y Generacion en vivo)     ${COLOR_PRIMARY}│${NC}"
+    echo -e "${COLOR_PRIMARY}│${BOLD}  7 ${NC}${COLOR_PRIMARY}│${NC}  [7]  ${BOLD}Ver Logs del Backend / IA en Vivo${NC} (Tokens y Generacion en vivo)     ${COLOR_PRIMARY}│${NC}"
     echo -e "${COLOR_PRIMARY}│${BOLD}  8 ${NC}${COLOR_PRIMARY}│${NC}  [8]  ${BOLD}Sincronizar y Proteger .env${NC} (Actualizar variables de IA)         ${COLOR_PRIMARY}│${NC}"
     echo -e "${COLOR_PRIMARY}│${BOLD}  9 ${NC}${COLOR_PRIMARY}│${NC}  [9]  ${BOLD}Eliminar Servicio DrapeMind${NC} (Desinstalacion Segura y Aislada)   ${COLOR_PRIMARY}│${NC}"
     echo -e "${COLOR_PRIMARY}│${BOLD} 10 ${NC}${COLOR_PRIMARY}│${NC}  [10] ${BOLD}Enviar Notificacion Personalizada${NC} (Web + Mobile Simultaneo)   ${COLOR_PRIMARY}│${NC}"
@@ -342,11 +342,11 @@ case "${1:-}" in
             journalctl -u drapemind-backend -f -n 50
         fi
         ;;
-    --logs-llama|--llama-logs|-ll)
+    --ai-logs)
         if [[ -n "${BACKEND_DIR}" ]]; then
-            (cd "${BACKEND_DIR}" && bash "${BACKEND_DIR}/install.sh" --logs-llama)
+            (cd "${BACKEND_DIR}" && bash "${BACKEND_DIR}/install.sh" --ai-logs)
         else
-            tail -f -n 50 /root/drapemind/backend/logs/llama-server.log 2>/dev/null || true
+            tail -f -n 50 /root/drapemind/backend/logs/backend.log 2>/dev/null || true
         fi
         ;;
     --help|-h)
@@ -362,7 +362,7 @@ case "${1:-}" in
         echo "  --uninstall          Desinstala el servicio DrapeMind de forma segura y aislada"
         echo "  --check,        -c   Diagnostico de salud y puertos del servidor"
         echo "  --logs,         -l   Muestra logs en tiempo real del backend"
-        echo "  --logs-llama,   -ll  Muestra logs en tiempo real de llama-server (tokens y generacion)"
+        echo "  --ai-logs         Muestra logs en tiempo real de FastAPI y NVIDIA"
         echo "  --help,         -h   Muestra esta ayuda"
         echo ""
         exit 0
@@ -399,9 +399,9 @@ case "${1:-}" in
                     ;;
                 7)
                     if [[ -n "${BACKEND_DIR}" ]]; then
-                        (cd "${BACKEND_DIR}" && bash "${BACKEND_DIR}/install.sh" --logs-llama)
+                        (cd "${BACKEND_DIR}" && bash "${BACKEND_DIR}/install.sh" --ai-logs)
                     else
-                        tail -f -n 50 /root/drapemind/backend/logs/llama-server.log 2>/dev/null || true
+                        tail -f -n 50 /root/drapemind/backend/logs/backend.log 2>/dev/null || true
                     fi
                     ;;
                 8)

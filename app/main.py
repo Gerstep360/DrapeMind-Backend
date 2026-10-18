@@ -14,8 +14,6 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.db.session import engine
-from app.services.model_runtime import model_runtime
-from app.services.scout_orchestrator import shutdown_scout
 from app.services.realtime import websocket_origin_allowed
 
 logger = logging.getLogger("drapemind")
@@ -23,17 +21,19 @@ logger = logging.getLogger("drapemind")
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
-    logger.info("AI_ROUTING mode=%s", "scout" if settings.SCOUT_ENABLED else "legacy_gemma")
-    model_runtime.start_monitor()
+    with engine.connect() as connection:
+        if connection.dialect.name == 'postgresql':
+            superuser,bypass = connection.execute(text('SELECT rolsuper,rolbypassrls FROM pg_roles WHERE rolname=current_user')).one()
+            if superuser or bypass:
+                raise RuntimeError('Configura RUNTIME_DATABASE_URL con un rol NOSUPERUSER NOBYPASSRLS. Ejecuta scripts.saas_setup runtime-role.')
+    logger.info("AI provider=NVIDIA")
     yield
-    await shutdown_scout()
-    await model_runtime.shutdown()
 
 tags_metadata = [
     {"name": "Autenticacion", "description": "Registro, login JWT y usuario actual."},
     {"name": "Catalogo y favoritos", "description": "Catalogo publico, busqueda, variantes y favoritos."},
     {"name": "Sucursales e inventario", "description": "Disponibilidad física por sede y configuración protegida de inventario."},
-    {"name": "IA - Gemma", "description": "Gemma usa exclusivamente tools controlados por FastAPI; nunca conecta a PostgreSQL."},
+    {"name": "IA - Altair", "description": "El modelo usa herramientas controladas por FastAPI; nunca conecta a PostgreSQL."},
     {"name": "Administracion", "description": "Operaciones protegidas por rol ADMIN o VENDEDOR segun endpoint."},
 ]
 
@@ -51,6 +51,9 @@ app = FastAPI(
     root_path=settings.ROOT_PATH,
     lifespan=lifespan,
 )
+from app.core.saas_middleware import SaaSMiddleware
+app.add_middleware(SaaSMiddleware)
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -58,7 +61,7 @@ app.add_middleware(
     allow_origin_regex=settings.CORS_ORIGIN_REGEX,
     allow_credentials=settings.CORS_ALLOW_CREDENTIALS,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "Accept", "X-Webhook-Signature", "X-Request-ID", "Idempotency-Key"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "X-Tenant", "Stripe-Signature", "X-Webhook-Signature", "X-Request-ID", "Idempotency-Key"],
     expose_headers=["X-Request-ID", "X-Process-Time-Ms"],
     max_age=600,
 )
@@ -137,13 +140,8 @@ def readiness():
     return {"status": "ready", "database": "ok"}
 
 
-@app.get("/health/ai", tags=["Sistema"], summary="Estado del runtime Gemma")
+@app.get("/health/ai", tags=["Sistema"], summary="Estado del proveedor IA")
 async def ai_health():
-    status_data = await model_runtime.status()
-    status_data["routing_mode"] = "scout" if settings.SCOUT_ENABLED else "legacy_gemma"
-    status_data["scout_configured"] = bool(settings.SCOUT_MODEL and (
-        settings.SCOUT_MODEL_PATH or not settings.SCOUT_MANAGED_SERVER))
-    return JSONResponse(
-        status_code=200 if status_data["healthy"] else 503,
-        content=status_data,
-    )
+    from app.services.llm_provider import provider_status
+    status_data = await provider_status()
+    return JSONResponse(status_code=200 if status_data["healthy"] else 503, content=status_data)

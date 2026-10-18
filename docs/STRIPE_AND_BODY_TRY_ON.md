@@ -39,7 +39,7 @@ El flujo libera la cámara al salir/pausar y permite cámara frontal/trasera. In
 
 **Límite explícito:** es AR 2D con seguimiento corporal, no malla corporal 3D, simulación física textil, oclusión de brazos ni medición en centímetros. La polera es una prenda de demostración identificada como tal, no un producto ficticio en stock. Las fotos del catálogo no se convierten automáticamente en prendas adaptables: necesitarán assets y anclajes adecuados. El vestidor manual anterior permanece separado.
 
-Requisitos: Android con cámara y SDK de compilación 36; iOS mínimo 15.5, compilar en macOS con Xcode/CocoaPods. Se fijó Flutter Stripe 12.0.2 y sus paquetes nativos compatibles con Dart 3.8.1. No es necesario cambiar los modelos del VPS: la detección no usa Scout ni Gemma y no sube imágenes.
+Requisitos: Android con cámara y SDK de compilación 36; iOS mínimo 15.5, compilar en macOS con Xcode/CocoaPods. Se fijó Flutter Stripe 12.0.2 y sus paquetes nativos compatibles con Dart 3.8.1. No es necesario cambiar los modelos del VPS: la detección no usa NVIDIA ni NVIDIA y no sube imágenes.
 
 [ML Kit Pose Detection para Flutter](https://pub.dev/packages/google_mlkit_pose_detection).
 

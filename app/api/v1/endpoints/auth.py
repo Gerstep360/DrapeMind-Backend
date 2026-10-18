@@ -23,7 +23,7 @@ def _authenticate(db: Session, email: str, password: str) -> User:
 
 
 def _token(user: User) -> TokenResponse:
-    token, expires_in = create_access_token(user.id, user.rol.value)
+    token, expires_in = create_access_token(user.id, user.rol.value, tenant_id=user.tenant_id, platform=bool(user.is_platform_admin))
     return TokenResponse(access_token=token, expires_in=expires_in)
 
 

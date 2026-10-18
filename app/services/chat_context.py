@@ -1,13 +1,31 @@
 """Versioned, chat-scoped memory. No keyword routing and no permanent user profile."""
+
 import json
 from typing import Literal
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    ValidationError,
+    field_validator,
+)
 
 MAX_ENTITIES = 8
-LLM_OMITTED_FIELDS = frozenset({
-    "imagenes", "imagen", "image_url", "resumen_texto", "costo_referencia", "created_at",
-    "tops_sugeridos", "inferiores_sugeridos", "calzado_sugerido", "complementos_abrigos",
-})
+LLM_OMITTED_FIELDS = frozenset(
+    {
+        "imagenes",
+        "imagen",
+        "image_url",
+        "resumen_texto",
+        "costo_referencia",
+        "created_at",
+        "tops_sugeridos",
+        "inferiores_sugeridos",
+        "calzado_sugerido",
+        "complementos_abrigos",
+    }
+)
 
 
 class EntityRef(BaseModel):
@@ -35,7 +53,9 @@ class ChatContext(BaseModel):
         for key, item in value.items():
             if len(key) > 48 or isinstance(item, dict):
                 raise ValueError("Use short keys and scalar values or scalar lists")
-            if isinstance(item, list) and (len(item) > 8 or any(isinstance(x, (dict, list)) for x in item)):
+            if isinstance(item, list) and (
+                len(item) > 8 or any(isinstance(x, (dict, list)) for x in item)
+            ):
                 raise ValueError("Nested context is not allowed")
         return value
 
@@ -49,7 +69,7 @@ def read_context(memory: dict | None) -> ChatContext:
 
 
 def update_context(state: ChatContext, patch: dict | None) -> ChatContext:
-    """Gemma proposes facts; server validates size and entity provenance."""
+    """NVIDIA proposes facts; server validates size and entity provenance."""
     if not isinstance(patch, dict):
         return state
     data = state.model_dump()
@@ -63,7 +83,10 @@ def update_context(state: ChatContext, patch: dict | None) -> ChatContext:
     if "pending" in patch:
         data["pending"] = patch["pending"]
     if "selected" in patch:
-        known = {(item.type, item.id): item for item in state.recent + state.previous + state.selected}
+        known = {
+            (item.type, item.id): item
+            for item in state.recent + state.previous + state.selected
+        }
         selected = []
         for value in patch["selected"] if isinstance(patch["selected"], list) else []:
             if isinstance(value, dict):
@@ -90,12 +113,23 @@ def observe_cards(state: ChatContext, cards: list[dict]) -> ChatContext:
     for card in cards:
         kind = types.get(card.get("accion"))
         identity = (kind, card.get("id"))
-        if not kind or not isinstance(identity[1], int) or identity[1] <= 0 or identity in seen:
+        if (
+            not kind
+            or not isinstance(identity[1], int)
+            or identity[1] <= 0
+            or identity in seen
+        ):
             continue
         seen.add(identity)
-        entities.append(EntityRef(type=kind, id=identity[1], label=str(card.get("nombre") or "")[:100]))
+        entities.append(
+            EntityRef(
+                type=kind, id=identity[1], label=str(card.get("nombre") or "")[:100]
+            )
+        )
     if entities:
-        if [(e.type, e.id) for e in state.recent] != [(e.type, e.id) for e in entities[:MAX_ENTITIES]]:
+        if [(e.type, e.id) for e in state.recent] != [
+            (e.type, e.id) for e in entities[:MAX_ENTITIES]
+        ]:
             state.previous = state.recent
         state.recent = entities[:MAX_ENTITIES]
     return state
@@ -107,16 +141,37 @@ def prompt_state(state: ChatContext) -> str:
     return json.dumps(data, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
 
 
+def merge_turn_constraints(
+    latest: ChatContext, original: ChatContext, returned: dict | None
+) -> ChatContext:
+    updated = read_context(returned)
+    delta = {
+        key: value
+        for key, value in updated.constraints.items()
+        if original.constraints.get(key) != value
+    }
+    return update_context(latest, {"constraints": delta})
+
+
 def serialize_observation(value):
     """Column/row packing removes repeated keys, not rows or monetary precision."""
     if isinstance(value, list):
         if value and all(isinstance(row, dict) for row in value):
-            columns = sorted(set().union(*(row.keys() for row in value)) - LLM_OMITTED_FIELDS)
-            return {"columns": columns, "rows": [
-                [serialize_observation(row.get(key)) for key in columns] for row in value
-            ]}
+            columns = sorted(
+                set().union(*(row.keys() for row in value)) - LLM_OMITTED_FIELDS
+            )
+            return {
+                "columns": columns,
+                "rows": [
+                    [serialize_observation(row.get(key)) for key in columns]
+                    for row in value
+                ],
+            }
         return [serialize_observation(item) for item in value]
     if isinstance(value, dict):
-        return {key: serialize_observation(item) for key, item in value.items()
-                if key not in LLM_OMITTED_FIELDS}
+        return {
+            key: serialize_observation(item)
+            for key, item in value.items()
+            if key not in LLM_OMITTED_FIELDS
+        }
     return value

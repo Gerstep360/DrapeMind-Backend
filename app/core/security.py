@@ -42,13 +42,15 @@ def hash_password(password: str) -> str:
 get_password_hash = hash_password
 
 
-def create_access_token(subject: int | str, role: str) -> tuple[str, int]:
+def create_access_token(subject: int | str, role: str, *, tenant_id: int | None = None, platform: bool = False) -> tuple[str, int]:
     expires_in = settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
     now = datetime.now(timezone.utc)
     payload: dict[str, Any] = {
         "sub": str(subject), "role": role, "type": "access", "iat": now,
         "exp": now + timedelta(seconds=expires_in),
     }
+    from app.core.tenancy import tenant_context
+    payload.update(tid=None if platform else (tenant_id if tenant_id is not None else tenant_context.get()), platform=platform)
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.JWT_ALGORITHM), expires_in
 
 

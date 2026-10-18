@@ -194,14 +194,14 @@ def search_products(
     return [product_payload(product, int(available or 0)) for product, available in rows]
 
 
-def get_product_detail(db: Session, product_id: int, include_inactive: bool = False) -> dict:
-    product = db.get(Product, product_id)
+def get_product_detail(db: Session, product_id: int, include_inactive: bool = False, *, fresh: bool = False) -> dict:
+    product = db.get(Product, product_id, populate_existing=fresh)
     if not product or (not include_inactive and not product.activo):
         raise HTTPException(404, "Producto no encontrado")
     variants = db.scalars(
         select(ProductVariant).where(ProductVariant.producto_id == product.id).order_by(
             ProductVariant.color, ProductVariant.talla
-        )
+        ).execution_options(populate_existing=fresh)
     ).all()
     data = product_payload(product)
     data["variantes"] = [variant_payload(variant, product) for variant in variants]

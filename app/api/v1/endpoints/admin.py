@@ -2,7 +2,7 @@
 import logging
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from sqlalchemy import select, text
+from sqlalchemy import select, text, func, case
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -10,14 +10,14 @@ from app.api.deps import require_roles
 from app.core.config import settings
 from app.db.session import get_db
 from app.models import (
-    BranchStaff, Category, InventoryMovement, Order, Product, ProductVariant, Reservation, Role, User,
+    BranchStaff, Category, InventoryMovement, Order, Product, ProductVariant, Reservation, Role, User, AIInteraction,
 )
 from app.schemas.api import (
     AssistedProductRequest, CategoryInput, CategoryOut, InventoryAdjustment,
     OrderOut, ProductInput, ProductOut, ReservationOut, VariantInput, VariantOut,
 )
-from app.services.ai import call_gemma
-from app.services.model_runtime import ModelRuntimeError, model_runtime
+from app.services.ai import call_nvidia
+from app.services.ai_errors import AIProviderError
 from app.services.store import variant_payload
 from app.services.store import expire_due_reservations
 
@@ -26,38 +26,19 @@ ai_runtime_router = APIRouter()
 logger = logging.getLogger("drapemind.ai")
 
 
-@ai_runtime_router.get("/ai/runtime", summary="Estado del runtime Gemma")
-async def ai_runtime_status(
-    admin: User = Depends(require_roles(Role.ADMIN)),
-) -> dict:
-    return await model_runtime.status()
+@ai_runtime_router.get("/ai/runtime", summary="Estado de conexión con NVIDIA")
+async def ai_runtime_status(admin: User = Depends(require_roles(Role.ADMIN))) -> dict:
+    from app.services.llm_provider import provider_status
+    return await provider_status()
 
 
-@ai_runtime_router.post("/ai/runtime/start", summary="Encender Gemma")
-async def start_ai_runtime(
-    admin: User = Depends(require_roles(Role.ADMIN)),
-) -> dict:
+@ai_runtime_router.post("/ai/check", summary="Probar herramientas y streaming de NVIDIA")
+async def check_ai_connection(admin: User = Depends(require_roles(Role.ADMIN))) -> dict:
+    from app.services.llm_provider import check_provider
     try:
-        await model_runtime.ensure_started()
-    except ModelRuntimeError as exc:
+        return await check_provider()
+    except AIProviderError as exc:
         raise HTTPException(503, str(exc)) from exc
-    except Exception as exc:
-        logger.exception("No se pudo iniciar el runtime administrado de Gemma")
-        reason = (
-            f"{type(exc).__name__}: {exc}"
-            if settings.ENVIRONMENT == "development"
-            else "Revise el log del servicio."
-        )
-        raise HTTPException(503, f"No se pudo iniciar Gemma. {reason}") from exc
-    return await model_runtime.status()
-
-
-@ai_runtime_router.post("/ai/runtime/stop", summary="Apagar Gemma")
-async def stop_ai_runtime(
-    admin: User = Depends(require_roles(Role.ADMIN)),
-) -> dict:
-    await model_runtime.stop()
-    return await model_runtime.status()
 
 
 @router.post("/categories", response_model=CategoryOut, status_code=201, summary="Crear categoria")
@@ -198,16 +179,16 @@ def adjust_inventory(
 
 @router.post(
     "/products/ai-draft", summary="Generar borrador de producto con IA",
-    description="CU-31. Gemma propone metadatos, pero no escribe en productos: un ADMIN debe validar y usar POST /products.",
+    description="CU-31. NVIDIA propone metadatos, pero no escribe en productos: un ADMIN debe validar y usar POST /products.",
 )
 async def assisted_product(
     payload: AssistedProductRequest, admin: User = Depends(require_roles(Role.ADMIN))
 ) -> dict:
-    answer, usage = await call_gemma(
+    answer, usage = await call_nvidia(
         "Eres catalogador de ropa. Devuelve JSON con descripcion, material_probable, tags y genero_objetivo. No incluyas precio ni stock.",
         f"Nombre: {payload.nombre_provisional}\nObservacion visual: {payload.descripcion_imagen}",
     )
-    return {"borrador": answer, "modelo": settings.AI_MODEL, "requiere_validacion_humana": True, "usage": usage}
+    return {"borrador": answer, "modelo": settings.NVIDIA_MODEL, "requiere_validacion_humana": True, "usage": usage}
 
 
 @router.get("/reservations", response_model=list[ReservationOut], summary="Gestionar reservas")
@@ -260,27 +241,23 @@ def sales_history(
     limit: int = Query(default=100, ge=1, le=500),
     admin: User = Depends(require_roles(Role.ADMIN)), db: Session = Depends(get_db),
 ) -> list[dict]:
-    rows = db.execute(text("SELECT * FROM vw_historial_ventas ORDER BY completed_at DESC NULLS LAST LIMIT :limit"), {"limit": limit})
-    return [dict(row._mapping) for row in rows]
+    rows = db.execute(select(Order, User.nombre).join(User, User.id==Order.usuario_id).order_by(Order.completed_at.desc().nullslast()).limit(limit))
+    return [{**{key:getattr(order,key) for key in ('codigo_publico','usuario_id','canal','tipo_entrega','subtotal','descuento','costo_envio','total','created_at','completed_at')},'pedido_id':order.id,'cliente':name} for order,name in rows]
+
 
 
 @router.get("/metrics/sales-inventory", summary="Metricas de ventas e inventario")
 def sales_inventory_metrics(
     admin: User = Depends(require_roles(Role.ADMIN)), db: Session = Depends(get_db)
 ) -> dict:
-    sales = db.execute(text(
-        "SELECT COUNT(*) AS pedidos_entregados, COALESCE(SUM(total),0) AS ingresos "
-        "FROM pedidos WHERE estado='ENTREGADO'"
-    )).mappings().one()
-    inventory = db.execute(text(
-        "SELECT COUNT(*) AS variantes, COALESCE(SUM(stock_total-stock_reservado),0) AS unidades_disponibles, "
-        "COUNT(*) FILTER (WHERE stock_total-stock_reservado <= 3) AS stock_bajo FROM variantes_producto WHERE activo"
-    )).mappings().one()
-    return {"ventas": dict(sales), "inventario": dict(inventory)}
+    sales = db.execute(select(func.count(Order.id).label('pedidos_entregados'),func.coalesce(func.sum(Order.total),0).label('ingresos')).where(Order.estado=='ENTREGADO')).mappings().one()
+    inventory = db.execute(select(func.count(ProductVariant.id).label('variantes'),func.coalesce(func.sum(ProductVariant.stock_total-ProductVariant.stock_reservado),0).label('unidades_disponibles'),func.count(case((ProductVariant.stock_total-ProductVariant.stock_reservado<=3,1))).label('stock_bajo')).where(ProductVariant.activo.is_(True))).mappings().one()
+    return {'ventas':dict(sales),'inventario':dict(inventory)}
+
 
 
 @router.get("/metrics/ai", summary="Metricas de uso de IA")
 def ai_metrics(
     admin: User = Depends(require_roles(Role.ADMIN)), db: Session = Depends(get_db)
 ) -> list[dict]:
-    return [dict(row._mapping) for row in db.execute(text("SELECT * FROM vw_resumen_ai ORDER BY tipo"))]
+    return [dict(row._mapping) for row in db.execute(select(AIInteraction.tipo,func.count(AIInteraction.id).label('total_interacciones'),func.avg(AIInteraction.duracion_ms).label('duracion_promedio_ms'),func.count(case((AIInteraction.estado=='OK',1))).label('exitosas'),func.count(case((AIInteraction.estado!='OK',1))).label('errores')).group_by(AIInteraction.tipo).order_by(AIInteraction.tipo))]

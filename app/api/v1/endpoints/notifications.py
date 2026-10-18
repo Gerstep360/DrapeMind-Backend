@@ -5,9 +5,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, require_roles
 from app.db.session import get_db
-from app.models.entities import Notification, User, UserDevice
+from app.models.entities import Notification, User, UserDevice, Role
 from app.services.push_notifications import dispatch_notification, sync_silent_dismissal
 from app.services.realtime import event_hub
 
@@ -266,6 +266,10 @@ class BroadcastPayload(BaseModel):
 )
 async def broadcast_notification_event(
     payload: BroadcastPayload,
+    admin: User = Depends(require_roles(Role.ADMIN)),
+    db: Session = Depends(get_db),
 ) -> dict[str, str]:
-    await event_hub.publish(payload.event, user_id=payload.user_id)
+    if payload.user_id is not None and db.get(User,payload.user_id) is None:
+        raise HTTPException(404,'Usuario no encontrado')
+    await event_hub.publish(payload.event, user_id=payload.user_id, tenant_id=admin.tenant_id)
     return {"status": "broadcasted"}

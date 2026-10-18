@@ -18,7 +18,7 @@ from app.db.session import SessionLocal
 from app.models.entities import Product, Category
 
 def run_seed():
-    db = SessionLocal()
+    db = SessionLocal(tenant_id=1)  # ID de una empresa existente y autorizada
     try:
         print("🌱 Ejecutando seed...")
         # Inserta tus datos aquí usando SQLAlchemy:

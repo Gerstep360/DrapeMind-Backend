@@ -5,10 +5,8 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi import HTTPException
 from app.services.chat_context import ChatContext, EntityRef, read_context, update_context, observe_cards, prompt_state, serialize_observation
-from app.services.context_prompt import build_messages, prompt_sections
 from app.services.chat_sessions import delete_chat, select_product
 from app.services.ai_memory import load_ai_memory, build_session_summary
-from app.services.ai_agent import run_gemma_tool_agent
 from app.main import app
 
 
@@ -49,15 +47,6 @@ def test_packing_preserves_all_rows_and_precise_values():
     assert packed["rows"][-1] == [16, "99.90"]
 
 
-def test_prefix_is_stable_and_user_message_is_intact():
-    catalog = [{"name": "b", "parameters": {"properties": {}}}, {"name": "a", "parameters": {"properties": {}}}]
-    user = "  Mensaje íntegro\ncon detalles  "
-    a = prompt_sections(user, ChatContext(), catalog, [])
-    b = prompt_sections("Otro", ChatContext(constraints={"style": "libre"}), list(reversed(catalog)), [])
-    assert a["system"] == b["system"]
-    assert a["tools"] == b["tools"]
-    assert build_messages(a)[1]["content"].endswith(user)
-    assert "Usuario:" not in a["state"]
 
 
 def test_active_routes_include_context_lifecycle():
@@ -98,19 +87,6 @@ def test_picker_updates_only_the_requested_session():
     db.commit.assert_called_once()
 
 
-def test_agent_uses_model_context_and_picker_without_keyword_rules(monkeypatch):
-    from app.services import ai_agent
-    monkeypatch.setattr(ai_agent, "tool_catalog", lambda: [])
-    memory = ChatContext(recent=[EntityRef(type="product", id=47, label="Lino")]).model_dump()
-    async def complete(messages, **kwargs):
-        assert "Lino" in messages[1]["content"]
-        return {"choices": [{"message": {"content": json.dumps({
-            "type": "finish", "answer": "¿Cuál prefieres?", "ui": "product_picker",
-            "context": {"constraints": {"fabric_preference": "suave"}, "pending": "Revisa disponibilidad"}
-        })}}]}
-    result = asyncio.run(run_gemma_tool_agent(MagicMock(), SimpleNamespace(id=4), "Consulta libre", memory, complete))
-    assert result["chat_context"]["constraints"] == {"fabric_preference": "suave"}
-    assert result["response_meta"]["product_picker"][0]["id"] == 47
 
 
 def test_history_text_is_not_stored_twice_in_v2_context():

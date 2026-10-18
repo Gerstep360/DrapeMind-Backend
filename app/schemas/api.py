@@ -40,6 +40,8 @@ class TokenResponse(BaseModel):
 
 
 class UserOut(ORMModel):
+    tenant_id: int | None = None
+    is_platform_admin: bool = False
     id: int
     nombre: str
     email: EmailStr
@@ -61,6 +63,7 @@ class StyleProfileInput(BaseModel):
     presupuesto_habitual: Decimal | None = Field(default=None, ge=0)
     silueta_preferida: str | None = Field(default=None, max_length=50)
     infer_outfit: bool = True
+    infer_style: bool = False
 
 
 class StyleProfileOut(ORMModel):
@@ -76,6 +79,7 @@ class StyleProfileOut(ORMModel):
     presupuesto_habitual: Decimal | None
     silueta_preferida: str | None
     adn_estilo_ia: str | None
+    inferencia_error: str | None = None
     primer_outfit_ia: dict | None
     completado: bool
     created_at: datetime
@@ -399,7 +403,7 @@ class OutfitRequest(BaseModel):
 class CartAnalysisRequest(BaseModel):
     objetivo: str = Field(default="estilo", description="Objetivo o descripción de análisis de estilo/ahorro")
     sesion_id: int | None = None
-    modelo_ia: Literal["ALTAIR", "ALTAIR_MINI", "ALTAIR_VARIABLE", "mini", "dynamic", "gemma"] = "ALTAIR_MINI"
+    modelo_ia: Literal["NVIDIA"] = "NVIDIA"
 
 
 class RecommendationApply(BaseModel):
@@ -547,7 +551,7 @@ class ProductAiAssistExtendedRequest(BaseModel):
     genero_objetivo: str = Field(default="UNISEX", max_length=30)
     detalles_confeccion: str | None = Field(default=None, max_length=500)
     descripcion_imagen: str | None = Field(default=None, max_length=2000)
-    modelo_ia: Literal["ALTAIR", "ALTAIR_MINI", "ALTAIR_VARIABLE"] = "ALTAIR_MINI"
+    modelo_ia: Literal["NVIDIA"] = "NVIDIA"
 
 
 class ProductAiAssistExtendedResponse(BaseModel):
@@ -558,7 +562,7 @@ class ProductAiAssistExtendedResponse(BaseModel):
     silueta_corte: str
     precio_sugerido_estimado: Decimal
     categoria_recomendada: str
-    modelo_utilizado: str = "Altair Mini (Scout 0.6B)"
+    modelo_utilizado: str = "NVIDIA"
 
 
 # CU-26: Generación de Reportes Empresariales IA
@@ -570,7 +574,7 @@ class ExecutiveReportRequest(BaseModel):
         "ESTRATEGICO_GLOBAL",
     ] = "VENTAS_Y_TENDENCIAS"
     periodo: Literal["MES_ACTUAL", "TRIMESTRE", "HISTORICO"] = "MES_ACTUAL"
-    modelo_ia: Literal["ALTAIR", "ALTAIR_MINI", "ALTAIR_VARIABLE"] = "ALTAIR_MINI"
+    modelo_ia: Literal["NVIDIA"] = "NVIDIA"
     enfoque_especifico: str | None = Field(default=None, max_length=300)
     seed: int | None = Field(default=None, description="Semilla generativa para variar el estilo y perspectiva analitica")
 
@@ -604,7 +608,7 @@ class ReporteDinamicoIA(BaseModel):
     )
     tipo_reporte: str | None = Field(default=None)
     periodo: str | None = Field(default=None)
-    modelo_utilizado: str | None = Field(default="Altair (Gemma 4 E2B)")
+    modelo_utilizado: str | None = Field(default="Altair (NVIDIA)")
     semilla_generativa: int | None = Field(default=None)
     enfoque_personalizado: str | None = Field(default=None)
     fecha_generacion: str | None = Field(default=None)

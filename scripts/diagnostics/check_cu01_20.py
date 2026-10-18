@@ -1,6 +1,6 @@
 """Prueba integral del alcance CU-01..CU-20 contra PostgreSQL.
 
-Requiere una base migrada y sembrada. No inicia Gemma ni necesita Docker.
+Requiere una base migrada y sembrada. No inicia NVIDIA ni necesita Docker.
 """
 
 from starlette.testclient import TestClient

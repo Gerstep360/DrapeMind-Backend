@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+import asyncio
 from sqlalchemy import BigInteger, create_engine
 from sqlalchemy.dialects.postgresql import ARRAY, CITEXT, JSONB
 from sqlalchemy.ext.compiler import compiles
@@ -49,6 +50,51 @@ Base.metadata.create_all(bind=test_engine)
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
 
 
+def test_nvidia_socket_routes_concurrent_replies_to_their_requests(auth_token_and_user, monkeypatch):
+    from app.core.config import settings
+    from app.services import ai, nvidia_agent
+    token, _ = auth_token_and_user
+    gate = None
+    original = ai.run_agent_socket
+
+    async def agent(db, user, message, memory, emit, **kwargs):
+        nonlocal gate
+        if gate is None:
+            gate = asyncio.Event()
+        if message == "Busca prendas":
+            await gate.wait()
+        return {"requires_llm": False, "direct_response": message, "action_items": [],
+                "events_emitted": True, "response_meta": {"model_used": "test-model"}, "chat_context": {}}
+
+    async def run(*args, **kwargs):
+        await original(*args, **kwargs)
+        if args[2] == "Consulta envíos":
+            gate.set()
+
+    monkeypatch.setattr(ai, "run_nvidia_agent", agent)
+    monkeypatch.setattr(ai, "run_agent_socket", run)
+    with TestClient(app).websocket_connect("/api/v1/ws/ai") as socket:
+        socket.send_json({"type": "auth", "token": token})
+        assert socket.receive_json()["concurrent"] is True
+        socket.send_json({"type": "chat", "request_id": "m1", "message": "Busca prendas"})
+        first = socket.receive_json()
+        assert first["type"] == "task_started"
+        socket.send_json({"type": "chat", "request_id": "m2", "message": "Consulta envíos", "session_id": first["session_id"]})
+        socket.send_json({"type": "ping"})
+        completed = []
+        pong = False
+        while len(completed) < 2:
+            event = socket.receive_json()
+            assert event["type"] != "error", event
+            if event["type"] == "pong":
+                pong = True
+            if event["type"] == "done":
+                completed.append(event["request_id"])
+                assert event["session_id"] == first["session_id"]
+        assert completed == ["m2", "m1"]
+        assert pong
+
+
 
 @pytest.fixture
 def auth_token_and_user(monkeypatch):
@@ -74,96 +120,3 @@ def auth_token_and_user(monkeypatch):
             db.refresh(user)
         token, _ = create_access_token(user.id, user.rol.value)
         return token, user
-
-
-def test_ws_ai_full_flow(auth_token_and_user, monkeypatch):
-    token, user = auth_token_and_user
-
-    async def fake_completion(*args, **kwargs):
-        if kwargs.get("stream"):
-            mock_client = MagicMock()
-            mock_client.aclose = AsyncMock()
-            mock_resp = MagicMock()
-            mock_resp.status_code = 200
-
-            async def fake_lines():
-                yield 'data: {"choices": [{"delta": {"content": "Respuesta asistida Altair"}}]}'
-                yield "data: [DONE]"
-
-            mock_resp.aiter_lines = fake_lines
-            mock_resp.raise_for_status = MagicMock()
-
-            class FakeStreamCtx:
-                async def __aenter__(self):
-                    return mock_resp
-
-                async def __aexit__(self, exc_type, exc_val, exc_tb):
-                    pass
-
-            mock_client.stream = MagicMock(return_value=FakeStreamCtx())
-            return mock_client, {}, {}
-        return {
-            "choices": [
-                {
-                    "message": {
-                        "content": '{"type": "finish", "answer": "Respuesta asistida Altair", "title": "Asesoría", "presentation": "text"}'
-                    }
-                }
-            ]
-        }
-
-    monkeypatch.setattr("app.services.ai._completion", fake_completion)
-    monkeypatch.setattr("app.services.ai.model_runtime.is_healthy", AsyncMock(return_value=True))
-
-    @asynccontextmanager
-    async def fake_lease():
-        yield
-
-    monkeypatch.setattr("app.services.ai.model_runtime.lease", fake_lease)
-
-    client = TestClient(app)
-
-    with client.websocket_connect("/api/v1/ws/ai") as ws:
-        # 1. Auth
-        ws.send_json({"type": "auth", "token": token})
-        connected = ws.receive_json()
-        assert connected["type"] == "connected"
-
-        # 2. Ping
-        ws.send_json({"type": "ping"})
-        pong = ws.receive_json()
-        assert pong["type"] == "pong"
-
-        ws.send_json({"type": "chat", "message": "Continuar", "session_id": 999999})
-        assert ws.receive_json()["type"] == "error"
-        backend_session_id = None
-        test_prompts = [
-            "Hola Altair",
-            "Mira mi carrito y dime que puedo quitar o que puedo combinar en mi eleccion",
-            "Arma un outfit elegante para una cena de gala con presupuesto de 800 Bs",
-            "Busco camisas de lino blanco en talla M",
-            "Cobré mi sueldo y quiero comprar algo de calidad",
-            "Muéstrame las piezas más exclusivas del showroom",
-        ]
-
-        for prompt in test_prompts:
-            ws.send_json({
-                "type": "chat",
-                "message": prompt,
-                "session_id": backend_session_id,
-            })
-
-            received_events = []
-            while True:
-                evt = ws.receive_json()
-                evt_type = evt.get("type")
-                received_events.append(evt_type)
-                if evt_type == "error":
-                    pytest.fail(f"Error recibido en prompt '{prompt}': {evt.get('message')}")
-                if evt_type == "done":
-                    assert "session_id" in evt
-                    assert evt["session_id"] is not None
-                    backend_session_id = evt["session_id"]
-                    break
-
-            assert "done" in received_events

@@ -34,7 +34,7 @@ from app.schemas.api import (
     SeccionDinamica,
     TablaDinamica,
 )
-from app.services.ai import call_gemma
+from app.services.ai import call_nvidia
 from app.services.push_notifications import dispatch_notification
 
 router = APIRouter()
@@ -118,7 +118,7 @@ REGLAS OBLIGATORIAS:
 """
 
     try:
-        raw_response, _ = await call_gemma(
+        raw_response, _ = await call_nvidia(
             system=system_prompt,
             user=user_prompt,
             response_format={"type": "json_object"},
@@ -130,7 +130,7 @@ REGLAS OBLIGATORIAS:
         return ReporteDinamicoIA.model_validate(data)
     except Exception:
         # Fallback analitico sastrero resiliente basado en los datos duros reales
-        return _sintetizar_reporte_directivo_resiliente(contexto_datos, enfoque)
+        raise HTTPException(503, "No se pudo generar el reporte con NVIDIA. Puedes reintentar.")
 
 
 def _sintetizar_reporte_directivo_resiliente(contexto_datos: dict, enfoque: str | None) -> ReporteDinamicoIA:
@@ -536,13 +536,8 @@ async def generar_informe_empresarial_ia(
     )
 
     # Mapeo del nombre del modelo para la respuesta
-    nombre_modelo = "Gemma-4-E2B-Instruct"
-    if payload.modelo_ia == "ALTAIR_MINI":
-        nombre_modelo = "Altair Mini (Scout 0.6B - Inferencia Rápida)"
-    elif payload.modelo_ia == "ALTAIR_VARIABLE":
-        nombre_modelo = "Altair Variable (Orquestación Híbrida Dinámica)"
-    elif payload.modelo_ia == "ALTAIR":
-        nombre_modelo = "Altair Principal (Gemma 4 E2B - Razonamiento Profundo)"
+    from app.core.config import settings
+    nombre_modelo = settings.NVIDIA_MODEL
 
     # Enriquecer reporte con métricas cuantitativas y metadatos
     reporte_final.indicadores_clave = indicadores
@@ -602,7 +597,7 @@ async def generar_resumen_ejecutivo_ia(
     )
 
     try:
-        res, _ = await call_gemma(
+        res, _ = await call_nvidia(
             system="Eres un consultor de negocios y analista estratégico de retail de lujo. CERO EMOJIS.",
             user=prompt,
         )

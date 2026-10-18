@@ -1034,18 +1034,7 @@ def reset_sequences(db, log_fn: Callable[[str], None] = print) -> None:
         "promociones",
         "temporadas_colecciones",
     ]
-    log_fn("  -> Reseteando secuencias de PostgreSQL...")
-    for tbl in tables:
-        try:
-            seq_sql = f"SELECT pg_get_serial_sequence('{tbl}', 'id')"
-            seq_name = db.execute(text(seq_sql)).scalar()
-            if seq_name:
-                fix_sql = f"SELECT setval('{seq_name}', COALESCE((SELECT MAX(id) FROM {tbl}), 1))"
-                db.execute(text(fix_sql))
-        except Exception:
-            pass
-    db.commit()
-    log_fn("  [OK] Secuencias de PostgreSQL sincronizadas al valor maximo actual.")
+    log_fn('Las secuencias compartidas se conservan; PostgreSQL asigna los IDs globales.')
 
 
 def run_full_seed(
@@ -1065,6 +1054,7 @@ def run_full_seed(
 ) -> None:
     """Ejecuta el sembrado completo, modular y configurable de DrapeMind."""
     parser = argparse.ArgumentParser(description="DrapeMind Database Seeder")
+    parser.add_argument("--tenant",default="drapemind",help="Empresa destino del seeder")
     parser.add_argument("--products", "-p", "--limit-products", type=int, default=None, help="Limite maximo de productos a cargar (ej. 50, 100, 200)")
     parser.add_argument("--women-count", "--women", type=int, default=None, help="Cantidad especifica de prendas de mujer a sembrar")
     parser.add_argument("--men-count", "--men", type=int, default=None, help="Cantidad especifica de prendas de hombre a sembrar")
@@ -1197,7 +1187,17 @@ def run_full_seed(
     log_fn(f"   Configuracion: {final_products or 'Todas (887)'} prendas | {final_branches} sucursales")
     log_fn("====================================================================")
 
-    with SessionLocal() as db:
+    if is_reset:
+        raise ValueError('El reset global no se permite en SaaS. Usa una base de pruebas separada.')
+    from app.models.saas import Tenant
+    from app.services.saas import require_active_subscription
+    with SessionLocal() as lookup:
+        tenant=lookup.scalar(select(Tenant).where(Tenant.slug==cli_args.tenant))
+        if not tenant: raise ValueError('Empresa no encontrada')
+        tenant_id=tenant.id
+    with SessionLocal(tenant_id=tenant_id) as db:
+        plan=require_active_subscription(db,tenant_id)
+        if final_branches>plan.max_branches: raise ValueError('El seeder supera el limite de sucursales contratado')
         prod_count = db.scalar(select(func.count(Product.id))) or 0
 
         if prod_count > 0 and not is_force and not is_reset:
@@ -1206,23 +1206,6 @@ def run_full_seed(
             log_fn("  (Para reiniciar y sembrar limpio: python -m scripts.db.seed_data --reset --products 60)")
             log_fn("  (Para forzar sembrado adicional: python -m scripts.db.seed_data --force)\n")
             return
-
-        if is_reset:
-            log_fn("\n[MODO RESET] Limpiando tablas de catalogo, stock, pedidos, carritos y proveedores...")
-            try:
-                db.execute(
-                    text(
-                        "TRUNCATE TABLE items_pedido, items_reserva, pagos, pedidos, reservas, "
-                        "movimientos_inventario, items_carrito, carritos, stock_sucursal, "
-                        "variantes_producto, productos, proveedor_suministros, proveedores, "
-                        "promociones, temporadas_colecciones CASCADE;"
-                    )
-                )
-                db.commit()
-                log_fn("  [OK] Tablas operativas reseteadas a cero.")
-            except Exception as exc:
-                db.rollback()
-                log_fn(f"  ! Aviso al resetear tablas: {exc}")
 
         log_fn("\n1. Ciudades y Sucursales (Showrooms)...")
         branches = seed_cities_and_branches(db, limit_branches=final_branches, log_fn=log_fn)

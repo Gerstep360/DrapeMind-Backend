@@ -518,7 +518,7 @@ def upgrade() -> None:
         duracion_ms         INTEGER,
         tokens_entrada      INTEGER,
         tokens_salida       INTEGER,
-        modelo              VARCHAR(80) NOT NULL DEFAULT 'gemma-4-e2b-it',
+        modelo              VARCHAR(80) NOT NULL,
         estado              estado_ai_interaccion NOT NULL DEFAULT 'OK',
         created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         CHECK (duracion_ms IS NULL OR duracion_ms >= 0),

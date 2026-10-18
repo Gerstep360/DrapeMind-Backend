@@ -1,1037 +1,284 @@
-import asyncio
-import json
-import logging
-import re
-import time
+"""Conversation and commerce integration for the NVIDIA assistant."""
+
 from datetime import datetime, timezone
 from decimal import Decimal
-from types import SimpleNamespace
+import logging
+import time
 from typing import Any
+from uuid import uuid4
 
-import httpx
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models import (
-    AIInteraction, AIRecommendation, AISession, Product, ProductVariant, User,
+    AIInteraction,
+    AIRecommendation,
+    AISession,
+    Product,
+    ProductVariant,
+    User,
     UserStyleProfile,
 )
-from app.services.store import cart_payload, normalize_gender, replace_cart_item, search_products
-from app.services.ai_tools import RecommendOutfitArgs, TOOLS, ToolContext, _recommend_outfit
-from app.services.ai_agent import run_gemma_tool_agent
-from app.services.scout_orchestrator import run_scout_orchestrator, inference_turn
-from app.services.agent_stream import partial_answer
-from app.services.ai_memory import build_session_summary, load_ai_memory, merge_ai_memory
+from app.services.ai_errors import AIProviderError
+from app.services.ai_memory import build_session_summary, load_ai_memory
+from app.services.chat_context import observe_cards, read_context, update_context
 from app.services.chat_sessions import owned_session
-from app.services.context_metrics import context_metrics
-from app.services.model_runtime import ModelRuntimeError, model_runtime
-from app.services.ai_logger import ai_logger
+from app.services.llm_provider import complete
+from app.services.nvidia_agent import run_nvidia_agent
+from app.services.personal_shopping import shopping_context
+from app.services.chat_context import merge_turn_constraints
+from app.services.store import cart_payload, get_product_detail, replace_cart_item
 
 logger = logging.getLogger("drapemind.ai")
 
-SYSTEM_PROMPT = (
-    "Eres Altair, el Personal Stylist & Asesor de Imagen de DrapeMind Atelier. "
-    "La moneda oficial es el Boliviano (Bs o BOB); nunca uses euros (€) ni dólares ($). "
-    "Respeta estrictamente el género del usuario (HOMBRE o MUJER) y sus tallas registradas en su perfil de estilo. "
-    "Usa solo datos verificados por FastAPI, no inventes stock ni precios y responde de forma elocuente, breve y accionable."
-)
+
+def sanitize_for_json(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {key: sanitize_for_json(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [sanitize_for_json(item) for item in value]
+    return value
 
 
-def sanitize_for_json(obj: Any) -> Any:
-    """Recursively converts Decimals, datetimes, and non-serializable objects for JSON/WebSockets."""
-    if isinstance(obj, Decimal):
-        return float(obj)
-    if isinstance(obj, (datetime, )):
-        return obj.isoformat()
-    if isinstance(obj, dict):
-        return {k: sanitize_for_json(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple, set)):
-        return [sanitize_for_json(v) for v in obj]
-    return obj
-
-
-def compact_tool_results(tool_results: list[dict]) -> list[dict]:
-    """Compacts tool results to strictly essential tokens so context never exceeds LLM limits."""
-    compacted = []
-    for tr in tool_results:
-        tname = tr.get("name", "")
-        tres = tr.get("result")
-        if tname == "get_my_cart" and isinstance(tres, dict):
-            items_summary = []
-            for it in (tres.get("items") or []):
-                items_summary.append({
-                    "prenda": it.get("nombre"),
-                    "color": it.get("color"),
-                    "talla": it.get("talla"),
-                    "precio_unitario": it.get("precio_unitario"),
-                    "cantidad": it.get("cantidad"),
-                    "subtotal": it.get("subtotal"),
-                })
-            complements_summary = []
-            for it in (tres.get("sugerencias_complemento") or []):
-                complements_summary.append({
-                    "prenda": it.get("nombre"),
-                    "precio": it.get("precio"),
-                    "calidad": it.get("calidad"),
-                })
-            compacted.append({
-                "herramienta": "carrito_usuario",
-                "estado": tres.get("estado"),
-                "total_items": tres.get("total_items"),
-                "total_bs": tres.get("subtotal"),
-                "prendas_en_carrito": items_summary,
-                "complementos_sugeridos_tienda": complements_summary,
-            })
-        elif tname in ("search_products", "get_trending_pieces", "find_alternatives") and isinstance(tres, list):
-            items_summary = []
-            for it in tres[:5]:
-                items_summary.append({
-                    "prenda": it.get("nombre"),
-                    "precio": it.get("precio"),
-                    "calidad": it.get("calidad_nivel"),
-                })
-            compacted.append({
-                "herramienta": tname,
-                "opciones_encontradas": items_summary,
-            })
-        elif tname == "recommend_outfit" and isinstance(tres, dict):
-            selected = tres.get("seleccion") or []
-            outfit_summary = [
-                {
-                    "prenda": item.get("nombre"),
-                    "precio": item.get("precio"),
-                    "talla": item.get("talla"),
-                    "color": item.get("color"),
-                }
-                for item in selected[:4]
-            ]
-            compacted.append({
-                "herramienta": "outfit_sugerido",
-                "ocasion": tres.get("ocasion"),
-                "total_seleccion_bs": tres.get("seleccion_total"),
-                "presupuesto_cumplido": tres.get("presupuesto_cumplido"),
-                "piezas_seleccionadas": outfit_summary,
-                "restricciones_solicitadas": tres.get("restricciones_solicitadas"),
-                "restricciones_sin_stock": tres.get("restricciones_sin_stock"),
-            })
-        elif tname == "get_my_orders" and isinstance(tres, list):
-            compacted.append({
-                "herramienta": "mis_pedidos",
-                "cantidad_pedidos": len(tres),
-                "pedidos": [
-                    {
-                        "numero_pedido": o.get("id"),
-                        "codigo": str(o.get("code", ""))[:8],
-                        "estado": o.get("status"),
-                        "total_bs": o.get("total_bob"),
-                        "modalidad_entrega": o.get("delivery"),
-                        "fecha_creacion": str(o.get("created_at", ""))[:10],
-                    }
-                    for o in tres[:5]
-                ],
-            })
-        elif tname == "get_my_reservations" and isinstance(tres, list):
-            compacted.append({
-                "herramienta": "mis_reservas",
-                "cantidad_reservas": len(tres),
-                "reservas": [
-                    {
-                        "reserva_id": r.get("id"),
-                        "codigo": str(r.get("code", ""))[:8],
-                        "estado": r.get("status"),
-                        "fecha_vencimiento": str(r.get("expires_at", ""))[:16],
-                    }
-                    for r in tres[:5]
-                ],
-            })
-        elif tname == "analyze_styling":
-            compacted.append({"herramienta": "analisis_estilo", "estado": "completado"})
-        else:
-            if isinstance(tres, dict):
-                compacted.append({k: v for k, v in tres.items() if k in ("resumen", "total", "estado", "mensaje", "nombre")})
-            elif isinstance(tres, list):
-                compacted.append([{"nombre": x.get("nombre"), "precio": x.get("precio")} for x in tres[:4] if isinstance(x, dict)])
-            else:
-                compacted.append(str(tres)[:120])
-    return compacted
-
-
-def format_messages_for_gemma(messages: list[dict[str, Any]]) -> list[dict[str, str]]:
-    """Gemma models in llama.cpp do not support the 'system' role.
-    Merge all system messages into the user turn to ensure 100% compatibility
-    without triggering 'System role not supported' (HTTP 400).
-    """
-    clean_messages: list[dict[str, str]] = []
-    system_parts: list[str] = []
-    for m in messages:
-        role = str(m.get("role", "user")).lower()
-        content = str(m.get("content") or "")
-        if not content:
-            continue
-        if role == "system":
-            system_parts.append(content)
-        elif role in ("assistant", "model"):
-            clean_messages.append({"role": "assistant", "content": content})
-        else:
-            clean_messages.append({"role": "user", "content": content})
-
-    if system_parts:
-        system_prefix = "\n\n".join(system_parts)
-        if clean_messages and clean_messages[0]["role"] == "user":
-            clean_messages[0]["content"] = f"[INSTRUCCIÓN DE ESTILO Y PERSONALIDAD]\n{system_prefix}\n\n[MENSAJE ACTUAL]\n{clean_messages[0]['content']}"
-        else:
-            clean_messages.insert(0, {"role": "user", "content": f"[INSTRUCCIÓN DE ESTILO Y PERSONALIDAD]\n{system_prefix}"})
-    elif not clean_messages:
-        clean_messages = [{"role": "user", "content": "Hola"}]
-
-    return clean_messages
-
-
-async def call_gemma(
+async def call_nvidia(
     system: str,
     user: str,
-    model: str | None = None,
-    temperature: float | None = None,
-    seed: int | None = None,
-    response_format: dict[str, Any] | None = None,
-    max_tokens: int | None = None,
-) -> tuple[str, dict[str, int | None]]:
-    combined = f"[INSTRUCCIÓN DE ESTILO Y PERSONALIDAD]\n{system}\n\n[MENSAJE ACTUAL]\n{user}" if system else user
-    target_model = model or settings.AI_MODEL
-    payload: dict[str, Any] = {
-        "model": target_model,
-        "messages": [{"role": "user", "content": combined}],
-        "temperature": temperature if temperature is not None else settings.AI_TEMPERATURE,
-        "max_tokens": max_tokens or settings.AI_MAX_TOKENS,
-        "stream": False,
-    }
-    if seed is not None:
-        payload["seed"] = seed
-    if response_format is not None:
-        payload["response_format"] = response_format
-    headers = {"Authorization": f"Bearer {settings.AI_API_KEY}"}
-
-    call_timeout = max(float(settings.AI_TIMEOUT_SECONDS), 180.0) if (max_tokens and max_tokens > 800) else float(settings.AI_TIMEOUT_SECONDS)
-    last_exc = None
-    for attempt in range(2):
-        try:
-            async with model_runtime.lease():
-                async with httpx.AsyncClient(timeout=call_timeout) as client:
-                    response = await client.post(
-                        f"{settings.AI_BASE_URL.rstrip('/')}/chat/completions",
-                        json=payload,
-                        headers=headers,
-                    )
-                    response.raise_for_status()
-                    data = response.json()
-                    usage = data.get("usage", {})
-                    return data["choices"][0]["message"]["content"], {
-                        "prompt_tokens": usage.get("prompt_tokens"),
-                        "completion_tokens": usage.get("completion_tokens"),
-                        "model": target_model,
-                    }
-        except (httpx.HTTPError, KeyError, ValueError, ModelRuntimeError) as exc:
-            last_exc = exc
-            if attempt == 0:
-                await asyncio.sleep(1.5)
-                continue
-
-    raise HTTPException(
-        status_code=503,
-        detail="El servidor local de Gemma no esta disponible o devolvio una respuesta invalida",
-    ) from last_exc
-
-
-def _extract_json(value: str) -> dict:
-    value = value.strip()
-    try:
-        return json.loads(value)
-    except json.JSONDecodeError:
-        match = re.search(r"\{.*\}", value, re.DOTALL)
-        if not match:
-            return {"type": "finish"}
-        try:
-            return json.loads(match.group(0))
-        except json.JSONDecodeError:
-            return {"type": "finish"}
-
-
-async def _completion(
-    messages: list[dict],
-    max_tokens: int | None = None,
-    stream: bool = False,
-    response_format: dict[str, Any] | None = None,
-    temperature: float | None = None,
-    on_text=None,
-    context_chat_id=None,
-    allow_partial: bool = False,
+    *,
+    temperature=None,
+    seed=None,
+    response_format=None,
+    max_tokens=None,
+    model=None,
 ):
-    clean_messages = format_messages_for_gemma(messages)
-    payload = {
-        "model": settings.AI_MODEL,
-        "messages": clean_messages,
-        "temperature": temperature if temperature is not None else settings.AI_TEMPERATURE,
-        "max_tokens": max_tokens or settings.AI_AGENT_MAX_TOKENS,
-        "stream": stream or on_text is not None,
-        "cache_prompt": True,
-        "reasoning_budget": settings.AI_REASONING_BUDGET,
-        "stop": [
-            "<end_of_turn>",
-            "<eos>",
-            "</s>",
-            "<|im_end|>",
-            "\nCLIENTE:",
-            "\nCONSULTA:",
-            "\nUSUARIO:",
+    result = await complete(
+        [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
         ],
-    }
-    if response_format:
-        payload["response_format"] = response_format
-    headers = {"Authorization": f"Bearer {settings.AI_API_KEY}"}
-    client_timeout = max(settings.AI_AGENT_DEADLINE_SECONDS, settings.AI_FIRST_TOKEN_TIMEOUT_SECONDS, settings.AI_TIMEOUT_SECONDS) + 10.0
-    client = httpx.AsyncClient(timeout=client_timeout, trust_env=False)
-    metrics = await context_metrics(client, messages, context_chat_id)
-    if on_text is not None:
-        content = ""
-        finish_reason = None
-        started = time.monotonic()
-        first_delta = None
-        reasoning_chars = 0
-        usage = {}
-        timings = {}
-        try:
-            async with asyncio.timeout(settings.AI_AGENT_DEADLINE_SECONDS):
-                async with client.stream("POST", f"{settings.AI_BASE_URL.rstrip('/')}/chat/completions", json=payload, headers=headers) as response:
-                    if response.status_code >= 400:
-                        await response.aread()
-                        logger.error("Agent inference HTTP %s: %s", response.status_code, response.text[:500])
-                    response.raise_for_status()
-                    lines = response.aiter_lines().__aiter__()
-                    while True:
-                        try:
-                            remaining = (settings.AI_FIRST_TOKEN_TIMEOUT_SECONDS - (time.monotonic() - started)
-                                         if first_delta is None else settings.AI_TIMEOUT_SECONDS)
-                            line = await asyncio.wait_for(anext(lines), timeout=max(0.01, remaining))
-                        except StopAsyncIteration:
-                            break
-                        if not line.startswith("data:"):
-                            continue
-                        data = line[5:].strip()
-                        if data == "[DONE]":
-                            break
-                        if not data:
-                            continue
-                        event = json.loads(data)
-                        usage = event.get("usage") or usage
-                        timings = event.get("timings") or timings
-                        if event.get("error"):
-                            raise ModelRuntimeError("El servidor de inferencia devolvió un error durante la respuesta")
-                        for choice in event.get("choices", []):
-                            reasoning = choice.get("delta", {}).get("reasoning_content") or ""
-                            delta = choice.get("delta", {}).get("content") or ""
-                            if (delta or reasoning) and first_delta is None:
-                                first_delta = time.monotonic() - started
-                            reasoning_chars += len(reasoning)
-                            if delta:
-                                content += delta
-                                await on_text(content)
-                            finish_reason = choice.get("finish_reason") or finish_reason
-                        # A complete decision is sufficient; do not wait for extra whitespace/EOS.
-                        if content.lstrip().startswith("{"):
-                            try:
-                                decision = json.loads(content)
-                            except ValueError:
-                                decision = None
-                            if isinstance(decision, dict) and (
-                                decision.get("type") == "finish" and isinstance(decision.get("answer"), str)
-                                or decision.get("type") == "tool" and isinstance(decision.get("arguments"), dict)
-                                and isinstance(decision.get("tool"), str)
-                            ):
-                                finish_reason = "stop"
-                                break
-            if not content:
-                raise ModelRuntimeError("El modelo no devolvió contenido de respuesta")
-            if finish_reason == "length" and not allow_partial:
-                raise ModelRuntimeError("Altair agotó su presupuesto de generación sin finalizar. Reintenta con una consulta más breve.")
-            return {"choices": [{"message": {"content": content}, "finish_reason": finish_reason}],
-                    "usage": usage, "timings": timings, "context_metrics": metrics}
-        except (TimeoutError, httpx.TimeoutException) as exc:
-            raise ModelRuntimeError(
-                "El modelo excedió el tiempo de respuesta. La generación fue cancelada; "
-                "puedes reintentar. Si se repite, revisa la carga y los logs de llama-server."
-            ) from exc
-        finally:
-            elapsed_s = time.monotonic() - started
-            logger.info("agent_inference elapsed=%.2fs first_delta=%s answer_chars=%d reasoning_chars=%d finish=%s",
-                        elapsed_s, first_delta, len(content), reasoning_chars, finish_reason)
-            logger.info("AI_INFERENCE %s", json.dumps({"chat": context_chat_id,
-                "ttft_seconds": first_delta, "total_seconds": elapsed_s,
-                "prompt_tokens": usage.get("prompt_tokens"), "prefill_ms": timings.get("prompt_ms"),
-                "cached_tokens": (usage.get("prompt_tokens_details") or {}).get("cached_tokens")}))
-            ai_logger.log_gemma_inference(
-                chat_id=context_chat_id or 0,
-                ttft_seconds=first_delta,
-                total_seconds=elapsed_s,
-                usage=usage,
-                timings=timings,
-                reasoning_chars=reasoning_chars,
-                finish_reason=finish_reason or "stop",
-                model_name=settings.AI_MODEL,
-            )
-            await client.aclose()
-    if not stream:
-        started = time.monotonic()
-        try:
-            response = await client.post(
-                f"{settings.AI_BASE_URL.rstrip('/')}/chat/completions",
-                json=payload,
-                headers=headers,
-            )
-            if response.status_code == 400 and response_format:
-                logger.warning("400 con response_format en llama-server, reintentando sin response_format")
-                payload.pop("response_format", None)
-                response = await client.post(
-                    f"{settings.AI_BASE_URL.rstrip('/')}/chat/completions",
-                    json=payload,
-                    headers=headers,
-                )
-            if response.status_code >= 400:
-                logger.error("LLM Error %d: %s", response.status_code, response.text)
-            response.raise_for_status()
-            res_json = response.json()
-            u = res_json.get("usage") or {}
-            t = res_json.get("timings") or {}
-            ch = res_json.get("choices", [{}])[0] if res_json.get("choices") else {}
-            ai_logger.log_gemma_inference(
-                chat_id=context_chat_id or 0,
-                ttft_seconds=None,
-                total_seconds=time.monotonic() - started,
-                usage=u,
-                timings=t,
-                reasoning_chars=0,
-                finish_reason=ch.get("finish_reason", "stop"),
-                model_name=settings.AI_MODEL,
-            )
-            return res_json
-        finally:
-            await client.aclose()
-    return client, payload, headers
-
-
-
-async def run_agent_socket(db: Session, user: User, message: str, session_id: int | None, send, mode: str = "dynamic") -> None:
-    """Execute AI turns based on selected model mode: 'mini' (Scout only), 'dynamic' (hybrid), or 'gemma' (Gemma only)."""
-    started = time.perf_counter()
-    session = get_ai_session(db, user.id, session_id)
-    tool_results: list[dict] = []
-    used_tools: list[str] = []
-    answer_parts: list[str] = []
-    mode = str(mode or "dynamic").lower()
-
-    user_name = (
-        getattr(user, "nombre", None)
-        or getattr(user, "username", None)
-        or "Cliente"
+        temperature=temperature,
+        response_format=response_format,
+        max_tokens=max_tokens,
+        seed=seed,
     )
-
-    ai_logger.log_new_message(
-        chat_id=session.id,
-        user_id=user.id,
-        user_name=user_name,
-        message=message,
-        scout_enabled=settings.SCOUT_ENABLED,
-    )
-
-    try:
-        await send({
-            "type": "thought",
-            "content": "Preparando Altair Mini para tu consulta..." if mode == "mini" else "Preparando a Altair para tu consulta..."
-        })
-
-        memory = load_ai_memory(session.resumen_contexto)
-        try:
-            from app.models.entities import UserStyleProfile
-            from sqlalchemy import select
-            sp = db.scalar(select(UserStyleProfile).where(UserStyleProfile.usuario_id == user.id))
-            if sp and sp.completado:
-                facts = memory.setdefault("facts", {})
-                if "talla_superior" not in facts and sp.talla_superior:
-                    facts["talla_superior"] = sp.talla_superior
-                if "talla_inferior" not in facts and sp.talla_inferior:
-                    facts["talla_inferior"] = sp.talla_inferior
-                if "talla_calzado" not in facts and sp.talla_calzado:
-                    facts["talla_calzado"] = sp.talla_calzado
-                if "genero" not in facts and sp.genero:
-                    facts["genero"] = sp.genero
-                if "estilo_favorito" not in facts and sp.estilos_preferidos:
-                    facts["estilo_favorito"] = sp.estilos_preferidos[0]
-                if "silueta" not in facts and sp.silueta_preferida:
-                    facts["silueta"] = sp.silueta_preferida
-                if "presupuesto_habitual" not in facts and sp.presupuesto_habitual:
-                    facts["presupuesto_habitual"] = float(sp.presupuesto_habitual)
-        except Exception:
-            pass
-        use_gemma_direct = (mode == "gemma") or (not settings.SCOUT_ENABLED and mode != "mini")
-        was_ready = False if not use_gemma_direct else await model_runtime.is_healthy()
-        await send(
-            {
-                "type": "model_status",
-                "status": "ready" if was_ready else "loading",
-                "session_id": session.id,
-                "model_role": "main" if use_gemma_direct else "scout",
-                "mode": mode,
-            }
-        )
-        streamed_text = ""
-        async def on_agent_text(raw):
-            nonlocal streamed_text
-            answer = partial_answer(raw)
-            if raw.strip() and not raw.lstrip().startswith(("{", "`")):
-                answer = raw
-            elif raw.lstrip().startswith("```") and len(raw) > 12 and not raw.lstrip().startswith("```json"):
-                answer = raw
-            if len(answer) > len(streamed_text) and (len(answer) - len(streamed_text) >= 24 or answer.endswith((".", "\n"))):
-                streamed_text = answer
-                await send({"type": "answer_snapshot", "content": answer})
-
-        async def agent_complete(messages, **kwargs):
-            return await _completion(messages, **kwargs, on_text=on_agent_text, context_chat_id=session.id)
-
-        if not use_gemma_direct:
-            allow_delegation = (mode != "mini")
-            skill_res = await run_scout_orchestrator(
-                db, user, message, memory, agent_complete, send, session.id,
-                allow_delegation=allow_delegation,
-            )
-        else:
-            try:
-                async with asyncio.timeout(settings.AI_TURN_TIMEOUT_SECONDS):
-                    async with inference_turn():
-                        async with model_runtime.lease():
-                            skill_res = await run_gemma_tool_agent(
-                                db, user, message, memory, agent_complete, emit=send,
-                                max_steps=settings.AI_MAX_AGENT_STEPS, chat_id=session.id,
-                            )
-            except TimeoutError as exc:
-                raise ModelRuntimeError(
-                    "La consulta superó el tiempo total permitido. Se canceló el turno; "
-                    "el servidor está usando Gemma. Prueba con el modo Altair Mini o Dinámico."
-                ) from exc
-            legacy_ms = max(0, int((time.perf_counter() - started) * 1000))
-            raw_sub_tools = skill_res.get("composite_sub_tools") or []
-            clean_tools = [
-                str(st.get("name") if isinstance(st, dict) else st)
-                for st in raw_sub_tools
-                if (isinstance(st, dict) and st.get("name")) or (isinstance(st, str) and st)
-            ]
-            if not clean_tools and skill_res.get("tool_name"):
-                clean_tools = [str(skill_res["tool_name"])]
-
-            ai_logger.log_turn_summary(
-                chat_id=session.id,
-                user_name=user_name,
-                duration_ms=legacy_ms,
-                routing_mode="direct_gemma",
-                scout_calls=0,
-                gemma_calls=1,
-                tools_used=clean_tools,
-                scout_tokens={"prompt": 0, "completion": 0},
-                gemma_tokens={"prompt": 0, "completion": 0},
-                notices=skill_res.get("notices"),
-            )
-
-        skill = SimpleNamespace(name="gemma_tool_agent")
-        tool_name = skill_res.get("tool_name")
-        tool_args = skill_res.get("tool_args") or {}
-        tool_result = skill_res.get("tool_result")
-        action_items = skill_res.get("action_items") or []
-        presentation_mode = skill_res.get("presentation_mode") or (
-            "mixed" if action_items else "text"
-        )
-        response_title = skill_res.get("response_title")
-        notices = skill_res.get("notices") or []
-        response_meta = skill_res.get("response_meta") or {}
-
-        def _tool_thought_desc(name: str, args: dict | None = None) -> str:
-            tool_def = TOOLS.get(name)
-            if tool_def and tool_def.description:
-                desc = tool_def.description.split(".")[0].strip()
-                if args and args.get("query"):
-                    return f"Buscando '{args['query']}' en showroom atelier..."
-                if args and args.get("occasion"):
-                    return f"Diseñando conjunto para ocasión '{args['occasion']}'..."
-                return f"{desc}..."
-            return f"Consultando {name.replace('_', ' ')} en atelier..."
-
-        sub_tools = skill_res.get("composite_sub_tools")
-        events_emitted = bool(skill_res.get("events_emitted"))
-        if sub_tools and isinstance(sub_tools, list):
-            for st in sub_tools:
-                st_name = st.get("name")
-                if not st_name:
-                    continue
-                st_args = st.get("args") or {}
-                st_res = st.get("result")
-                clean_st_res = sanitize_for_json(st_res)
-                used_tools.append(st_name)
-                tool_results.append({"name": st_name, "result": clean_st_res})
-                if not events_emitted:
-                    await send({"type": "thought", "content": _tool_thought_desc(st_name, st_args)})
-                    await send({
-                        "type": "tool_start",
-                        "name": st_name,
-                        "arguments": sanitize_for_json(st_args),
-                    })
-                    await send({
-                        "type": "tool_result",
-                        "name": st_name,
-                        "result": clean_st_res,
-                    })
-        elif tool_name:
-            await send({"type": "thought", "content": _tool_thought_desc(tool_name, tool_args)})
-            await send(
-                {
-                    "type": "tool_start",
-                    "name": tool_name,
-                    "arguments": sanitize_for_json(tool_args),
-                }
-            )
-            clean_tool_result = sanitize_for_json(tool_result)
-            used_tools.append(tool_name)
-            tool_results.append({"name": tool_name, "result": clean_tool_result})
-            await send(
-                {
-                    "type": "tool_result",
-                    "name": tool_name,
-                    "result": clean_tool_result,
-                }
-            )
-
-        if action_items:
-            await send({
-                "type": "thought",
-                "content": f"Preparando {len(action_items)} resultado(s) interactivo(s) para la conversación..."
-            })
-
-        suggested_actions = skill_res.get("suggested_actions") or []
-
-        await send(
-            {
-                "type": "presentation",
-                "mode": presentation_mode,
-                "title": response_title,
-                "card_count": len(action_items),
-                "notices": sanitize_for_json(notices),
-                "response_meta": sanitize_for_json(response_meta),
-                "suggested_actions": sanitize_for_json(suggested_actions),
-            }
-        )
-
-        if mode == "mini" or not skill_res.get("requires_llm"):
-            direct_text = skill_res.get("direct_response") or skill_res.get("fallback_response") or ""
-            if not direct_text:
-                if action_items:
-                    direct_text = (
-                        f"He preparado {len(action_items)} prenda(s) y combinaciones del showroom "
-                        f"con stock y disponibilidad confirmados en FastAPI."
-                    )
-                else:
-                    direct_text = "He consultado la información del atelier para tu solicitud."
-            answer_parts.append(direct_text)
-            await send({"type": "answer_snapshot" if streamed_text else "token", "content": direct_text})
-        else:
-            was_ready = await model_runtime.is_healthy()
-            await send(
-                {
-                    "type": "model_status",
-                    "status": "ready" if was_ready else "loading",
-                    "session_id": session.id,
-                }
-            )
-            user_name = (
-                getattr(user, "nombre", None)
-                or getattr(user, "username", None)
-                or "Cliente"
-            )
-            focus_prompt = skill_res.get("focus_prompt") or (
-                "Brinda una asesoría de moda completa, argumentada y distinguida."
-            )
-
-            items_catalog_lines = []
-            for it in action_items:
-                nom = it.get("nombre")
-                pr = it.get("precio", 0)
-                tal = it.get("talla")
-                mot = it.get("motivo") or ""
-                extra = f" (Talla {tal})" if tal else ""
-                items_catalog_lines.append(f"- {nom}{extra}: Bs {pr:.2f} [{mot}]")
-            items_catalog_text = "\n".join(items_catalog_lines) if items_catalog_lines else "No hay prendas específicas seleccionadas."
-
-            final_messages = [
-                {
-                    "role": "system",
-                    "content": (
-                        "Eres Altair, Personal Stylist e Inteligencia Artificial de DrapeMind Atelier.\n"
-                        "DIRECTRICES GENERALES DE RESPUESTA:\n"
-                        "1. ADAPTABILIDAD TOTAL Y FIDELIDAD AL PROMPT: Cumple estrictamente con el tono, formato, estilo o personalidad que el usuario te solicite en su mensaje (humor, rima, poesía, sarcasmo, ironía, concisión extrema, formalidad, análisis técnico, o cualquier otro estilo). Adopta de inmediato ese estilo con naturalidad e ingenio.\n"
-                        "2. INTEGRACIÓN DE PRENDAS Y PRECIOS: Fundamenta tu asesoría en los datos reales del showroom (prendas verificadas y sus precios en Bolivianos Bs). Cita los nombres y precios reales integrándolos fluidamente en el formato que el usuario pidió.\n"
-                        "3. NATURALIDAD HUMANA: No uses saludos robóticos ni fórmulas repetitivas ('Estimado cliente...', 'A continuación te presento...'). Ve directo al grano y habla con carisma y soltura.\n"
-                        "4. PROHIBICIÓN ESTRICTA: Cero emojis o emoticonos bajo cualquier circunstancia."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": (
-                        f"CLIENTE: {user_name}\n"
-                        f"CONSULTA DEL CLIENTE: {message}\n\n"
-                        f"DATOS DEL ATELIER (Prendas y precios verificados):\n{items_catalog_text}\n\n"
-                        f"ENFOQUE: {focus_prompt}\n\n"
-                        "Responde a la consulta del cliente cumpliendo con fidelidad todas sus instrucciones de tono, contenido y estilo:"
-                    ),
-                },
-            ]
-            max_tokens = max(80, min(240, int(skill_res.get("llm_max_tokens") or 160)))
-            target_temp = float(settings.AI_TEMPERATURE or 0.65)
-            if target_temp < 0.6:
-                target_temp = 0.65
-
-            try:
-                async with model_runtime.lease():
-                    await send(
-                        {
-                            "type": "model_status",
-                            "status": "ready",
-                            "session_id": session.id,
-                        }
-                    )
-                    client, payload, headers = await _completion(
-                        final_messages,
-                        max_tokens=max_tokens,
-                        stream=True,
-                        temperature=target_temp,
-                    )
-                    try:
-                        async with client.stream(
-                            "POST",
-                            f"{settings.AI_BASE_URL.rstrip('/')}/chat/completions",
-                            json=payload,
-                            headers=headers,
-                        ) as response:
-                            if response.status_code >= 400:
-                                error_body = await response.aread()
-                                logger.error(
-                                    "LLM Stream Error %d: %s",
-                                    response.status_code,
-                                    error_body.decode("utf-8", errors="ignore"),
-                                )
-                            response.raise_for_status()
-                            async for line in response.aiter_lines():
-                                if not line.startswith("data:"):
-                                    continue
-                                raw = line[5:].strip()
-                                if raw == "[DONE]":
-                                    break
-                                try:
-                                    event = json.loads(raw)
-                                    delta = event["choices"][0]["delta"]
-                                    chunk = delta.get("content") or delta.get("reasoning_content") or ""
-                                except (json.JSONDecodeError, KeyError, IndexError):
-                                    continue
-                                if chunk:
-                                    answer_parts.append(chunk)
-                                    await send({"type": "token", "content": chunk})
-                    except Exception as stream_err:
-                        logger.warning("Error durante streaming LLM: %s. Intentando completado directo.", stream_err)
-                    finally:
-                        await client.aclose()
-
-                    # Fallback inmediato a completado no-streaming si el stream vino vacío o falló
-                    if not "".join(answer_parts).strip():
-                        try:
-                            logger.info("Stream vacío, reintentando con POST directo a llama-server...")
-                            async with httpx.AsyncClient(timeout=25.0) as direct_client:
-                                direct_payload = {**payload, "stream": False}
-                                resp = await direct_client.post(
-                                    f"{settings.AI_BASE_URL.rstrip('/')}/chat/completions",
-                                    json=direct_payload,
-                                    headers=headers,
-                                )
-                                if resp.status_code == 200:
-                                    data = resp.json()
-                                    msg = data["choices"][0]["message"]
-                                    direct_text = msg.get("content") or msg.get("reasoning_content") or ""
-                                    if direct_text and direct_text.strip():
-                                        for idx in range(0, len(direct_text), 12):
-                                            c = direct_text[idx:idx + 12]
-                                            answer_parts.append(c)
-                                            await send({"type": "token", "content": c})
-                                            await asyncio.sleep(0.01)
-                        except Exception as direct_err:
-                            logger.warning("Fallo en completado directo: %s", direct_err)
-            except (ModelRuntimeError, httpx.HTTPError, Exception) as exc:
-                logger.warning("Gemma runtime lease no disponible o falló en síntesis: %s", exc)
-                if not "".join(answer_parts).strip():
-                    fallback_text = str(skill_res.get("fallback_response") or skill_res.get("direct_response") or "Aquí tienes las opciones seleccionadas según tu solicitud.")
-                    for index in range(0, len(fallback_text), 48):
-                        chunk = fallback_text[index:index + 48]
-                        answer_parts.append(chunk)
-                        await send({"type": "token", "content": chunk})
-
-        if not "".join(answer_parts).strip() and skill_res.get("fallback_response"):
-            fallback_text = str(skill_res["fallback_response"])
-            for index in range(0, len(fallback_text), 48):
-                chunk = fallback_text[index:index + 48]
-                answer_parts.append(chunk)
-                await send({"type": "token", "content": chunk})
-
-        answer = "".join(answer_parts).strip()
-        clean_tools_str = (",".join(used_tools) or "skill:" + skill.name)[:250]
-        interaction = _save_interaction(
-            db,
-            session,
-            "CHAT",
-            message,
-            answer or f"[{presentation_mode}: {len(action_items)} cards]",
-            clean_tools_str,
-            started,
-            {"prompt_tokens": None, "completion_tokens": None,
-             "model": response_meta.get("model_used", settings.SCOUT_MODEL if mode == "mini" else settings.AI_MODEL)},
-        )
-        recommended_product_ids = [
-            int(item["id"])
-            for item in action_items
-            if item.get("accion") == "AGREGAR" and item.get("id")
-        ]
-        memory = skill_res.get("chat_context") or merge_ai_memory(
-            memory, skill_res.get("memory_updates"), recommended_product_ids,
-        )
-        session.resumen_contexto = build_session_summary(
-            (
-                f"Usuario: {message[:300]}\nAsistente: "
-                f"{(answer or response_title or presentation_mode)[:500]}"
-            ),
-            memory,
-        )
-        db.commit()
-        duration_ms = max(0, int((time.perf_counter() - started) * 1000))
-
-        await send(
-            {
-                "type": "done",
-                "session_id": session.id,
-                "interaction_id": interaction.id,
-                "tools": used_tools,
-                "action_items": sanitize_for_json(action_items[:6]),
-                "presentation_mode": presentation_mode,
-                "response_title": response_title,
-                "duration_ms": duration_ms,
-                "notices": sanitize_for_json(notices),
-                "response_meta": sanitize_for_json(response_meta),
-                "suggested_actions": sanitize_for_json(suggested_actions),
-            }
-        )
-    except Exception:
-        db.rollback()
-        raise
+    text = result["choices"][0]["message"].get("content")
+    if not isinstance(text, str) or not text.strip():
+        raise AIProviderError("Altair no devolvió una respuesta. Puedes reintentar.")
+    return text, {**(result.get("usage") or {}), "model": settings.NVIDIA_MODEL}
 
 
 def get_ai_session(db: Session, user_id: int, session_id: int | None) -> AISession:
-    if session_id:
+    if session_id is not None:
         try:
-            session = owned_session(db, user_id, int(session_id), lock=True)
-            if session and session.estado == "ACTIVA":
-                return session
-        except (ValueError, TypeError):
-            pass
-        raise HTTPException(404, "Conversación no encontrada o cerrada")
+            return owned_session(db, user_id, int(session_id))
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(404, "Conversación no encontrada") from exc
     session = AISession(usuario_id=user_id, estado="ACTIVA")
     db.add(session)
     db.flush()
     return session
 
 
-def _available_candidates(db: Session, limit: int = 30, gender: str | None = None) -> list[dict[str, Any]]:
-    return search_products(db, only_available=True, limit=limit, gender=gender)
-
-
-def _save_interaction(
+async def run_agent_socket(
     db: Session,
-    session: AISession,
-    kind: str,
+    user: User,
     message: str,
-    answer: str,
-    tool: str,
-    started: float,
-    usage: dict[str, int | None],
-    status: str = "OK",
-) -> AIInteraction:
-    session.last_activity_at = datetime.now(timezone.utc)
-    interaction = AIInteraction(
-        sesion_id=session.id, tipo=kind, mensaje_usuario=message, respuesta=answer,
-        tool_principal=(tool or "")[:250], duracion_ms=max(0, int((time.perf_counter() - started) * 1000)),
-        tokens_entrada=usage.get("prompt_tokens"), tokens_salida=usage.get("completion_tokens"),
-        modelo=usage.get("model", settings.AI_MODEL), estado=status,
-    )
-    db.add(interaction)
-    db.flush()
-    return interaction
-
-
-def _pick_variants(db: Session, product_ids: list[int]) -> list[dict]:
-    if not product_ids:
-        return []
-    rows = db.execute(
-        select(ProductVariant, Product)
-        .join(Product, Product.id == ProductVariant.producto_id)
-        .where(
-            Product.id.in_(product_ids), ProductVariant.activo.is_(True),
-            ProductVariant.stock_total > ProductVariant.stock_reservado,
+    session_id: int | None,
+    send,
+    task_context=None,
+    action="chat",
+) -> None:
+    started = time.perf_counter()
+    session = get_ai_session(db, user.id, session_id)
+    memory = read_context(load_ai_memory(session.resumen_contexto))
+    profile_context = shopping_context(db, user)
+    recent = list(
+        db.scalars(
+            select(AIInteraction)
+            .where(AIInteraction.sesion_id == session.id)
+            .order_by(AIInteraction.id.desc())
+            .limit(6)
         )
-        .order_by(Product.id, ProductVariant.id)
-    ).all()
-    seen: set[int] = set()
-    output = []
-    for variant, product in rows:
-        if product.id in seen:
-            continue
-        seen.add(product.id)
-        output.append({
-            "producto_id": product.id, "variante_id": variant.id, "nombre": product.nombre,
-            "precio": str(product.precio), "calidad": product.calidad_nivel,
-            "sku": variant.sku, "color": variant.color, "talla": variant.talla,
-            "stock": variant.stock_total - variant.stock_reservado,
-        })
-    return output
-
-
-def _build_atelier_style_critique(
-    user: User,
-    cart_items: list[dict[str, Any]],
-    complements: list[dict[str, Any]],
-    profile: UserStyleProfile | None,
-) -> str:
-    user_name = user.nombre.split()[0] if user.nombre else "estimado cliente"
-    total_subtotal = sum(
-        float(it.get("subtotal") or (float(it.get("precio_unitario") or 0) * int(it.get("cantidad") or 1)))
-        for it in cart_items
     )
+    history = []
+    for turn in reversed(recent):
+        history.extend(
+            [
+                {"role": "user", "content": (turn.mensaje_usuario or "")[:2000]},
+                {"role": "assistant", "content": (turn.respuesta or "")[:2500]},
+            ]
+        )
+    await send({"type": "model_status", "status": "loading", "session_id": session.id})
+    try:
+        result = await run_nvidia_agent(
+            db,
+            user,
+            message,
+            memory.model_dump(),
+            send,
+            history=history,
+            task_context=task_context,
+            shopping_profile=profile_context,
+        )
+        answer = result["direct_response"]
+        cards = sanitize_for_json(result.get("action_items") or [])
+        verified = sanitize_for_json(result.get("verified_products") or cards)
+        suggestions = result.get("suggested_actions") or []
+        presentation = "mixed" if cards or result.get("ui_blocks") else "text"
+        await send(
+            {
+                "type": "presentation",
+                "mode": presentation,
+                "title": "Altair",
+                "response_meta": result.get("response_meta") or {},
+                "suggested_actions": suggestions,
+                "ui_blocks": result.get("ui_blocks") or [],
+            }
+        )
+        await send({"type": "answer_snapshot", "content": answer})
+        tools = [step["name"] for step in result.get("composite_sub_tools") or []]
+        usage = result.get("usage") or {}
+        duration = round((time.perf_counter() - started) * 1000)
+        interaction = AIInteraction(
+            sesion_id=session.id,
+            tipo={
+                "search": "PRODUCT_SEARCH",
+                "outfit": "GENERATE_OUTFIT",
+                "complete": "COMPLETE_OUTFIT",
+                "style": "STYLE_CHECK",
+                "value": "VALUE_CHECK",
+            }.get(action, "CHAT"),
+            mensaje_usuario=message,
+            respuesta=result.get("history_response") or answer,
+            tool_principal=(",".join(tools) or "conversation")[:250],
+            duracion_ms=duration,
+            tokens_entrada=usage.get("prompt_tokens"),
+            tokens_salida=usage.get("completion_tokens"),
+            modelo=settings.NVIDIA_MODEL,
+            estado="OK",
+        )
+        db.add(interaction)
+        db.flush()
+        recommendations = _save_replacements(
+            db, user.id, interaction.id, result.get("composite_sub_tools") or []
+        )
+        db.refresh(session)
+        latest = read_context(load_ai_memory(session.resumen_contexto))
+        latest = update_context(latest, {"facts": memory.facts})
+        latest = merge_turn_constraints(latest, memory, result.get("chat_context"))
+        session.resumen_contexto = build_session_summary(
+            "", observe_cards(latest, verified).model_dump()
+        )
+        session.last_activity_at = datetime.now(timezone.utc)
+        db.commit()
+        await send(
+            {
+                "type": "done",
+                "session_id": session.id,
+                "interaction_id": interaction.id,
+                "tools": tools,
+                "action_items": cards,
+                "verified_products": verified,
+                "presentation_mode": presentation,
+                "response_title": "Altair",
+                "duration_ms": duration,
+                "suggested_actions": suggestions,
+                "recommendations": recommendations,
+                "response_meta": result.get("response_meta") or {},
+                "ui_blocks": result.get("ui_blocks") or [],
+            }
+        )
+        logger.info(
+            "AI_TURN session=%s duration_ms=%s tools=%s", session.id, duration, tools
+        )
+    except TimeoutError as exc:
+        db.rollback()
+        raise AIProviderError(
+            "Altair tardó más de lo esperado. Puedes reintentar."
+        ) from exc
+    except BaseException:
+        db.rollback()
+        raise
 
-    top_items = []
-    bottom_items = []
-    shoe_items = []
-    outerwear_items = []
 
-    for it in cart_items:
-        n = (it.get("nombre") or "").lower()
-        if any(k in n for k in ["polera", "camisa", "blusa", "polo", "top", "sueter", "sweater", "hoodie", "remera"]):
-            top_items.append(it)
-        elif any(k in n for k in ["pantalon", "pantalón", "jean", "falda", "palazzo", "bermuda", "short"]):
-            bottom_items.append(it)
-        elif any(k in n for k in ["zapato", "zapatos", "calzado", "zapatilla", "bota", "mocas"]):
-            shoe_items.append(it)
-        else:
-            outerwear_items.append(it)
-
-    base_score = 6.5
-    if top_items and bottom_items:
-        base_score += 2.0
-    elif top_items or bottom_items:
-        base_score += 0.8
-    if shoe_items:
-        base_score += 0.5
-    if outerwear_items:
-        base_score += 0.4
-    if len(cart_items) >= 3:
-        base_score += 0.3
-    if len(top_items) >= 3 and not bottom_items:
-        base_score -= 1.0
-
-    score = max(5.0, min(9.6, base_score))
-    first_color = cart_items[0].get("color", "armónico") if cart_items else "armónico"
-
-    lines = [
-        f"**Auditoría Estilística de Altair:** Saludos, {user_name}. He completado una auditoría sastrera de las {len(cart_items)} prendas en tu perchero (**Calificación del Perchero: {score:.1f} / 10**).",
+def _save_replacements(db, user_id, interaction_id, steps):
+    """Persist only observed, in-stock, same-size savings against this user's real cart."""
+    alternatives = [
+        step
+        for step in steps
+        if step["name"] == "find_alternatives" and isinstance(step.get("result"), list)
     ]
-
-    if top_items and bottom_items:
-        lines.append(
-            f"**Balance de Siluetas:** Tu selección cuenta con un excelente equilibrio entre {len(top_items)} prenda(s) superior(es) y {len(bottom_items)} prenda(s) inferior(es), garantizando una silueta balanceada y versátil."
-        )
-    elif top_items and not bottom_items:
-        lines.append(
-            f"**Balance de Siluetas:** Tu perchero cuenta con {len(top_items)} pieza(s) superior(es) destacadas, pero carece de partes inferiores coordinadas. Recomiendo sumar un pantalón sastrero o falda para estructurar el look."
-        )
-    elif bottom_items and not top_items:
-        lines.append(
-            f"**Balance de Siluetas:** Cuentas con {len(bottom_items)} pieza(s) inferior(es) sin tops coordinados. Una camisa o blusa en lino o seda elevará inmediatamente el conjunto."
-        )
-    else:
-        lines.append(
-            "**Balance de Siluetas:** La selección presenta piezas de corte distinguido. Te sugiero coordinar piezas base para maximizar la versatilidad de las prendas."
-        )
-
-    lines.append(
-        f"**Armonía Cromática e Inversión:** La inversión actual de tu perchero suma **Bs {total_subtotal:.2f}**. "
-        f"El diálogo cromático (tonos {first_color}) aporta una presencia sobria y contemporánea acorde a los estándares de sastrería de DrapeMind."
-    )
-
-    if complements:
-        comp_names = " y ".join(c.get("nombre") for c in complements[:2])
-        lines.append(
-            f"**Complementos Recomendados:** Para elevar tu conjunto, he seleccionado como complementos directos: **{comp_names}**. Puedes agregarlos a tu perchero o pulsar en 'Diseñar Outfit Completo' para armonizar todo tu look."
-        )
-    else:
-        lines.append(
-            "Puedes proceder a finalizar tu compra con tranquilidad o pulsar en **'Diseñar Outfit Completo'** si deseas que diseñe un conjunto integral de pasarela a tu medida."
-        )
-
-    return "\n\n".join(lines)
-
-
-def _build_atelier_outfit_description(
-    user: User,
-    products: list[dict[str, Any]],
-    profile: UserStyleProfile | None,
-) -> str:
-    user_name = user.nombre.split()[0] if user.nombre else "estimado cliente"
-    total_bs = sum(float(p.get("precio") or 0) for p in products)
-    gender_txt = f"para {profile.genero.lower()}" if profile and profile.genero else ""
-    names_txt = ", ".join(f"**{p.get('nombre')}** (Talla {p.get('talla', 'M')}, Bs {float(p.get('precio', 0)):.2f})" for p in products)
-
-    return (
-        f"**Look Coordinado de Pasarela:** Saludos, {user_name}. He coordinado este outfit completo {gender_txt} "
-        f"respetando tu morfología y medidas de perfil.\n\n"
-        f"**Composición del Conjunto:** {names_txt}.\n\n"
-        f"**Inversión Total:** **Bs {total_bs:.2f}**.\n\n"
-        "Cada prenda ha sido verificada en inventario real con su respectiva talla para garantizar una caída sastrera impecable y armonía cromática total."
-    )
-
-
-def _build_atelier_value_analysis(
-    user: User,
-    cart_items: list[dict[str, Any]],
-    recommendations: list[dict[str, Any]],
-) -> str:
-    user_name = user.nombre.split()[0] if user.nombre else "estimado cliente"
-    if recommendations:
-        total_saving = sum(float(r.get("ahorro") or 0) for r in recommendations)
-        lines = [
-            f"**Diagnóstico Financiero y Textil de Altair:** Saludos, {user_name}. He auditado los costos, composiciones textiles y relación calidad/precio de las {len(cart_items)} prendas en tu perchero.",
-            f"Se han identificado **{len(recommendations)} alternativas inteligentes** de igual o superior composición textil con un **ahorro neto estimado de Bs {total_saving:.2f}**:",
+    if not alternatives:
+        return []
+    cart = cart_payload(db, user_id)
+    recommendations, seen = [], set()
+    for step in alternatives:
+        origins = [
+            item
+            for item in cart["items"]
+            if item["producto_id"] == step["args"].get("product_id")
         ]
-        for idx, r in enumerate(recommendations, 1):
-            ahorro_num = float(r.get("ahorro", 0))
-            ahorro_txt = f"Ahorro: Bs {ahorro_num:.2f}" if ahorro_num > 0 else "Composición Superior"
-            lines.append(f"{idx}. Reemplazar **{r.get('nombre_original')}** por **{r.get('nombre')}** ({ahorro_txt} · Talla {r.get('talla', 'N/A')}).")
-        lines.append("Puedes aplicar los reemplazos sugeridos de inmediato con un solo clic para optimizar tu perchero.")
-        return "\n\n".join(lines)
-    return (
-        f"**Diagnóstico Financiero de Altair:** Saludos, {user_name}.\n\n"
-        "Tras auditar los materiales y precios de tu perchero, las prendas seleccionadas cuentan con la mejor relación calidad/precio del catálogo disponible en tu talla. "
-        "**Tu selección actual es óptima y altamente eficiente.**"
-    )
+        for candidate in step["result"]:
+            variant = db.get(ProductVariant, candidate.get("variant_id"))
+            if (
+                not variant
+                or not variant.activo
+                or variant.stock_total <= variant.stock_reservado
+            ):
+                continue
+            target = db.get(Product, variant.producto_id)
+            if (
+                not target
+                or not target.activo
+                or target.id != candidate.get("product_id")
+            ):
+                continue
+            for origin in origins:
+                key = (origin["variante_id"], variant.id)
+                quantity = origin["cantidad"]
+                saving = (
+                    Decimal(str(origin["precio_unitario"])) - target.precio
+                ) * quantity
+                if (
+                    key in seen
+                    or origin["talla"] != variant.talla
+                    or saving <= 0
+                    or variant.stock_total - variant.stock_reservado < quantity
+                ):
+                    continue
+                seen.add(key)
+                record = AIRecommendation(
+                    interaccion_id=interaction_id,
+                    grupo_uuid=uuid4(),
+                    tipo="REEMPLAZO_AHORRO",
+                    producto_origen_id=origin["producto_id"],
+                    variante_origen_id=origin["variante_id"],
+                    producto_recomendado_id=target.id,
+                    variante_recomendada_id=variant.id,
+                    ahorro=saving,
+                    motivo_corto="Alternativa consultada por Altair con ahorro calculado por la tienda.",
+                )
+                db.add(record)
+                db.flush()
+                recommendations.append(
+                    {
+                        "id": record.id,
+                        "nombre_original": origin["nombre"],
+                        "nombre": target.nombre,
+                        "precio_original": float(origin["precio_unitario"]),
+                        "precio_recomendado": float(target.precio),
+                        "ahorro": float(saving),
+                        "color": variant.color,
+                        "talla": variant.talla,
+                        "variante_id": variant.id,
+                    }
+                )
+    return recommendations
 
 
 async def run_ai_action(
@@ -1039,478 +286,58 @@ async def run_ai_action(
     user: User,
     action: str,
     message: str,
-    session_id: int | None = None,
-    budget: Decimal | None = None,
-    base_product_id: int | None = None,
-    model_choice: str | None = "ALTAIR_MINI",
+    session_id=None,
+    budget=None,
+    base_product_id=None,
+    model_choice=None,
 ) -> dict:
-    started = time.perf_counter()
-    session = get_ai_session(db, user.id, session_id)
-    tool = "search_products"
-    kind = "CHAT"
-    products: list[dict[str, Any]] = []
-    recommendations: list[dict[str, Any]] = []
+    requests = {
+        "chat": "",
+        "search": "Busca prendas con estas preferencias: ",
+        "outfit": "Recomienda un outfit con prendas verificadas: ",
+        "complete": "Completa un outfit desde la prenda indicada: ",
+        "style": "Consulta mi carrito y analiza su estilo: ",
+        "value": "Consulta mi carrito y busca alternativas de calidad/precio: ",
+    }
+    if action not in requests:
+        raise HTTPException(400, "Acción de IA no soportada")
+    query = requests[action] + message
+    if budget is not None:
+        query += f". Presupuesto máximo: {budget} BOB."
+    if base_product_id is not None:
+        query += f". Producto base: {base_product_id}. Consulta sus detalles."
+    events = []
 
-    profile = db.scalar(select(UserStyleProfile).where(UserStyleProfile.usuario_id == user.id))
-    user_gender = profile.genero if profile else None
-    profile_summary = ""
-    if profile:
-        profile_summary = (
-            f" [Perfil Onboarding: Género={profile.genero or 'No especificado'}, "
-            f"Talla Superior={profile.talla_superior or 'N/A'}, "
-            f"Talla Inferior={profile.talla_inferior or 'N/A'}, "
-            f"Calzado={profile.talla_calzado or 'N/A'}, "
-            f"Estilos={', '.join(profile.estilos_preferidos or [])}, "
-            f"Colores={', '.join(profile.colores_favoritos or [])}]"
-        )
-
-    if action == "chat":
-        events = []
-        async def collect(event):
-            events.append(event)
-        await run_agent_socket(db, user, message, session.id, collect)
-        done = next(event for event in reversed(events) if event.get("type") == "done")
-        interaction = db.get(AIInteraction, done["interaction_id"])
-        from app.services.store import get_product_detail
-        products = [get_product_detail(db, item["id"]) for item in done.get("action_items", [])
-                    if item.get("accion") == "AGREGAR"]
-        from app.services.push_notifications import dispatch_notification
-        try:
-            summary = interaction.respuesta[:120] + "..." if len(interaction.respuesta) > 120 else interaction.respuesta
-            await dispatch_notification(
-                db=db,
-                user_id=user.id,
-                titulo="Altair AI: Respuesta Lista",
-                mensaje=summary or "Altair AI ha respondido a tu consulta de moda.",
-                tipo="AI_RESPUESTA",
-                payload={"screen": "/ai_studio", "sesion_id": session.id, "modelo": interaction.modelo},
-            )
-        except Exception as _ex:
-            logger.warning("Error despachando notificacion push de chat IA: %s", _ex)
-        return {"sesion_id": session.id, "interaccion_id": interaction.id,
-                "respuesta": interaction.respuesta, "productos": products,
-                "recomendaciones": [], "modelo": interaction.modelo}
-
-    elif action == "search":
-        kind = "PRODUCT_SEARCH"
-        products = search_products(db, query=message.strip()[:150], gender=user_gender, only_available=True, limit=20)
-        if not products and user_gender:
-            products = search_products(db, query=message.strip()[:150], only_available=True, limit=20)
-        compact_products = [
-            {
-                "id": p.get("id"),
-                "nombre": p.get("nombre"),
-                "precio_bs": str(p.get("precio")),
-                "marca": p.get("marca"),
-                "material": p.get("material"),
-                "genero": str(p.get("genero_objetivo")),
-            }
-            for p in products[:8]
-        ]
-        prompt = (
-            f"Consulta: {message}{profile_summary}\n"
-            f"Prendas disponibles en catálogo: {json.dumps(compact_products, default=str)}\n"
-            "Resume brevemente las mejores opciones acordes al género y tallas del perfil del usuario de forma elocuente y estilizada."
-        )
-    elif action in {"outfit", "complete"}:
-        kind = "COMPLETE_OUTFIT" if action == "complete" else "GENERATE_OUTFIT"
-        tool = "recommend_outfit"
-        tool_args = RecommendOutfitArgs(
-            occasion="casual elegante",
-            gender=user_gender,
-            max_budget=float(budget) if budget else None,
-            base_product_id=base_product_id,
-            top_size=profile.talla_superior if profile else None,
-            bottom_size=profile.talla_inferior if profile else None,
-            shoe_size=profile.talla_calzado if profile else None,
-        )
-        outfit_res = _recommend_outfit(ToolContext(db=db, user=user), tool_args)
-        if isinstance(outfit_res, dict) and outfit_res.get("seleccion"):
-            products = outfit_res["seleccion"]
-        else:
-            candidates = _available_candidates(db, 15, gender=user_gender)
-            if not candidates and user_gender:
-                candidates = _available_candidates(db, 15)
-            if budget is not None:
-                candidates = [p for p in candidates if p["precio"] <= budget]
-            products = _pick_variants(db, [p["id"] for p in candidates])[:4]
-
-        if base_product_id:
-            base = db.get(Product, base_product_id)
-            if not base:
-                raise HTTPException(404, "Producto base no encontrado")
-            message = f"{message}. Prenda base: {base.nombre} (id {base.id})"
-        prompt = (
-            f"Solicitud: {message}{profile_summary}\nOpciones reales en inventario coordinadas: {json.dumps(products, default=str)}\n"
-            "Propone un outfit coherente explicando la caída de las prendas y respetando el género y las tallas del usuario."
-        )
-    elif action in {"style", "value"}:
-        kind = "STYLE_CHECK" if action == "style" else "VALUE_CHECK"
-        tool = "get_my_cart + find_alternatives"
-        cart = cart_payload(db, user.id)
-
-        target_model_name = model_choice or settings.AI_MODEL
-        if not cart.get("items"):
-            user_first_name = user.nombre.split()[0] if user.nombre else "cliente"
-            empty_msg = (
-                f"Saludos, {user_first_name}. Tu perchero se encuentra actualmente vacío.\n\n"
-                "Para realizar una auditoría estilística completa de armonía cromática, siluetas y equilibrio de estilo, "
-                "por favor añade prendas desde el showroom o indícale a Altair una ocasión para diseñar un outfit completo a medida."
-            )
-            return {
-                "sesion_id": session.id,
-                "interaccion_id": 0,
-                "respuesta": empty_msg,
-                "productos": [],
-                "recomendaciones": [],
-                "modelo": target_model_name,
-            }
-
-        # 1. En auditoría de estilo o valor, las prendas analizadas son EXACTAMENTE las prendas reales del carrito
-        products = [
-            {
-                "id": it["producto_id"],
-                "producto_id": it["producto_id"],
-                "variante_id": it["variante_id"],
-                "item_id": it["id"],
-                "nombre": it["nombre"],
-                "precio": float(it["precio_unitario"]),
-                "subtotal": float(it["subtotal"]),
-                "color": it["color"],
-                "talla": it["talla"],
-                "cantidad": it["cantidad"],
-                "imagen": it.get("imagen"),
-                "accion": "QUITAR",
-                "en_carrito": True,
-                "motivo": "En tu perchero actual (Auditado)",
-            }
-            for it in cart["items"]
-        ]
-
-        # 2. Análisis sastrero según tipo de acción: Estilo vs Valor/Ahorro
-        complements_to_save: list[dict[str, Any]] = []
-        replacements_to_save: list[dict[str, Any]] = []
-
-        def _get_item_zone(name_str: str) -> tuple[str, list[str]]:
-            n_low = name_str.lower()
-            if any(k in n_low for k in ["pantalon", "pantalón", "jean", "falda", "palazzo", "bermuda", "short"]):
-                return "BOTTOM", ["pantalon", "pantalón", "jean", "falda", "palazzo"]
-            if any(k in n_low for k in ["zapato", "zapatos", "calzado", "zapatilla", "bota", "boot", "mocas", "sandalia", "chancleta"]):
-                return "SHOES", ["zapato", "zapatilla", "bota", "mocas", "calzado"]
-            if any(k in n_low for k in ["chaqueta", "abrigo", "blazer", "cardigan", "cazadora", "parka"]):
-                return "OUTERWEAR", ["chaqueta", "blazer", "abrigo", "cardigan"]
-            return "TOP", ["polera", "camisa", "blusa", "polo", "top", "sueter", "sweater", "athleisure"]
-
-        cart_prod_ids = {it["producto_id"] for it in cart["items"]}
-
-        if action == "style":
-            cart_names = " ".join(it["nombre"].lower() for it in cart["items"])
-            has_top = any(k in cart_names for k in ["polera", "camisa", "blusa", "polo", "top", "sueter", "sweater", "hoodie", "remera"])
-            has_bottom = any(k in cart_names for k in ["pantalon", "pantalón", "jean", "falda", "palazzo", "bermuda", "short"])
-            has_shoes = any(k in cart_names for k in ["zapato", "zapatos", "calzado", "zapatilla", "bota", "mocas"])
-
-            target_roles = []
-            if not has_bottom:
-                target_roles.append(("BOTTOM", profile.talla_inferior if profile else None, ["pantalon", "pantalón", "jean", "falda", "palazzo"]))
-            if not has_top:
-                target_roles.append(("TOP", profile.talla_superior if profile else None, ["camisa", "blusa", "polera", "polo"]))
-            if not has_shoes:
-                target_roles.append(("SHOES", profile.talla_calzado if profile else None, ["zapato", "zapatilla", "mocas", "bota"]))
-            if has_top and has_bottom:
-                target_roles.append(("OUTERWEAR", profile.talla_superior if profile else None, ["chaqueta", "blazer", "abrigo", "cardigan"]))
-
-            all_cand_prods = search_products(db, gender=user_gender, only_available=True, limit=25)
-            if not all_cand_prods and user_gender:
-                all_cand_prods = search_products(db, only_available=True, limit=25)
-
-            for role, target_size, keywords in target_roles:
-                for cand in all_cand_prods:
-                    if cand["id"] in cart_prod_ids or any(c["producto_id"] == cand["id"] for c in complements_to_save):
-                        continue
-                    cand_name = cand.get("nombre", "").lower()
-                    if not any(kw in cand_name for kw in keywords):
-                        continue
-
-                    var = None
-                    if target_size:
-                        var = db.scalar(
-                            select(ProductVariant).where(
-                                ProductVariant.producto_id == cand["id"],
-                                ProductVariant.activo.is_(True),
-                                ProductVariant.stock_total > ProductVariant.stock_reservado,
-                                func.upper(ProductVariant.talla) == target_size.strip().upper(),
-                            )
-                        )
-                    if not var:
-                        var = db.scalar(
-                            select(ProductVariant).where(
-                                ProductVariant.producto_id == cand["id"],
-                                ProductVariant.activo.is_(True),
-                                ProductVariant.stock_total > ProductVariant.stock_reservado,
-                            ).order_by(ProductVariant.id)
-                        )
-                    if var:
-                        complements_to_save.append({
-                            "producto_id": cand["id"],
-                            "variante_id": var.id,
-                            "nombre": cand["nombre"],
-                            "precio": float(cand.get("precio") or 0),
-                            "color": var.color,
-                            "talla": var.talla,
-                            "imagen": var.imagen or ((cand.get("imagenes") or [None])[0]),
-                            "accion": "AGREGAR",
-                            "en_carrito": False,
-                            "rol": role,
-                            "motivo": f"Complemento recomendado para tu perfil ({user_gender or 'Atelier'}, Talla {var.talla})",
-                        })
-                        break
-                if len(complements_to_save) >= 2:
-                    break
-
-        elif action == "value":
-            # 3. Optimización de valor y ahorro: buscar alternativas en la misma zona textil (torso, calzado, pantalón)
-            all_prods_for_value = search_products(db, gender=user_gender, only_available=True, limit=50)
-            if not all_prods_for_value and user_gender:
-                all_prods_for_value = search_products(db, only_available=True, limit=50)
-
-            for it in cart["items"]:
-                origin = db.get(Product, it["producto_id"])
-                if not origin:
-                    continue
-
-                zone_role, zone_kws = _get_item_zone(it["nombre"])
-                pref_size = None
-                if profile:
-                    if zone_role == "BOTTOM":
-                        pref_size = profile.talla_inferior
-                    elif zone_role == "SHOES":
-                        pref_size = profile.talla_calzado
-                    else:
-                        pref_size = profile.talla_superior
-
-                best_cand = None
-                best_var = None
-                best_saving = 0.0
-
-                # Filtrar candidatos en la misma zona
-                zone_cands = [
-                    c for c in all_prods_for_value
-                    if c["id"] != origin.id
-                    and c["id"] not in cart_prod_ids
-                    and not any(r["producto_id"] == c["id"] for r in replacements_to_save)
-                    and any(kw in (c.get("nombre") or "").lower() for kw in zone_kws)
-                ]
-
-                # Ordenar priorizando menor precio que el original, o mejor relación calidad/precio
-                zone_cands.sort(key=lambda c: (float(c.get("precio") or 0) >= float(origin.precio), float(c.get("precio") or 0)))
-
-                for cand in zone_cands:
-                    c_price = float(cand.get("precio") or 0)
-                    saving_cand = max(0.0, float(origin.precio) - c_price)
-
-                    # Buscar variante con talla preferida
-                    c_var = None
-                    if pref_size:
-                        c_var = db.scalar(
-                            select(ProductVariant).where(
-                                ProductVariant.producto_id == cand["id"],
-                                ProductVariant.activo.is_(True),
-                                ProductVariant.stock_total > ProductVariant.stock_reservado,
-                                func.upper(ProductVariant.talla) == pref_size.strip().upper(),
-                            )
-                        )
-                    if not c_var:
-                        c_var = db.scalar(
-                            select(ProductVariant).where(
-                                ProductVariant.producto_id == cand["id"],
-                                ProductVariant.activo.is_(True),
-                                ProductVariant.stock_total > ProductVariant.stock_reservado,
-                            ).order_by(ProductVariant.id)
-                        )
-
-                    if c_var:
-                        best_cand = cand
-                        best_var = c_var
-                        best_saving = saving_cand
-                        break
-
-                if best_cand and best_var:
-                    motivo_rep = (
-                        f"Ahorra Bs {best_saving:.2f} con una alternativa textil equivalente en {zone_role.lower()}"
-                        if best_saving > 0
-                        else f"Alternativa premium en {zone_role.lower()} con acabado textil superior"
-                    )
-                    rep_item = {
-                        "item_id": it["id"],
-                        "producto_origen_id": origin.id,
-                        "variante_origen_id": it["variante_id"],
-                        "producto_id": best_cand["id"],
-                        "variante_id": best_var.id,
-                        "nombre": best_cand["nombre"],
-                        "nombre_original": origin.nombre,
-                        "precio_original": str(origin.precio),
-                        "precio_recomendado": str(best_cand["precio"]),
-                        "ahorro": str(round(best_saving, 2)),
-                        "talla": best_var.talla,
-                        "color": best_var.color,
-                        "imagen": best_var.imagen or ((best_cand.get("imagenes") or [None])[0]),
-                        "rol": zone_role,
-                        "accion": "REEMPLAZAR",
-                        "en_carrito": False,
-                        "motivo": motivo_rep,
-                    }
-                    replacements_to_save.append(rep_item)
-                    products.append(rep_item)
-
-        compact_cart = [
-            {
-                "id": it["id"],
-                "nombre": it["nombre"],
-                "precio_bs": str(it["precio_unitario"]),
-                "color": it["color"],
-                "talla": it["talla"],
-            }
-            for it in cart["items"]
-        ]
-
-        if action == "style":
-            prompt = (
-                f"Objetivo: {message}{profile_summary}\n"
-                f"Prendas en perchero del usuario: {json.dumps(compact_cart, default=str)}\n"
-                f"Complementos sugeridos en stock: {json.dumps([{'nombre': c['nombre'], 'precio': c['precio'], 'talla': c['talla']} for c in complements_to_save], default=str)}\n"
-                "Ofrece una crítica estilística del perchero asignando una Calificación explícita de 1 al 10 con formato Markdown (ej. **Calificación del Perchero:** 8.5 / 10), "
-                "evalúa la armonía de siluetas y colores usando subtítulos en **negrita**, y fundamenta las recomendaciones basadas exclusivamente en las prendas y perfil del usuario."
-            )
-        else:
-            compact_reps = [
-                {
-                    "prenda_actual": r["nombre_original"],
-                    "reemplazo": r["nombre"],
-                    "precio_original_bs": r["precio_original"],
-                    "precio_nuevo_bs": r["precio_recomendado"],
-                    "ahorro_bs": r["ahorro"],
-                    "talla": r["talla"],
-                }
-                for r in replacements_to_save
-            ]
-            prompt = (
-                f"Objetivo: {message}{profile_summary}\n"
-                f"Prendas actuales en perchero: {json.dumps(compact_cart, default=str)}\n"
-                f"Propuestas de reemplazo y ahorro: {json.dumps(compact_reps, default=str)}\n"
-                "Ofrece un diagnóstico financiero y textil en Markdown usando encabezados en **negrita**. "
-                "Explica claramente cuánto dinero ahorra el usuario aplicando las alternativas sugeridas y cómo se optimiza la calidad textil del perchero."
-            )
-    else:
-        raise HTTPException(400, "Accion de IA no soportada")
-
-    answer = ""
-    target_model_name = model_choice or settings.AI_MODEL
-    usage: dict[str, Any] = {"prompt_tokens": 0, "completion_tokens": 0, "model": target_model_name}
-    try:
-        raw_answer, raw_usage = await call_gemma(SYSTEM_PROMPT, prompt, model=model_choice)
-        if raw_answer and len(raw_answer.strip()) > 10:
-            answer = raw_answer.strip()
-            usage = raw_usage
-    except Exception as _ai_err:
-        logger.warning("Error invocando gemma en run_ai_action, activando atelier fallback: %s", _ai_err)
-        if action == "style":
-            answer = _build_atelier_style_critique(user, cart["items"], complements_to_save, profile)
-        elif action in {"outfit", "complete"}:
-            answer = _build_atelier_outfit_description(user, products, profile)
-        elif action == "value":
-            answer = _build_atelier_value_analysis(user, cart["items"], replacements_to_save)
-        else:
-            answer = f"**Diagnóstico DrapeMind:** Saludos, {user.nombre.split()[0] if user.nombre else 'cliente'}. He evaluado tus prendas con los estándares de estilo de DrapeMind Atelier."
-
-    if not answer:
-        if action == "style":
-            answer = _build_atelier_style_critique(user, cart["items"], complements_to_save, profile)
-        elif action in {"outfit", "complete"}:
-            answer = _build_atelier_outfit_description(user, products, profile)
-        elif action == "value":
-            answer = _build_atelier_value_analysis(user, cart["items"], replacements_to_save)
-        else:
-            answer = f"**Diagnóstico DrapeMind:** Saludos, {user.nombre.split()[0] if user.nombre else 'cliente'}. He evaluado tus prendas con los estándares de estilo de DrapeMind Atelier."
+    async def collect(event):
+        events.append(event)
 
     try:
-        interaction = _save_interaction(db, session, kind, message, answer, tool, started, usage)
-        if action in {"outfit", "complete"}:
-            rec_type = "COMPLETAR_OUTFIT" if action == "complete" else "OUTFIT"
-            roles = ["TOP", "BOTTOM", "SHOES", "OUTERWEAR"]
-            for index, candidate in enumerate(products[:4]):
-                item_rol = candidate.get("rol") or roles[min(index, len(roles) - 1)]
-                cand_id = candidate.get("producto_id") or candidate.get("id")
-                cand_var_id = candidate.get("variante_id") or cand_id
-                rec = AIRecommendation(
-                    interaccion_id=interaction.id, tipo=rec_type, rol=item_rol,
-                    producto_origen_id=base_product_id,
-                    producto_recomendado_id=cand_id,
-                    variante_recomendada_id=cand_var_id,
-                    score=Decimal("0.8500"), motivo_corto="Seleccionado por coherencia de conjunto y medidas de perfil",
-                )
-                db.add(rec)
-                db.flush()
-                recommendations.append({"id": rec.id, **candidate, "tipo": rec_type, "rol": item_rol})
-        elif action == "style":
-            valid_roles = {"TOP", "BOTTOM", "SHOES", "OUTERWEAR", "ACCESSORY", "OTHER"}
-            for comp in complements_to_save:
-                comp_rol = comp.get("rol") if comp.get("rol") in valid_roles else "OTHER"
-                rec = AIRecommendation(
-                    interaccion_id=interaction.id,
-                    tipo="REEMPLAZO_ESTILO",
-                    rol=comp_rol,
-                    producto_recomendado_id=comp["producto_id"],
-                    variante_recomendada_id=comp["variante_id"],
-                    score=Decimal("0.8500"),
-                    motivo_corto=f"Complemento para balancear el perchero (Talla {comp.get('talla')})",
-                )
-                db.add(rec)
-                db.flush()
-                recommendations.append({"id": rec.id, **comp})
-        elif action == "value":
-            valid_roles = {"TOP", "BOTTOM", "SHOES", "OUTERWEAR", "ACCESSORY", "OTHER"}
-            for rep in replacements_to_save:
-                rep_rol = rep.get("rol") if rep.get("rol") in valid_roles else "OTHER"
-                rec = AIRecommendation(
-                    interaccion_id=interaction.id,
-                    tipo="REEMPLAZO_VALOR",
-                    rol=rep_rol,
-                    producto_origen_id=rep["producto_origen_id"],
-                    variante_origen_id=rep["variante_origen_id"],
-                    producto_recomendado_id=rep["producto_id"],
-                    variante_recomendada_id=rep["variante_id"],
-                    score=Decimal("0.8500"),
-                    ahorro=Decimal(str(rep["ahorro"])),
-                    motivo_corto=rep["motivo"][:300],
-                )
-                db.add(rec)
-                db.flush()
-                recommendations.append({"id": rec.id, **rep})
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise
-    except Exception:
-        db.rollback()
-        raise
-
-    from app.services.push_notifications import dispatch_notification
-    try:
-        summary_ans = answer[:120] + "..." if len(answer) > 120 else answer
-        await dispatch_notification(
-            db=db,
-            user_id=user.id,
-            titulo="Altair AI: Análisis Finalizado",
-            mensaje=summary_ans or "Altair AI ha finalizado tu consulta de estilo.",
-            tipo="AI_RESPUESTA",
-            payload={"screen": "/ai_studio", "sesion_id": session.id, "modelo": target_model_name},
-        )
-    except Exception as _ex:
-        logger.warning("Error despachando notificacion push de accion IA: %s", _ex)
-
+        await run_agent_socket(db, user, query, session_id, collect, action=action)
+    except AIProviderError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    done = next(event for event in reversed(events) if event["type"] == "done")
+    interaction = db.get(AIInteraction, done["interaction_id"])
+    products = [
+        {
+            **get_product_detail(db, item["id"]),
+            **item,
+            "en_carrito": item["accion"] == "QUITAR",
+        }
+        for item in done.get("verified_products", done["action_items"])
+        if item["accion"] in {"AGREGAR", "QUITAR"}
+    ]
+    recommendations = done.get("recommendations") or (
+        [product for product in products if not product["en_carrito"]]
+        if action == "style"
+        else []
+    )
     return {
-        "sesion_id": session.id, "interaccion_id": interaction.id, "respuesta": answer,
-        "productos": products, "recomendaciones": recommendations, "modelo": target_model_name,
+        "sesion_id": done["session_id"],
+        "interaccion_id": done["interaction_id"],
+        "respuesta": interaction.respuesta,
+        "productos": products,
+        "recomendaciones": recommendations,
+        "modelo": settings.NVIDIA_MODEL,
     }
 
 
@@ -1519,19 +346,35 @@ def apply_recommendation(db: Session, user_id: int, recommendation_id: int) -> d
         select(AIRecommendation)
         .join(AIInteraction, AIInteraction.id == AIRecommendation.interaccion_id)
         .join(AISession, AISession.id == AIInteraction.sesion_id)
-        .where(AIRecommendation.id == recommendation_id, AISession.usuario_id == user_id)
+        .where(
+            AIRecommendation.id == recommendation_id, AISession.usuario_id == user_id
+        )
     )
     if not recommendation:
-        raise HTTPException(404, "Recomendacion no encontrada")
+        raise HTTPException(404, "Recomendación no encontrada")
     if recommendation.aplicada:
-        raise HTTPException(409, "La recomendacion ya fue aplicada")
-    if not recommendation.variante_origen_id or not recommendation.variante_recomendada_id:
-        raise HTTPException(409, "Esta recomendacion no representa un reemplazo de carrito")
+        raise HTTPException(409, "La recomendación ya fue aplicada")
+    if (
+        not recommendation.variante_origen_id
+        or not recommendation.variante_recomendada_id
+    ):
+        raise HTTPException(
+            409, "Esta recomendación no representa un reemplazo de carrito"
+        )
     cart = cart_payload(db, user_id)
-    item = next((x for x in cart["items"] if x["variante_id"] == recommendation.variante_origen_id), None)
+    item = next(
+        (
+            item
+            for item in cart["items"]
+            if item["variante_id"] == recommendation.variante_origen_id
+        ),
+        None,
+    )
     if not item:
-        raise HTTPException(409, "La prenda original ya no esta en el carrito")
-    updated = replace_cart_item(db, user_id, item["id"], recommendation.variante_recomendada_id)
+        raise HTTPException(409, "La prenda original ya no está en el carrito")
+    updated = replace_cart_item(
+        db, user_id, item["id"], recommendation.variante_recomendada_id
+    )
     recommendation.aceptada = True
     recommendation.aplicada = True
     recommendation.applied_at = datetime.now(timezone.utc)

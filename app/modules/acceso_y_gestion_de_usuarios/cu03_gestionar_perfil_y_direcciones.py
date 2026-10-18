@@ -182,9 +182,21 @@ async def guardar_perfil_estilo_me(
     profile.silueta_preferida = payload.silueta_preferida
     profile.completado = True
 
-    # Saving preferences is not model inference. Never fabricate a style analysis.
+    # Persist confirmed answers before external inference; an outage must not lose the survey.
     profile.adn_estilo_ia = None
     profile.primer_outfit_ia = None
+    current_user.has_style_profile = True
+    db.commit()
+    db.refresh(profile)
+    profile.inferencia_error = None
+    if payload.infer_style and not payload.infer_outfit:
+        from app.services.style_inference import infer_style
+        try:
+            profile.adn_estilo_ia = await infer_style(
+                payload.model_dump(mode="json", exclude={"infer_outfit", "infer_style"}),
+            )
+        except Exception:
+            profile.inferencia_error = "Tus preferencias están guardadas. El análisis de Altair no está disponible; puedes reintentarlo."
     if payload.infer_outfit:
         from app.services.ai import run_ai_action
         import json
@@ -192,7 +204,7 @@ async def guardar_perfil_estilo_me(
             db, current_user, 'chat',
             'Analiza estas preferencias declaradas por mí y consulta prendas reales antes de recomendar. '
             'Si faltan datos, pregúntame. Preferencias: ' +
-            json.dumps(payload.model_dump(mode='json', exclude={'infer_outfit'}), ensure_ascii=False),
+            json.dumps(payload.model_dump(mode='json', exclude={'infer_outfit', 'infer_style'}), ensure_ascii=False),
         )
         profile.adn_estilo_ia = result['respuesta']
         profile.primer_outfit_ia = {'items': result.get('productos', []), 'sesion_id': result['sesion_id']}

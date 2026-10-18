@@ -19,7 +19,7 @@ class StripePaymentTests(TestCase):
             "currency": "bob", "status": "succeeded", "metadata": {"payment_id": "8", "order_id": "5"}}}}
 
     def payment(self):
-        return SimpleNamespace(id=8, pedido_id=5, monto=Decimal("179.00"), moneda="BOB",
+        return SimpleNamespace(id=8, tenant_id=1, pedido_id=5, monto=Decimal("179.00"), moneda="BOB",
             proveedor="STRIPE", estado="PENDIENTE", referencia_externa="pi_test_fixture",
             idempotency_key="stripe-order-5")
 

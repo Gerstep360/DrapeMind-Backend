@@ -19,12 +19,16 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     API_V1_PREFIX: str = "/api/v1"
     ROOT_PATH: str = ""
-    PORT: int = 8045
+    PORT: int = 8000
     DOCS_ENABLED: bool = True
     SECRET_KEY: str = "change-me-with-at-least-32-characters"
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 5256000  # 10 anos: sesion permanente estilo Facebook
     DATABASE_URL: str | None = None
+    RUNTIME_DATABASE_URL: str | None = None
+    SAAS_WEB_URL: str = 'http://localhost:4200'
+    STRIPE_SAAS_WEBHOOK_SECRET: str = ''
+    STRIPE_LOCAL_WEBHOOK_SECRET: str = ''
     POSTGRES_HOST: str = "localhost"
     POSTGRES_PORT: int = 5432
     POSTGRES_USER: str = "postgres"
@@ -36,52 +40,17 @@ class Settings(BaseSettings):
     CORS_ORIGINS: list[str] = ["http://localhost:4200", "http://127.0.0.1:4200"]
     CORS_ORIGIN_REGEX: str | None = None
     CORS_ALLOW_CREDENTIALS: bool = True
-    AI_BASE_URL: str = "http://127.0.0.1:8088/v1"
-    AI_API_KEY: str = "local-no-key"
-    AI_MODEL: str = "google/gemma-4-E2B-it-qat-q4_0-gguf"
-    AI_MANAGED_SERVER: bool = True
-    AI_SERVER_HOST: str = "127.0.0.1"
-    AI_SERVER_PORT: int = 8088
-    AI_MODEL_PATH: str = "ai_models/gemma-4-e2b/gemma-4-E2B_q4_0-it.gguf"
-    AI_MMPROJ_PATH: str = "ai_models/gemma-4-e2b/gemma-4-E2B-it-mmproj.gguf"
-    LLAMA_SERVER_PATH: str | None = None
-    AI_IDLE_TIMEOUT_SECONDS: int = 600
-    AI_STARTUP_TIMEOUT_SECONDS: int = 240
-    AI_CONTEXT_SIZE: int = 4096
-    AI_PARALLEL_SLOTS: int = 1
-    AI_THREADS: int = Field(default=4, ge=0, le=8)
-    AI_GPU_LAYERS: str = "0"
-    AI_SERVER_EXTRA_ARGS: str = ""
-    AI_MAX_AGENT_STEPS: int = 4
-    AI_TURN_TIMEOUT_SECONDS: float = Field(default=180, ge=30, le=300)
-    AI_TIMEOUT_SECONDS: float = 120.0
+    NVIDIA_BASE_URL: str = "https://integrate.api.nvidia.com/v1"
+    NVIDIA_API_KEY: str = ""
+    NVIDIA_MODEL: str = "nvidia/nemotron-3-super-120b-a12b"
+    NVIDIA_EXTRA_BODY: dict[str, Any] = Field(default_factory=lambda: {"chat_template_kwargs": {"enable_thinking": False}})
+    AI_MAX_TOOL_ROUNDS: int = Field(default=3, ge=1, le=6)
+    AI_MAX_TOOL_CALLS: int = Field(default=8, ge=1, le=20)
+    STORE_POLICIES: dict[str, str] = Field(default_factory=dict)
+    AI_TURN_TIMEOUT_SECONDS: float = Field(default=120, ge=15, le=300)
+    AI_AGENT_DEADLINE_SECONDS: float = Field(default=90, ge=10, le=300)
+    AI_TIMEOUT_SECONDS: float = 60.0
     AI_MAX_TOKENS: int = 1024
-    AI_AGENT_MAX_TOKENS: int = Field(default=768, ge=128, le=4096)
-    AI_AGENT_DEADLINE_SECONDS: float = Field(default=180, ge=30, le=600)
-    AI_REASONING_MODE: Literal["auto", "on", "off"] = "auto"
-    AI_REASONING_BUDGET: int = Field(default=64, ge=0, le=512)
-    AI_CONTEXT_TOKEN_METRICS: bool = False
-    # Opt-in: an independent local planner. Gemma settings remain unchanged.
-    SCOUT_ENABLED: bool = False
-    SCOUT_COMPACT_CLARIFICATIONS: bool = True
-    SCOUT_BASE_URL: str = "http://127.0.0.1:8089/v1"
-    SCOUT_API_KEY: str = "local-no-key"
-    SCOUT_MODEL: str = ""
-    SCOUT_MODEL_PATH: str = ""
-    SCOUT_MANAGED_SERVER: bool = True
-    SCOUT_SERVER_PORT: int = Field(default=8089, ge=1024, le=65535)
-    SCOUT_THREADS: int = Field(default=4, ge=1, le=8)
-    SCOUT_CONTEXT_SIZE: int = Field(default=4096, ge=2048, le=8192)
-    SCOUT_MAX_TOKENS: int = Field(default=256, ge=128, le=2048)
-    SCOUT_DIRECT_CONFIDENCE: float = Field(default=0.85, ge=0, le=1)
-    AI_RESPONSE_SHORT_TOKENS: int = Field(default=128, ge=64, le=2048)
-    AI_RESPONSE_NORMAL_TOKENS: int = Field(default=256, ge=128, le=4096)
-    AI_RESPONSE_DEEP_TOKENS: int = Field(default=512, ge=256, le=8192)
-    SCOUT_MAX_STEPS: int = Field(default=6, ge=2, le=12)
-    SCOUT_TIMEOUT_SECONDS: float = Field(default=120, ge=5, le=300)
-    SCOUT_TURN_TIMEOUT_SECONDS: float = Field(default=240, ge=30, le=600)
-    SCOUT_IDLE_TIMEOUT_SECONDS: int = Field(default=300, ge=15, le=3600)
-    AI_FIRST_TOKEN_TIMEOUT_SECONDS: float = Field(default=120.0, ge=10, le=600)
     AI_TEMPERATURE: float = 0.35
     RESERVATION_TTL_MINUTES: int = 2880
     PAYMENT_PROVIDER: Literal["mock", "external", "stripe"] = "mock"
@@ -119,6 +88,18 @@ class Settings(BaseSettings):
             if "*" in self.CORS_ORIGINS and self.CORS_ALLOW_CREDENTIALS:
                 raise ValueError("CORS no puede usar '*' con credenciales en produccion")
         return self
+
+    @property
+    def llm_base_url(self) -> str:
+        return self.NVIDIA_BASE_URL.rstrip("/")
+
+    @property
+    def llm_api_key(self) -> str:
+        return self.NVIDIA_API_KEY
+
+    @property
+    def llm_model(self) -> str:
+        return self.NVIDIA_MODEL
 
     @property
     def database_uri(self) -> str:

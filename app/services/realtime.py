@@ -37,6 +37,7 @@ class EventConnection:
     socket: WebSocket
     user_id: int
     role: str
+    tenant_id: int | None = None
 
 
 class EventHub:
@@ -46,9 +47,14 @@ class EventHub:
         self.connections: list[EventConnection] = []
         self.lock = asyncio.Lock()
 
-    async def connect(self, socket: WebSocket, user_id: int, role: str) -> None:
+    async def connect(self, socket: WebSocket, user_id: int, role: str, tenant_id: int | None = None) -> None:
+        from app.core.tenancy import tenant_context
+        tenant_id = tenant_id or tenant_context.get()
+        if not tenant_id:
+            await socket.close(code=4403,reason='Empresa no autorizada')
+            return
         async with self.lock:
-            self.connections.append(EventConnection(socket, user_id, role))
+            self.connections.append(EventConnection(socket, user_id, role, tenant_id))
 
     async def register(self, socket: WebSocket, user_id: int, roles: Any = None) -> None:
         role = "CLIENTE"
@@ -71,12 +77,16 @@ class EventHub:
         event: dict,
         user_id: int | None = None,
         roles: set[str] | None = None,
+        tenant_id: int | None = None,
     ) -> None:
+        from app.core.tenancy import tenant_context
+        tenant_id = tenant_id or tenant_context.get()
+        if not tenant_id: return
         async with self.lock:
             targets = [
                 connection
                 for connection in self.connections
-                if (user_id is None or connection.user_id == user_id)
+                if connection.tenant_id == tenant_id and (user_id is None or connection.user_id == user_id)
                 and (roles is None or connection.role in roles)
             ]
         stale: list[WebSocket] = []

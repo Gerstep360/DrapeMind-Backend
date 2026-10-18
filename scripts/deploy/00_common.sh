@@ -38,8 +38,6 @@ ICON_DATABASE="[DB]"
 
 SERVER_IP="157.173.102.129"
 BACKEND_PORT=8045
-AI_SERVER_PORT=8088
-SCOUT_SERVER_PORT=8089
 
 # Resolver directorio raíz del backend
 if [[ -z "${BACKEND_DIR}" ]]; then
@@ -64,12 +62,11 @@ tui_banner() {
     echo -e "${COLOR_PRIMARY}"
     echo "╭──────────────────────────────────────────────────────────────────────────╮"
     echo -e "│  ${BOLD}${COLOR_ACCENT}${ICON_SPARK} DRAPEMIND ATELIER${COLOR_PRIMARY} — BACKEND ENTERPRISE & ALTAIR AI ENGINE        │"
-    echo -e "│  ${DIM}Entorno de Producción VPS Linux  •  FastAPI + Local Gemma 4 Runtime${NC}${COLOR_PRIMARY}      │"
+    echo -e "│  ${DIM}Entorno de Producción VPS Linux  •  FastAPI + NVIDIA API${NC}${COLOR_PRIMARY}      │"
     echo "├──────────────────────────────────────────────────────────────────────────┤"
     echo -e "│  ${COLOR_MUTED}IP Servidor:${NC}   ${BOLD}${SERVER_IP}${NC}${COLOR_PRIMARY}                                        │"
     echo -e "│  ${COLOR_MUTED}Directorio:${NC}    ${BOLD}${BACKEND_DIR}${NC}${COLOR_PRIMARY}"
     echo -e "│  ${COLOR_MUTED}FastAPI API:${NC}   ${COLOR_SUCCESS}http://127.0.0.1:${BACKEND_PORT}${NC}${COLOR_PRIMARY} (Prefijo: ${BOLD}/DrapeMind/api/${NC}${COLOR_PRIMARY})     │"
-    echo -e "│  ${COLOR_MUTED}Gemma 4 AI:${NC}    ${COLOR_ACCENT}http://127.0.0.1:${AI_SERVER_PORT}${NC}${COLOR_PRIMARY} (llama-server local CPU)         │"
     echo "╰──────────────────────────────────────────────────────────────────────────╯"
     echo -e "${NC}"
 }

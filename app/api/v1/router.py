@@ -18,6 +18,8 @@ from app.modules.sucursales_inventario_y_proveedores import (
 )
 
 api_router = APIRouter()
+from app.api.v1.endpoints.saas import router as saas_router
+api_router.include_router(saas_router, prefix='/saas', tags=['Empresas, planes y suscripciones SaaS'])
 
 # Notificaciones y Dispositivos Multi-Terminal (1:N)
 api_router.include_router(notifications_router, tags=["Notificaciones y Dispositivos Push"])

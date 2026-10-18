@@ -4,6 +4,7 @@ __pycache__/
 .env
 .env_produccion
 .env.*
+!.env.example
 .env.bak*
 .venv
 env/
@@ -18,8 +19,6 @@ alembic.log
 .vscode/
 logs/
 vendor/
-vendor/llama.cpp/
-llama.cpp/
 /models/
 /model/
 checkpoints/
@@ -28,7 +27,6 @@ hf_cache/
 huggingface/
 
 # Model Weights & Binaries
-*.gguf
 *.bin
 *.safetensors
 *.onnx
@@ -47,3 +45,10 @@ huggingface/
 # Static product uploads
 static/products/*
 !static/products/placeholder.svg
+
+# Local SaaS backups and generated credentials
+backups/
+.saas-demo-credentials.json
+.saas-test-results.txt
+
+.tools/

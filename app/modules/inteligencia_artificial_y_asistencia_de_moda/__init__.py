@@ -27,7 +27,8 @@ from app.modules.inteligencia_artificial_y_asistencia_de_moda.cu26_generar_repor
 ai_router = cu18_router
 ai_ws_router = cu18_ws_router
 
-from app.api.v1.endpoints.ai import delete_session, select_chat_product
+from app.api.v1.endpoints.ai import delete_session, select_chat_product, shopping_setup
+ai_router.add_api_route('/shopping-setup', shopping_setup, methods=['GET'])
 ai_router.add_api_route("/sessions/{session_id}", delete_session, methods=["DELETE"], status_code=204, response_model=None)
 ai_router.add_api_route("/sessions/{session_id}/selection", select_chat_product, methods=["POST"])
 ai_router.include_router(cu19_router)

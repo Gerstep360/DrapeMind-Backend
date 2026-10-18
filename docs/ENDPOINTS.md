@@ -131,7 +131,7 @@ Prefijo `/admin`. Protegido por roles `ADMIN` y `VENDEDOR`.
 | GET | `/admin/sales/history` | ADMIN | CU-50 | Consulta del reporte de ventas desde `vw_historial_ventas`. |
 | GET | `/admin/metrics/sales-inventory` | ADMIN | CU-51 | KPIs de ventas, facturación y alertas de stock bajo. |
 | GET | `/admin/metrics/ai` | ADMIN | CU-52 | Métricas de uso y rendimiento de IA desde `vw_resumen_ai`. |
-| GET | `/admin/ai/runtime` | ADMIN | CU-53 | Consulta de estado, plataforma y tiempo inactivo de Gemma. |
+| GET | `/admin/ai/runtime` | ADMIN | CU-53 | Consulta de estado, plataforma y tiempo inactivo de NVIDIA. |
 | POST | `/admin/ai/runtime/start` | ADMIN | CU-53 | Encendido manual del runtime del modelo de IA. |
 | POST | `/admin/ai/runtime/stop` | ADMIN | CU-53 | Liberación y apagado del runtime de IA. |
 
@@ -141,7 +141,7 @@ Prefijo `/admin`. Protegido por roles `ADMIN` y `VENDEDOR`.
 |---|---|---|---|---|
 | GET | `/health/live` | Público | CU-54 | Liveness check para balanceadores de carga y orquestadores. |
 | GET | `/health/ready` | Público | CU-54 | Readiness check validando conectividad a PostgreSQL. |
-| GET | `/health/ai` | Público | CU-54 | Verificación de disponibilidad del runtime de IA Gemma. |
+| GET | `/health/ai` | Público | CU-54 | Verificación de disponibilidad del runtime de IA NVIDIA. |
 
 
 - `400/422`: request invalido.
@@ -150,4 +150,4 @@ Prefijo `/admin`. Protegido por roles `ADMIN` y `VENDEDOR`.
 - `404`: recurso inexistente o ajeno (evita enumeracion).
 - `409`: conflicto de estado, duplicado o stock insuficiente.
 - `410`: reserva vencida.
-- `503`: PostgreSQL/Gemma no disponible, segun endpoint.
+- `503`: PostgreSQL/NVIDIA no disponible, segun endpoint.

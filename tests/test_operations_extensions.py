@@ -136,37 +136,3 @@ def test_receipt_requires_approved_payment():
     with pytest.raises(HTTPException) as exc:
         orders.receipt(8, SimpleNamespace(id=7), db)
     assert exc.value.status_code == 409
-
-
-def test_socket_calls_real_agent_with_model_selected_new_tool(monkeypatch):
-    events = []
-    observations = []
-    responses = iter([
-        {"type": "tool", "tool": "get_my_payment_status", "arguments": {"order_id": 23}, "reason": "Consultar el estado de tu pago"},
-        {"type": "finish", "answer": "El pago sigue **pendiente** en el servidor.", "presentation": "text"},
-    ])
-
-    async def complete(messages, **kwargs):
-        observations.append(messages[-1]["content"])
-        return {"choices": [{"message": {"content": json.dumps(next(responses))}}]}
-
-    @asynccontextmanager
-    async def lease():
-        yield
-
-    async def healthy():
-        return True
-
-    async def send(event):
-        events.append(event)
-
-    monkeypatch.setattr(ai, "get_ai_session", lambda *_: SimpleNamespace(id=9, resumen_contexto=None))
-    monkeypatch.setattr(ai, "_save_interaction", lambda *a, **k: SimpleNamespace(id=11))
-    monkeypatch.setattr(ai, "_completion", complete)
-    monkeypatch.setattr(ai.model_runtime, "lease", lease)
-    monkeypatch.setattr(ai.model_runtime, "is_healthy", healthy)
-    monkeypatch.setattr("app.services.ai_agent.execute_tool", lambda name, args, ctx: {"estado": "PENDIENTE"})
-    asyncio.run(ai.run_agent_socket(MagicMock(), SimpleNamespace(id=7, nombre="Ana"), "¿Se registró el abono de mi compra 23?", None, send))
-    assert len(observations) == 2
-    assert any(e.get("name") == "get_my_payment_status" and e["type"] == "tool_start" for e in events)
-    assert "pendiente" in "".join(e.get("content", "") for e in events if e["type"] == "token")

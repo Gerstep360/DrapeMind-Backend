@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 from decimal import Decimal
 
 from app.services.ai_tools import _recommend_outfit, _cart, RecommendOutfitArgs, EmptyArgs, ToolContext
-from app.services.ai_agent import _cards_from_tool
+from app.services.product_cards import _cards_from_tool
 
 
 class OutfitAgentScenariosTests(unittest.TestCase):

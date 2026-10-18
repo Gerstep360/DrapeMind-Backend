@@ -3,7 +3,6 @@ Paquete: Inteligencia artificial y asistencia de moda (PK-05).
 """
 import asyncio
 import logging
-from app.services.socket_turn import _connected_turn
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
@@ -13,7 +12,7 @@ from app.core.security import decode_access_token
 from app.db.session import SessionLocal, get_db
 from app.models import User, UserStatus
 from app.schemas.api import AIRequest, AIResponse
-from app.services.ai import run_agent_socket, run_ai_action
+from app.services.ai import run_ai_action
 from app.services.realtime import websocket_origin_allowed
 
 router = APIRouter()
@@ -40,7 +39,7 @@ async def chat_http(
 
 @router.get(
     "/onboarding-greeting",
-    summary="CU-18: Saludo inicial de onboarding con Altair Mini",
+    summary="CU-18: Saludo inicial de onboarding con Altair",
     description="Genera un saludo interactivo y personalizado de Altair para guiar al usuario nuevo en el atelier.",
 )
 async def onboarding_greeting(
@@ -57,18 +56,14 @@ async def onboarding_greeting(
 
     t0 = asyncio.get_event_loop().time()
     from fastapi import HTTPException
-    from app.services.scout_orchestrator import scout_text_completion, inference_turn
     from app.core.config import settings
-    if not settings.SCOUT_ENABLED:
-        raise HTTPException(503, 'Altair mini no está habilitado.')
     try:
-        async with asyncio.timeout(settings.SCOUT_TIMEOUT_SECONDS):
-            async with inference_turn():
-                result = await scout_text_completion([
-                    {'role': 'system', 'content': 'Da una bienvenida breve. No afirmes haber consultado inventario ni analizado preferencias todavía.'},
-                    {'role': 'user', 'content': prompt},
-                ])
-        greeting_text = result['choices'][0]['message']['content']
+        from app.services.ai import call_nvidia
+        async with asyncio.timeout(45):
+            greeting_text, _ = await call_nvidia(
+                'Da una bienvenida breve. No afirmes haber consultado inventario ni analizado preferencias todavía.',
+                prompt, max_tokens=192,
+            )
     except Exception as exc:
         raise HTTPException(503, 'Altair no pudo generar la bienvenida. Puedes continuar con el formulario.') from exc
 
@@ -76,7 +71,7 @@ async def onboarding_greeting(
     return {
         "greeting": greeting_text,
         "stylist_name": "Altair",
-        "model": settings.SCOUT_MODEL,
+        "model": settings.llm_model,
         "user_name": nombre,
         "latency_ms": latency_ms,
         "tips": [
@@ -103,7 +98,20 @@ async def _authenticate(socket: WebSocket) -> dict:
         if not token:
             logger.warning("WS handshake rejected: Token vacío")
             raise ValueError("Token vacío")
-        return decode_access_token(token)
+        claims = decode_access_token(token)
+        if not isinstance(claims.get('tid'),int) or claims.get('platform'):
+            raise ValueError('El chat requiere una empresa autorizada')
+        from app.core.tenancy import tenant_context
+        tenant_context.set(claims['tid'])
+        with SessionLocal() as db:
+            user = db.get(User,int(claims['sub']))
+            if not user or user.tenant_id != claims['tid'] or user.estado != UserStatus.ACTIVO:
+                raise ValueError('Usuario sin empresa autorizada')
+            from app.services.saas import require_active_subscription
+            from app.db.tenant_session import TenantSession
+            if isinstance(db, TenantSession):
+                require_active_subscription(db,user.tenant_id)
+        return claims
     except Exception as exc:
         logger.info("WS auth rejected: %s", exc)
         try:
@@ -126,76 +134,8 @@ async def ai_socket(socket: WebSocket) -> None:
         payload = await _authenticate(socket)
     except WebSocketDisconnect:
         return
-    with SessionLocal() as db:
-        user = db.get(User, int(payload["sub"]))
-        if not user or user.estado != UserStatus.ACTIVO:
-            try:
-                await socket.send_json(
-                    {
-                        "type": "error",
-                        "code": "AUTH_INVALID",
-                        "message": "Usuario inactivo o no encontrado. Por favor inicia sesión nuevamente.",
-                    }
-                )
-            except Exception:
-                pass
-            await socket.close(code=4401, reason="Usuario inactivo")
-            return
-
-        async def safe_send(msg: dict) -> None:
-            try:
-                from app.services.ai import sanitize_for_json
-                await socket.send_json(sanitize_for_json(msg))
-            except (WebSocketDisconnect, RuntimeError):
-                pass
-
-        await safe_send({"type": "connected", "channel": "ai"})
-        try:
-            while True:
-                try:
-                    data = await socket.receive_json()
-                except (WebSocketDisconnect, RuntimeError):
-                    break
-                message_type = data.get("type")
-                if message_type == "ping":
-                    await safe_send({"type": "pong"})
-                    continue
-                if message_type != "chat":
-                    await safe_send({"type": "error", "message": "Evento no soportado"})
-                    continue
-                message = str(data.get("message", ""))
-                if not (2 <= len(message.strip()) and len(message) <= 2000):
-                    await safe_send(
-                        {"type": "error", "message": "El mensaje debe tener 2 a 2000 caracteres"}
-                    )
-                    continue
-                try:
-                    from app.services.model_runtime import ModelRuntimeError
-                    from fastapi import HTTPException
-                    await _connected_turn(socket, run_agent_socket(
-                        db,
-                        user,
-                        message,
-                        data.get("session_id"),
-                        safe_send,
-                        mode=data.get("mode", "dynamic"),
-                    ), safe_send)
-                except WebSocketDisconnect:
-                    db.rollback()
-                    return
-                except Exception as exc:
-                    db.rollback()
-                    logger.exception("Error procesando mensaje de IA en WebSocket: %s", exc)
-                    await safe_send(
-                        {
-                            "type": "error",
-                            "code": "CHAT_NOT_FOUND" if isinstance(exc, HTTPException) and exc.status_code == 404 else "AI_UNAVAILABLE",
-                            "message": str(exc) if isinstance(exc, (ModelRuntimeError, HTTPException)) and str(exc) else
-                                "La generación no pudo completarse. Reintenta en unos instantes; el detalle quedó registrado en el servidor.",
-                        }
-                    )
-        except (WebSocketDisconnect, RuntimeError):
-            return
+    from app.services.concurrent_chat import serve_nvidia_socket
+    await serve_nvidia_socket(socket, int(payload["sub"]), SessionLocal)
 
 
 @ws_router.websocket("/events")

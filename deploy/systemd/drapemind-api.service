@@ -1,5 +1,5 @@
 [Unit]
-Description=DrapeMind FastAPI and managed Gemma runtime
+Description=DrapeMind FastAPI and NVIDIA API
 After=network.target postgresql.service
 
 [Service]

@@ -166,13 +166,17 @@ async def payment_webhook(
         data = PaymentWebhook.model_validate(json.loads(raw_body.decode()))
     except ValueError as exc:
         raise HTTPException(422, "Payload de webhook inválido") from exc
-    payment = db.scalar(
-        select(Payment)
-        .where(Payment.referencia_externa == data.referencia_externa)
-        .with_for_update()
-    )
+    from app.core.tenancy import system_scope
+    from app.db.tenant_session import bind_tenant
+    with system_scope(db):
+        payment = db.scalar(
+            select(Payment)
+            .where(Payment.referencia_externa == data.referencia_externa)
+            .with_for_update()
+        )
     if not payment:
         raise HTTPException(404, "Transacción no encontrada")
+    bind_tenant(db,payment.tenant_id)
     if payment.proveedor == "STRIPE":
         raise HTTPException(409, "Este pago requiere el webhook firmado de Stripe")
     if data.estado == "APROBADO":
@@ -185,9 +189,9 @@ async def payment_webhook(
                 "payment_id": payment.id,
                 "status": order.estado,
             }
-            background_tasks.add_task(event_hub.publish, event, order.usuario_id)
+            background_tasks.add_task(event_hub.publish, event, order.usuario_id, tenant_id=payment.tenant_id)
             background_tasks.add_task(
-                event_hub.publish, event, None, {"ADMIN", "VENDEDOR"}
+                event_hub.publish, event, None, {"ADMIN", "VENDEDOR"}, tenant_id=payment.tenant_id
             )
             from app.services.push_notifications import dispatch_notification
             background_tasks.add_task(

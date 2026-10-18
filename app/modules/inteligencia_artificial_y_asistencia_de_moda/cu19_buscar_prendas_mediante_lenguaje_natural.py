@@ -17,7 +17,7 @@ router = APIRouter()
     "/search",
     response_model=AIResponse,
     summary="CU-19: Búsqueda semántica en lenguaje natural",
-    description="Gemma extrae la intención de compra y características para ejecutar una búsqueda SQL segura y contextual.",
+    description="NVIDIA extrae la intención de compra y características para ejecutar una búsqueda SQL segura y contextual.",
 )
 async def busqueda_lenguaje_natural(
     payload: NaturalSearchRequest,

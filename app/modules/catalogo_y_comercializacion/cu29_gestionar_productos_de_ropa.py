@@ -99,13 +99,15 @@ async def subir_imagen_producto(
         suffix = ".jpg"
 
     unique_filename = f"{uuid.uuid4().hex}{suffix}"
-    dest_path = STATIC_PRODUCTS_DIR / unique_filename
+    tenant_dir = STATIC_PRODUCTS_DIR / str(_admin.tenant_id)
+    tenant_dir.mkdir(parents=True, exist_ok=True)
+    dest_path = tenant_dir / unique_filename
 
     contents = await file.read()
     with open(dest_path, "wb") as f:
         f.write(contents)
 
-    public_url = f"/static/products/{unique_filename}"
+    public_url = f"/static/products/{_admin.tenant_id}/{unique_filename}"
     return {
         "url": public_url,
         "filename": unique_filename,

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
@@ -50,11 +50,25 @@ async def stripe_sandbox_confirm(payload: StripeSandboxConfirmRequest,
 @router.post("/stripe-webhook")
 async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     event = verify_event(await request.body(), request.headers.get("stripe-signature"), settings.STRIPE_WEBHOOK_SECRET)
+    return await dispatch_stripe_event(db,event)
+
+
+@router.post('/stripe-local-webhook',include_in_schema=False)
+async def stripe_local_webhook(request: Request,db: Session = Depends(get_db)):
+    if settings.ENVIRONMENT=='production':raise HTTPException(404,'No encontrado')
+    event=verify_event(await request.body(),request.headers.get('stripe-signature'),settings.STRIPE_LOCAL_WEBHOOK_SECRET)
+    return await dispatch_stripe_event(db,event)
+
+
+async def dispatch_stripe_event(db,event):
+    from app.services.saas_billing import process_billing_event
+    if await run_in_threadpool(process_billing_event, db, event):
+        return {'received':True}
     payment = await run_in_threadpool(process_event, db, event)
-    if payment:
+    if payment and payment.estado == 'APROBADO':
         order = db.get(Order, payment.pedido_id)
         await event_hub.publish({"type": "payment_updated", "payment_id": payment.id,
-            "order_id": payment.pedido_id, "status": payment.estado}, order.usuario_id)
+            "order_id": payment.pedido_id, "status": payment.estado}, order.usuario_id, tenant_id=payment.tenant_id)
         from app.services.push_notifications import dispatch_notification
         await dispatch_notification(
             db, order.usuario_id, "Pago Stripe Aprobado",

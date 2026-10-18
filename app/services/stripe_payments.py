@@ -99,7 +99,7 @@ def create_intent(db: Session, order_id: int, user_id: int) -> dict:
             else:
                 intent = _stripe_request("POST", "payment_intents", key=payment.idempotency_key, data={
                     "amount": str(amount), "currency": "bob", "payment_method_types[]": "card",
-                    "metadata[order_id]": str(order_id), "metadata[payment_id]": str(payment.id),
+                    "metadata[order_id]": str(order_id), "metadata[payment_id]": str(payment.id), "metadata[tenant_id]": str(order.tenant_id),
                 })
             if intent.get("id"):
                 payment.referencia_externa = intent["id"]
@@ -110,9 +110,12 @@ def create_intent(db: Session, order_id: int, user_id: int) -> dict:
                     "amount": amount, "currency": "bob", "status": payment.estado, "sandbox": False
                 }
         except Exception as exc:
-            logger.warning("No se pudo conectar a Stripe (%s). Habilitando modo sandbox.", exc)
+            if isinstance(exc, HTTPException): raise
+            raise HTTPException(502, 'No se pudo preparar el pago con Stripe. No se confirmó ningún pago.') from exc
 
-    # Fallback transparente a sandbox de prueba para Stripe
+    if settings.PAYMENT_PROVIDER != 'mock' or settings.ENVIRONMENT == 'production':
+        raise HTTPException(503, 'Stripe no está configurado; no se simulan pagos reales')
+    # Explicit local demonstration mode; never a fallback after a Stripe failure.
     sandbox_id = f"pi_sandbox_{order.id}_{uuid4().hex[:10]}"
     payment.referencia_externa = sandbox_id
     db.commit()
@@ -128,6 +131,8 @@ def confirm_sandbox_payment(db: Session, payment_id: int, user_id: int) -> Payme
     payment = db.get(Payment, payment_id)
     if not payment:
         raise HTTPException(404, "Pago no encontrado")
+    if settings.PAYMENT_PROVIDER != 'mock' or settings.ENVIRONMENT == 'production' or not (payment.referencia_externa or '').startswith('pi_sandbox_'):
+        raise HTTPException(409, 'Este pago requiere confirmación firmada de Stripe')
     order = db.get(Order, payment.pedido_id)
     if not order:
         raise HTTPException(404, "Pedido no encontrado")
@@ -146,9 +151,15 @@ def process_event(db: Session, event: dict) -> Payment | None:
         # A failed card attempt is retryable on the same PaymentIntent, not terminal.
         return None
     intent = event["data"]["object"]
-    payment = db.scalar(select(Payment).where(Payment.proveedor == "STRIPE", Payment.referencia_externa == intent.get("id")))
+    from app.core.tenancy import system_scope
+    from app.db.tenant_session import bind_tenant
+    with system_scope(db):
+        payment = db.scalar(select(Payment).where(Payment.proveedor == "STRIPE", Payment.referencia_externa == intent.get("id")))
     if payment is None:
         return None  # Never approve the latest order payment via untrusted metadata fallback.
+    if payment.estado in ('APROBADO','RECHAZADO'):
+        return None  # Duplicate delivery must not emit another approval notification.
+    bind_tenant(db,payment.tenant_id)
     metadata = intent.get("metadata") or {}
     expected = minor_units(payment.monto)
     if (intent.get("amount") != expected or intent.get("currency", "").upper() != payment.moneda

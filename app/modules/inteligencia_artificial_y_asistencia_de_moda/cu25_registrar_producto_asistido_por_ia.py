@@ -18,7 +18,7 @@ from app.schemas.api import (
     ProductAiAssistExtendedRequest,
     ProductAiAssistExtendedResponse,
 )
-from app.services.ai import call_gemma
+from app.services.ai import call_nvidia
 
 router = APIRouter()
 
@@ -138,7 +138,7 @@ REGLAS:
 """
 
     try:
-        raw_response, _ = await call_gemma(
+        raw_response, _ = await call_nvidia(
             system=system_prompt,
             user=user_prompt,
             response_format={"type": "json_object"},
@@ -229,26 +229,10 @@ async def estudio_creacion_producto_ia(
     cats = db.scalars(select(Category.nombre).where(Category.activo == True).limit(20)).all()
     categorias_disponibles = list(cats) if cats else ["Sacos", "Pantalones", "Vestidos", "Camisas", "Accesorios"]
 
-    # 2. Configuración de modelo y rol
-    modelo_choice = payload.modelo_ia or "ALTAIR_MINI"
-    if modelo_choice == "ALTAIR_MINI":
-        nombre_modelo_usado = "Altair Mini (Scout 0.6B - Inferencia Rápida)"
-        system_prompt = (
-            "Eres Altair Mini, motor ágil de inteligencia de catálogo sastrero de DrapeMind. "
-            "Genera la ficha técnica y comercial completa en formato JSON estricto. CERO EMOJIS."
-        )
-    elif modelo_choice == "ALTAIR_VARIABLE":
-        nombre_modelo_usado = "Altair Variable (Orquestación Híbrida Dinámica)"
-        system_prompt = (
-            "Eres Altair Variable, diseñador y consultor textil adaptativo de DrapeMind. "
-            "Genera la ficha técnica y comercial completa en formato JSON estricto. CERO EMOJIS."
-        )
-    else:
-        nombre_modelo_usado = "Altair Principal (Gemma 4 E2B - Razonamiento Profundo)"
-        system_prompt = (
-            "Eres Altair Principal, Director Creativo y Maestro Sastre de DrapeMind Atelier. "
-            "Genera la ficha técnica y comercial completa con rigor de alta costura en formato JSON estricto. CERO EMOJIS."
-        )
+    from app.core.config import settings
+    nombre_modelo_usado = settings.NVIDIA_MODEL
+    system_prompt = ("Eres Altair, asesor de catálogo de DrapeMind. Genera una ficha comercial "
+                     "en JSON estricto usando los datos proporcionados. No afirmes características no conocidas.")
 
     # 3. Contexto ensamblado para la IA
     user_prompt = f"""
@@ -282,7 +266,7 @@ REGLAS OBLIGATORIAS:
 
     # 4. Inferencia con Structured Output JSON
     try:
-        raw_response, _ = await call_gemma(
+        raw_response, _ = await call_nvidia(
             system=system_prompt,
             user=user_prompt,
             response_format={"type": "json_object"},
@@ -291,9 +275,8 @@ REGLAS OBLIGATORIAS:
         )
         data = _extract_json_payload(raw_response)
         parsed = ProductStudioAiContent.model_validate(data)
-    except Exception:
-        # Fallback sastrero de contingencia
-        parsed = _generar_ficha_estudio_fallback(payload, categorias_disponibles)
+    except Exception as exc:
+        raise HTTPException(503, "No se pudo generar la ficha con NVIDIA. Puedes reintentar.") from exc
 
     # 5. Retornar respuesta estructurada
     return ProductAiAssistExtendedResponse(
