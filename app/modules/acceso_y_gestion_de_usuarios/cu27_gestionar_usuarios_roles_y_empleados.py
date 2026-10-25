@@ -2,20 +2,30 @@
 Paquete: Acceso y gestión de usuarios (PK-01).
 """
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import select, func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from app.api.deps import require_role, require_roles
 from app.core.security import get_password_hash
 from app.db.session import get_db
 from app.models import Role, User, UserStatus
+from app.models.saas import Tenant
 from app.schemas.api import UserOut
 
 router = APIRouter()
 
 
+def _ensure_active_admin(db: Session, user: User, next_role: Role, next_status: UserStatus) -> None:
+    if user.rol == Role.ADMIN and user.estado == UserStatus.ACTIVO and (next_role != Role.ADMIN or next_status != UserStatus.ACTIVO):
+        admins = db.scalar(select(func.count(User.id)).where(User.rol == Role.ADMIN, User.estado == UserStatus.ACTIVO)) or 0
+        if admins <= 1:
+            raise HTTPException(409, 'La empresa debe conservar al menos un administrador activo')
+
+
 class AdminUserCreate(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     nombre: str = Field(min_length=2, max_length=120)
     email: EmailStr
     password: str = Field(min_length=8, max_length=72)
@@ -25,6 +35,7 @@ class AdminUserCreate(BaseModel):
 
 
 class AdminUserUpdate(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     nombre: str | None = None
     telefono: str | None = None
     rol: Role | None = None
@@ -104,12 +115,13 @@ def crear_usuario_administrativo(
     db: Session = Depends(get_db),
 ) -> User:
     """CU-27: Alta administrativa de usuario o empleado."""
-    existing = db.scalar(select(User).where(User.email == payload.email))
+    email = str(payload.email).strip().lower()
+    existing = db.scalar(select(User).where(func.lower(User.email) == email))
     if existing:
         raise HTTPException(409, "El email ya está registrado")
 
     user = User(
-        email=payload.email,
+        email=email,
         password_hash=get_password_hash(payload.password),
         nombre=payload.nombre,
         telefono=payload.telefono,
@@ -117,7 +129,11 @@ def crear_usuario_administrativo(
         estado=payload.estado,
     )
     db.add(user)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, 'El email ya está registrado en esta empresa')
     db.refresh(user)
     return user
 
@@ -135,9 +151,15 @@ def actualizar_usuario_administrativo(
     db: Session = Depends(get_db),
 ) -> User:
     """CU-27: Modificación de roles, credenciales y estado de cuenta."""
+    # Serializes concurrent changes so two administrators cannot both remove the last role.
+    db.scalar(select(Tenant).where(Tenant.id == _admin.tenant_id).with_for_update())
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    next_role = payload.rol if payload.rol is not None else user.rol
+    next_status = payload.estado if payload.estado is not None else user.estado
+    _ensure_active_admin(db,user,next_role,next_status)
 
     if payload.rol is not None:
         user.rol = payload.rol
@@ -164,14 +186,18 @@ def eliminar_o_suspender_usuario(
     _admin: User = Depends(require_role(Role.ADMIN)),
     db: Session = Depends(get_db),
 ) -> dict:
+    db.scalar(select(Tenant).where(Tenant.id == _admin.tenant_id).with_for_update())
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     if user.id == _admin.id:
         raise HTTPException(status_code=400, detail="No puedes desactivar tu propia cuenta administradora")
 
+    next_status = UserStatus.BLOQUEADO if user.estado == UserStatus.ACTIVO else UserStatus.ACTIVO
+    _ensure_active_admin(db,user,user.rol,next_status)
+
     if user.estado == UserStatus.ACTIVO:
-        user.estado = UserStatus.SUSPENDIDO
+        user.estado = UserStatus.BLOQUEADO
     else:
         user.estado = UserStatus.ACTIVO
 

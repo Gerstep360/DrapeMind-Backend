@@ -3,13 +3,23 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_role
+from app.api.deps import require_role, get_current_user_optional
 from app.db.session import get_db
-from app.models import Category, Product, ProductVariant, Role, User
+from app.models import Category, Product, ProductVariant, BranchStock, Role, User
 from app.schemas.api import CategoryInput, CategoryOut, VariantInput, VariantOut
 from app.services.store import variant_payload
 
 router = APIRouter()
+
+
+def _validate_category_parent(db, parent_id, category_id=None):
+    seen={category_id} if category_id is not None else set()
+    while parent_id is not None:
+        if parent_id in seen:raise HTTPException(409,'La categoría no puede formar un ciclo con sus padres')
+        seen.add(parent_id)
+        parent=db.get(Category,parent_id)
+        if parent is None:raise HTTPException(404,'Categoría padre no encontrada en esta empresa')
+        parent_id=parent.parent_id
 
 
 @router.get(
@@ -18,13 +28,13 @@ router = APIRouter()
     summary="CU-30: Listar categorías del catálogo",
     description="Devuelve el árbol completo de categorías y subcategorías de ropa activas.",
 )
-def listar_categorias_publico(db: Session = Depends(get_db)) -> list[Category]:
+def listar_categorias_publico(include_inactive: bool = False,user: User | None = Depends(get_current_user_optional),db: Session = Depends(get_db)) -> list[Category]:
     """CU-30: Lista de categorías activas."""
-    return list(
-        db.scalars(
-            select(Category).where(Category.activo.is_(True)).order_by(Category.nombre)
-        )
-    )
+    if include_inactive and (not user or user.rol != Role.ADMIN):
+        raise HTTPException(403,'Solo el administrador puede consultar categorías inactivas')
+    query=select(Category)
+    if not include_inactive:query=query.where(Category.activo.is_(True))
+    return list(db.scalars(query.order_by(Category.nombre)))
 
 
 
@@ -41,6 +51,7 @@ def crear_categoria(
     db: Session = Depends(get_db),
 ) -> Category:
     """CU-30: Registro de nueva categoría."""
+    _validate_category_parent(db,payload.parent_id)
     category = Category(**payload.model_dump())
     db.add(category)
     try:
@@ -66,9 +77,13 @@ def actualizar_categoria(
     category = db.get(Category, category_id)
     if not category:
         raise HTTPException(404, "Categoría no encontrada")
+    _validate_category_parent(db,payload.parent_id,category.id)
     for field, value in payload.model_dump().items():
         setattr(category, field, value)
-    db.commit()
+    try:db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409,'Slug o categoría duplicada en esta empresa')
     db.refresh(category)
     return category
 
@@ -119,6 +134,12 @@ def actualizar_variante(
     variant = db.get(ProductVariant, variant_id)
     if not variant:
         raise HTTPException(404, "Variante no encontrada")
+    if payload.stock_total < variant.stock_reservado:
+        raise HTTPException(409,'El stock total no puede ser menor al reservado')
+    if not payload.activo and variant.stock_reservado:
+        raise HTTPException(409,'No se puede desactivar una variante con unidades reservadas')
+    if payload.stock_total != variant.stock_total and db.scalar(select(BranchStock.id).where(BranchStock.variante_id==variant.id).limit(1)):
+        raise HTTPException(409,'Modifica las existencias desde el inventario de cada sucursal')
     for field, value in payload.model_dump().items():
         setattr(variant, field, value)
     try:
@@ -195,6 +216,8 @@ def eliminar_o_desactivar_variante(
     variant = db.get(ProductVariant, variant_id)
     if not variant:
         raise HTTPException(404, "Variante no encontrada")
+    if variant.activo and variant.stock_reservado:
+        raise HTTPException(409,'No se puede desactivar una variante con unidades reservadas')
     variant.activo = not variant.activo
     db.commit()
     return {"message": f"Variante {'activada' if variant.activo else 'desactivada'} correctamente", "activo": variant.activo}

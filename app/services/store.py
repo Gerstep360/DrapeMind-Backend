@@ -652,13 +652,13 @@ def checkout_cart(
     promo_tag = ""
     if promotion_code:
         code_clean = promotion_code.strip().upper()
-        promo = db.query(Promotion).filter(Promotion.codigo == code_clean, Promotion.activo.is_(True)).first()
+        promo = db.query(Promotion).filter(Promotion.codigo == code_clean, Promotion.activo.is_(True)).with_for_update().first()
         if promo:
             now = datetime.now(timezone.utc)
             valida = True
-            if promo.fecha_inicio and promo.fecha_inicio > now:
+            if promo.fecha_inicio and (promo.fecha_inicio.replace(tzinfo=timezone.utc) if promo.fecha_inicio.tzinfo is None else promo.fecha_inicio) > now:
                 valida = False
-            if promo.fecha_fin and promo.fecha_fin < now:
+            if promo.fecha_fin and (promo.fecha_fin.replace(tzinfo=timezone.utc) if promo.fecha_fin.tzinfo is None else promo.fecha_fin) < now:
                 valida = False
             if promo.limite_usos and promo.usos_actuales >= promo.limite_usos:
                 valida = False
@@ -672,13 +672,9 @@ def checkout_cart(
                 if promo.producto_id not in cart_prod_ids:
                     valida = False
             if valida:
-                if promo.tipo_descuento == "PORCENTAJE":
-                    descuento = (subtotal * (promo.valor_descuento / Decimal("100"))).quantize(Decimal("0.01"))
-                elif promo.tipo_descuento == "DOS_POR_UNO":
-                    descuento = (subtotal * Decimal("0.50")).quantize(Decimal("0.01"))
-                else:
-                    descuento = min(promo.valor_descuento, subtotal)
-                descuento = min(descuento, subtotal)
+                from app.services.promotion_rules import basket_discount
+                lines=[(db.get(ProductVariant,it.variante_id).producto_id,it.cantidad,it.precio_referencia) for it in items]
+                descuento = basket_discount(promo,lines)
                 promo.usos_actuales += 1
                 promo_tag = f"[Cupón: {promo.codigo}]"
 

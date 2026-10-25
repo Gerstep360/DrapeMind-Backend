@@ -112,6 +112,8 @@ def ajustar_inventario(
         _sync_variant_totals(db, variant.id)
     else:
         # Ajuste global directo por ADMIN
+        if db.scalar(select(BranchStock.id).where(BranchStock.variante_id==variant.id).limit(1)):
+            raise HTTPException(409,'Selecciona una sucursal para ajustar existencias distribuidas')
         if payload.nuevo_stock_total < variant.stock_reservado:
             raise HTTPException(
                 status.HTTP_409_CONFLICT,
@@ -131,6 +133,9 @@ def ajustar_inventario(
         tipo_movimiento = "AJUSTE"
 
     difference = payload.nuevo_stock_total - previous_total
+    if payload.tipo == 'ENTRADA' and difference < 0:
+        db.rollback()
+        raise HTTPException(409,'Una entrada no puede reducir las existencias; utiliza un ajuste')
     cantidad = abs(difference)
 
     if difference != 0:
