@@ -9,7 +9,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from instalar_vps import validate_origin, validate_repo, validate_branch, clone_or_reuse
+from instalar_vps import validate_origin, validate_repo, validate_branch, clone_or_reuse, synchronize_bootstrap, validate_manager_bundle
 
 spec = importlib.util.spec_from_file_location('platform_config', ROOT/'scripts/deploy/platform_config.py')
 deploy = importlib.util.module_from_spec(spec)
@@ -198,3 +198,61 @@ def test_existing_checkout_mismatch_never_overwrites(project,monkeypatch):
     with pytest.raises(ValueError,match='no coincide'):
         clone_or_reuse('https://github.com/Gerstep360/DrapeMind-Backend.git','Main',backend)
     assert marker.read_text()=='keep me'
+
+
+@pytest.fixture
+def published_repositories(tmp_path,monkeypatch):
+    import instalar_vps
+    # La regresión usa repositorios Git reales y remotos locales, sin SSH ni servicios.
+    monkeypatch.setattr(instalar_vps.shutil,'which',lambda name:None)
+    def git(repo,*args):
+        return subprocess.run(['git','-c','user.name=Installer test','-c','user.email=installer@example.com','-C',str(repo),*args],check=True,capture_output=True,text=True).stdout.strip()
+    paths={};producers={};before={}
+    for component in ('backend','web'):
+        remote=tmp_path/(component+'-remote.git')
+        subprocess.run(['git','init','--bare',str(remote)],check=True,capture_output=True)
+        producer=tmp_path/(component+'-publisher');producer.mkdir()
+        git(producer,'init','-b','Main')
+        git(producer,'remote','add','origin',str(remote))
+        (producer/'README.md').write_text('old version')
+        git(producer,'add','.');git(producer,'commit','-m','old Main')
+        git(producer,'push','origin','Main')
+        consumer=tmp_path/'DrapeMind'/component
+        consumer.parent.mkdir(exist_ok=True)
+        subprocess.run(['git','clone','--branch','Main',str(remote),str(consumer)],check=True,capture_output=True)
+        paths[component]=consumer;producers[component]=producer;before[component]=git(consumer,'rev-parse','HEAD')
+        files=['scripts/deploy/platform.sh','scripts/deploy/platform_ui.sh','scripts/deploy/platform_config.py'] if component=='backend' else ['install.sh']
+        for name in files:
+            target=producer/name;target.parent.mkdir(parents=True,exist_ok=True);target.write_text('# published installer\n')
+        git(producer,'add','.');git(producer,'commit','-m','publish installer on Main');git(producer,'push','origin','Main')
+    return paths,producers,before,git,dict(backend_branch='Main',web_branch='Main')
+
+
+def test_missing_manager_recovers_already_published_main(published_repositories):
+    paths,producers,before,git,config=published_repositories
+    assert not (paths['backend']/'scripts/deploy/platform.sh').exists()
+    synchronize_bootstrap(paths,config)
+    validate_manager_bundle(paths)
+    for component in paths:
+        assert git(paths[component],'branch','--show-current')=='Main'
+        assert git(paths[component],'rev-parse','HEAD')==git(producers[component],'rev-parse','HEAD')
+
+
+def test_bootstrap_preserves_dirty_checkout_before_updating_either_repo(published_repositories):
+    paths,producers,before,git,config=published_repositories
+    (paths['web']/'README.md').write_text('local work to preserve')
+    with pytest.raises(ValueError,match='cambios locales'):
+        synchronize_bootstrap(paths,config)
+    assert (paths['web']/'README.md').read_text()=='local work to preserve'
+    assert all(git(paths[c],'rev-parse','HEAD')==before[c] for c in paths)
+
+
+def test_bootstrap_preserves_local_commits_when_main_diverges(published_repositories):
+    paths,producers,before,git,config=published_repositories
+    (paths['web']/'local.txt').write_text('committed local work')
+    git(paths['web'],'add','.');git(paths['web'],'commit','-m','keep local commit')
+    local_head=git(paths['web'],'rev-parse','HEAD')
+    with pytest.raises(ValueError,match='diverge'):
+        synchronize_bootstrap(paths,config)
+    assert git(paths['backend'],'rev-parse','HEAD')==before['backend']
+    assert git(paths['web'],'rev-parse','HEAD')==local_head

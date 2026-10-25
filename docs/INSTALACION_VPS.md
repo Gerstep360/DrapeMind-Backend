@@ -25,6 +25,8 @@ bash /root/app/DrapeMind/install.sh
 
 Los repositorios quedan en `backend/` y `web/`. Se reconocen también los nombres antiguos `DrapeMind-Backend` y `DrapeMind-web`; no se mueven ni se duplican. `deploy.json` guarda las rutas, ramas, puerto y origen elegidos. Los lanzadores `install.sh` y `config.sh` abren el mismo gestor del backend. Los lanzadores anteriores se respaldan antes de sustituirlos.
 
+La rama predeterminada es `Main` en ambos repositorios. Si ya hay checkouts antiguos y falta el gestor, el lanzador comprueba ambos, descarga las ramas configuradas y aplica únicamente avances directos antes de buscar de nuevo el `.sh`. No interpreta un checkout desactualizado como prueba de que faltan cambios en GitHub. Los cambios locales y los commits divergentes se conservan y detienen la preparación. Si el backend estaba activo, se exige un respaldo antes de avanzar el código. Cuando el gestor ya existe, las actualizaciones completas siguen pasando por `--update`, con su respaldo previo.
+
 ## Qué hace la instalación nativa
 
 1. Instala paquetes Ubuntu/Debian, PostgreSQL y Nginx. Requiere Python 3.11 o superior; Ubuntu 24.04 utiliza Python 3.12.
@@ -69,6 +71,12 @@ DRAPEMIND_NO_ANIMATION=1 NO_COLOR=1 bash install.sh
 ```
 
 Sin TTY la salida es texto plano. Los registros de cada paso quedan en `/var/log/drapemind/<ejecución>/`, con acceso privado. No se imprime automáticamente su contenido, que podría contener mensajes de proveedores o controladores. El diagnóstico de IA real sigue disponible en `bash backend/install.sh --check-ai`; no se ejecuta automáticamente ni consume peticiones NVIDIA durante la instalación.
+
+La instalación completa informa **14 etapas** y cuenta únicamente las que ya terminaron. Esa barra mide etapas, no una estimación del tiempo restante. En APT se muestra además el porcentaje real de descarga o instalación comunicado por `APT::Status-Fd`, con dos decimales y la acción actual. Cuando una herramienta no informa una métrica, aparece «porcentaje no disponible» junto a su fase y tiempo transcurrido. No se simula avance durante una espera.
+
+La etapa Linux comprueba primero los paquetes existentes y solo instala los que faltan. APT funciona sin pseudo-terminal, con entrada no interactiva, timeout de bloqueo y sin reiniciar servicios ajenos a través de needrestart. Se corrigió una suspensión por control de terminal que mantenía el contador girando aun con el proceso detenido. El monitor detecta ahora procesos suspendidos y detiene el paso con un error explícito. La regresión se prueba en una terminal real con anchos de 42, 80 y 120 columnas mediante `python3 tests/installer_progress_linux.py`.
+
+Protocolo de progreso: [documentación oficial de APT](https://github.com/Debian/apt/blob/main/doc/progress-reporting.md).
 
 ## Configurar IA y pagos
 
@@ -130,7 +138,7 @@ Let's Encrypt permite certificados para IP mediante el perfil de corta duración
 
 ## Comprobaciones realizadas
 
-- Backend: 175 pruebas aprobadas en Windows, dos pruebas de symlinks omitidas allí; las 15 pruebas específicas del instalador aprobaron en Ubuntu 24.04, incluidas esas dos.
+- Backend: 178 pruebas aprobadas en Windows, dos pruebas de symlinks omitidas allí; las 18 pruebas específicas del instalador aprobaron en Ubuntu 24.04, incluidas esas dos. Se verificó la recuperación de checkouts antiguos desde Main, la conservación de cambios locales y el rechazo de commits divergentes.
 - Build Angular de producción con base `/DrapeMind/`: aprobado.
 - Nginx independiente en un puerto loopback temporal: fallback SPA, config sin caché, API, salud y cabeceras de WebSocket comprobados.
 - Publicación por versiones: un build fallido conserva `current`; un build válido publica la versión nueva y conserva `previous`.

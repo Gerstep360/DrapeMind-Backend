@@ -43,18 +43,36 @@ lock_deploy() { exec 9>/var/lock/drapemind-deploy.lock; flock -n 9 || { ui_text 
 cfg() { "$PY" "$CONFIG_TOOL" "$1" --app-dir "$DRAPE_APP_DIR"; }
 prepare_env() { python3 "$CONFIG_TOOL" env --app-dir "$DRAPE_APP_DIR"; }
 packages() {
-    export DEBIAN_FRONTEND=noninteractive
-    apt-get update -qq
-    apt-get install -y -qq ca-certificates curl git openssl xz-utils build-essential libpq-dev python3 python3-venv python3-dev postgresql postgresql-contrib nginx nano acl
+    export DEBIAN_FRONTEND=noninteractive APT_LISTCHANGES_FRONTEND=none NEEDRESTART_MODE=l NEEDRESTART_SUSPEND=1
+    local required=(ca-certificates curl git openssl xz-utils build-essential libpq-dev python3 python3-venv python3-dev postgresql postgresql-contrib nginx nano acl)
+    local missing=() package
+    progress_update 'Linux' '?' 'Comprobando paquetes ya instalados'
+    for package in "${required[@]}"; do
+        [[ "$(dpkg-query -W -f='${Status}' "$package" 2>/dev/null || true)" == 'install ok installed' ]] || missing+=("$package")
+    done
+    if (( ${#missing[@]} )); then
+        local opts=(-o Dpkg::Use-Pty=0 -o DPkg::Lock::Timeout=120 -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
+        progress_update 'APT · índices' '?' "Faltan ${#missing[@]} paquetes; actualizando índices"
+        apt-get "${opts[@]}" -o APT::Status-Fd=3 update 3>>"$DRAPE_APT_STATUS_FILE"
+        progress_update 'APT · paquetes' '?' "Instalando solo los ${#missing[@]} paquetes que faltan"
+        apt-get "${opts[@]}" -o APT::Status-Fd=3 -o DPkg::Options::=--force-confdef -o DPkg::Options::=--force-confold install -y --no-install-recommends "${missing[@]}" 3>>"$DRAPE_APT_STATUS_FILE"
+    fi
+    progress_update 'Servicios' '?' "${#required[@]}/${#required[@]} paquetes disponibles; verificando PostgreSQL y Nginx"
     systemctl enable --now postgresql nginx
+    systemctl is-active --quiet postgresql
+    systemctl is-active --quiet nginx
 }
 python_env() {
+    progress_update 'Python' '?' 'Validando Python y el entorno virtual'
     python3 -c 'import sys; assert sys.version_info >= (3,11), "Python 3.11+ requerido"'
     [[ -x "$PY" ]] || python3 -m venv "$BACKEND_DIR/.venv"
+    progress_update 'pip' '?' 'Actualizando el gestor de paquetes'
     "$PY" -m pip install --quiet --upgrade pip
+    progress_update 'Python' '?' 'Resolviendo e instalando requirements.txt; el registro muestra la actividad'
     "$PY" -m pip install --quiet -r "$BACKEND_DIR/requirements.txt"
 }
 node_env() {
+    progress_update 'Node' '?' 'Consultando y descargando la versión del proyecto'
     # Node privado del proyecto: no cambia el Node de taji u otros servicios.
     local arch tmp name checksum
     case "$(uname -m)" in x86_64) arch=x64;; aarch64|arm64) arch=arm64;; *) return 1;; esac
@@ -192,7 +210,7 @@ EOF
     tls_ready
 }
 install_backend() {
-    TOTAL=8; STEP=0
+    TOTAL="${DRAPE_TOTAL_STEPS:-9}"; STEP=0
     run_step 'Dependencias Linux y PostgreSQL' packages
     run_step 'Configuración privada de producción' prepare_env
     run_step 'Entorno Python y dependencias' python_env
@@ -201,16 +219,15 @@ install_backend() {
     run_step 'Migraciones y permisos de ejecución' migrate
     run_step 'Administrador inicial' cfg admin
     run_step 'Servicio nativo y permisos' service
-    wait_backend
+    run_step 'Esperar disponibilidad del backend' wait_backend
 }
 install_all() {
-    install_backend
-    TOTAL=3; STEP=0
+    DRAPE_TOTAL_STEPS=14 install_backend
     run_step 'Node privado del proyecto' node_env
     run_step 'Compilar y publicar Angular' web_build
     run_step 'Integrar proxy y WebSockets' cfg nginx
-    tls
-    check
+    run_foreground_step 'Comprobar HTTPS' tls
+    run_foreground_step 'Verificar web, API y PostgreSQL' check
     printf 'Acceso inicial (solo si fue creado): %s/.deploy/admin-access.json\n' "$DRAPE_APP_DIR"
 }
 update() {
@@ -221,7 +238,7 @@ update() {
     exec bash "$DEPLOY_DIR/platform.sh" --apply-update
 }
 apply_update() {
-    TOTAL=8; STEP=0
+    TOTAL=10; STEP=0
     run_step 'Revisar configuración de producción' prepare_env
     run_step 'Actualizar dependencias Python' python_env
     run_step 'Migraciones y permisos runtime' migrate
@@ -230,7 +247,8 @@ apply_update() {
     run_step 'Actualizar permisos y reiniciar backend' service
     run_step 'Validar e integrar Nginx' cfg nginx
     run_step 'Esperar disponibilidad del backend' wait_backend
-    tls; check
+    run_foreground_step 'Comprobar HTTPS' tls
+    run_foreground_step 'Verificar servicios' check
 }
 menu() {
     [[ -t 0 ]] || { printf 'Selecciona una acción explícita; consulta --help.\n'; return 2; }

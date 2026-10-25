@@ -456,13 +456,15 @@ def main():
         if not config.get('acme_agree_tos'):
             if not sys.stdin.isatty():
                 raise ValueError('Para emitir HTTPS nuevo usa instalar_vps.py --accept-acme-tos --email correo@dominio.')
-            if input('¿Aceptas https://letsencrypt.org/repository/ para solicitar HTTPS? [s/N]: ').strip().lower() != 's':
+            print('¿Aceptas https://letsencrypt.org/repository/ para solicitar HTTPS? [s/N]: ',end='',file=sys.stderr,flush=True)
+            if input().strip().lower() != 's':
                 raise ValueError('HTTPS pendiente; la configuración HTTP permanece disponible.')
             config['acme_agree_tos'] = True
         if not config.get('acme_email'):
             if not sys.stdin.isatty():
                 raise ValueError('Falta correo de contacto ACME.')
-            config['acme_email'] = input('Correo para avisos del certificado: ').strip()
+            print('Correo para avisos del certificado: ',end='',file=sys.stderr,flush=True)
+            config['acme_email'] = input().strip()
         if not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', config['acme_email']):
             raise ValueError('Correo ACME inválido.')
         private_write(app/'deploy.json',json.dumps(config,indent=2)+'\n')
