@@ -22,11 +22,22 @@ def user_profile(db,user,tenant=None):
     return UserOut.model_validate(user).model_copy(update={
         'tenant_slug':tenant.slug if tenant else None,
         'tenant_name':tenant.name if tenant else None,
+        'is_universal_customer':bool(user.customer_account_id),
     })
 
 
 def sign_in(db,email,password,tenant_slug=None):
-    query=select(User,Tenant).outerjoin(Tenant,User.tenant_id==Tenant.id).where(func.lower(User.email)==email.strip().lower())
+    from app.models.saas import CustomerAccount
+    from app.services.customer_identity import enter_customer_store, attach_legacy_customer
+    identity=db.scalar(select(CustomerAccount).where(CustomerAccount.email==email.strip().lower()))
+    if identity and verify_password(password,identity.password_hash):
+        with system_scope(db):
+            member=db.scalar(select(User).where(User.customer_account_id==identity.id).order_by(User.id))
+            home=db.get(Tenant,member.tenant_id) if member else None
+        if not tenant_slug and not home: raise credentials_error()
+        user,tenant=enter_customer_store(db,identity,tenant_slug or home.slug,password)
+        return sign_in_response(db,user,tenant)
+    query=select(User,Tenant).outerjoin(Tenant,User.tenant_id==Tenant.id).where(func.lower(User.email)==email.strip().lower(),User.customer_account_id.is_(None))
     if tenant_slug:
         # El enlace de tienda puede resolver correos repetidos; nunca concede permisos.
         query=query.where(or_(Tenant.slug==tenant_slug,and_(User.is_platform_admin.is_(True),User.tenant_id.is_(None))))
@@ -46,11 +57,17 @@ def sign_in(db,email,password,tenant_slug=None):
     if not platform and (not tenant or not tenant.active or user.is_platform_admin):
         raise HTTPException(403,'El acceso de esta tienda no está disponible. Contacta con su administración.')
     bind_tenant(db,None if platform else tenant.id)
+    attach_legacy_customer(db,user,password)
+    return sign_in_response(db,user,tenant)
+
+
+def sign_in_response(db,user,tenant):
+    platform=bool(user.is_platform_admin and user.tenant_id is None)
     profile=user_profile(db,user,tenant)
     if platform:
         destination='/saas-platform'
     elif not subscription_state(db,tenant.id)[3]:
-        destination='/subscription'
+        destination='/tiendas' if user.rol==Role.CLIENTE else '/subscription'
     elif user.rol==Role.CLIENTE:
         destination='/catalog' if profile.has_style_profile else '/onboarding'
     elif user.rol==Role.CAJERO:

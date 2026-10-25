@@ -7,7 +7,8 @@ El backend consulta por correo mediante el índice `ix_usuarios_login_email`; co
 | Cuenta validada | Destino web | Aplicación móvil |
 | --- | --- | --- |
 | Administración SaaS | `/saas-platform` | Resumen de empresas y acceso a la gestión web |
-| Empresa sin licencia vigente | `/subscription` | Pantalla de suscripción |
+| Administrador de empresa sin licencia vigente | `/subscription` | Pantalla de suscripción |
+| Cliente de tienda sin acceso comercial | `/tiendas` | Elegir otra tienda |
 | Cliente sin perfil de estilo | `/onboarding` | Preferencias de estilo |
 | Cliente con perfil | `/catalog` | Tienda |
 | Cajero | `/pos` | Espacio móvil de su cuenta, con permisos del backend |
@@ -19,9 +20,11 @@ En un acceso nuevo, perfil y empresa llegan en la misma respuesta; los clientes 
 
 Cada empresa dispone del enlace `https://167.86.106.105/DrapeMind/tienda/<slug>`. La pantalla muestra el nombre de la tienda y resuelve el contexto desde ese enlace, sin pedir que se escriba un identificador. El panel SaaS permite abrir el acceso de cada empresa. Son enlaces de entrada; el resto de las rutas privadas usa el contexto de la sesión autenticada.
 
-El móvil admite `drapemind://tienda/<slug>` y reconoce el contexto de entrada al abrir la aplicación. Si había una sesión de otra empresa, solicita el acceso correspondiente; no traslada un token a otra empresa. Android declara ese enlace de aplicación y iOS utiliza el esquema ya registrado.
+El móvil admite `drapemind://tienda/<slug>`. Una cuenta personal autenticada puede cambiar de tienda sin volver a registrarse: `POST /auth/store` crea o recupera su relación con esa tienda y emite un token limitado a ella. Las cuentas de empleados conservan su empresa y no adquieren roles en otras tiendas.
 
-Si un correo existe en varias empresas con contraseñas distintas, se identifica la cuenta que coincide. Si coincide el mismo correo y contraseña en varias, se pide abrir el enlace de su tienda. No se devuelve una lista de empresas ni se elige una arbitrariamente. Una cuenta bloqueada o una empresa inactiva no obtiene token.
+Los clientes tienen una identidad personal en `customer_accounts`, con correo y contraseña únicos. `usuarios.customer_account_id` identifica su relación interna con cada tienda; estas relaciones se preparan automáticamente y no son registros que deba repetir el cliente. Al entrar, se comparten sus preferencias declaradas y direcciones personales. Pedidos, carritos, favoritos, conversaciones, recomendaciones e inventario permanecen separados por tienda.
+
+Las cuentas de clientes anteriores se vinculan al validar sus credenciales. No se fusionan cuentas que solo compartan correo pero tengan contraseñas diferentes. Las cuentas de empleados siguen pudiendo repetir correo entre empresas; ante credenciales ambiguas se solicita el enlace de su tienda. Una cuenta bloqueada o una empresa inactiva no obtiene acceso.
 
 ## Cuenta SaaS genérica
 

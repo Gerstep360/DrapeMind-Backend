@@ -60,8 +60,8 @@ def tenant_summary(db, tenant_id):
     tenant, subscription, plan, usable = subscription_state(db, tenant_id)
     if not tenant: raise HTTPException(404, 'Empresa no encontrada')
     count = db.scalar(select(func.count(Branch.id)).where(Branch.tenant_id == tenant_id, Branch.activo.is_(True))) or 0
-    return {'tenant': {'id':tenant.id,'name':tenant.name,'slug':tenant.slug,'active':tenant.active,'is_demo':tenant.is_demo},
-            'subscription': None if not subscription else {'id':subscription.id,'status':subscription.status,'starts_at':subscription.starts_at,'ends_at':subscription.ends_at,'source':subscription.source,'cancel_at_period_end':subscription.cancel_at_period_end},
+    return {'tenant': {'id':tenant.id,'name':tenant.name,'slug':tenant.slug,'active':tenant.active,'is_demo':tenant.is_demo,'address':tenant.address,'phone':tenant.phone,'contact_email':tenant.contact_email},
+            'subscription': None if not subscription else {'id':subscription.id,'status':subscription.status,'starts_at':subscription.starts_at,'ends_at':subscription.ends_at,'source':subscription.source,'managed_by_stripe':bool(subscription.stripe_subscription_id),'cancel_at_period_end':subscription.cancel_at_period_end},
             'plan': None if not plan else plan_payload(plan), 'access_active':usable,'active_branches':count}
 
 

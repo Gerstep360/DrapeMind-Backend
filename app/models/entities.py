@@ -62,16 +62,21 @@ class TimestampMixin:
 class User(TenantOwned, TimestampMixin, Base):
     tenant_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey('saas_tenants.id', ondelete='RESTRICT'), nullable=True, index=True)
     is_platform_admin: Mapped[bool] = mapped_column(Boolean, default=False)
+    customer_account_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey('customer_accounts.id'), index=True)
     __tablename__ = "usuarios"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     nombre: Mapped[str] = mapped_column(String(120))
     email: Mapped[str] = mapped_column(CITEXT, index=True)
-    __table_args__ = (Index('ix_usuarios_login_email',func.lower(email)),)
+    __table_args__ = (Index('ix_usuarios_login_email',func.lower(email)), UniqueConstraint('tenant_id','customer_account_id',name='uq_customer_store_membership'))
     password_hash: Mapped[str] = mapped_column(String(255))
     telefono: Mapped[str | None] = mapped_column(String(30))
     rol: Mapped[Role] = mapped_column(role_enum, default=Role.CLIENTE)
     estado: Mapped[UserStatus] = mapped_column(user_status_enum, default=UserStatus.ACTIVO)
     has_style_profile: bool = False
+
+    @property
+    def is_universal_customer(self) -> bool:
+        return self.customer_account_id is not None
 
 
 class Address(TenantOwned, TimestampMixin, Base):
@@ -232,7 +237,9 @@ class Order(TenantOwned, TimestampMixin, Base):
     __tablename__ = "pedidos"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     codigo_publico: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), server_default=func.gen_random_uuid())
-    usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id", ondelete="RESTRICT"))
+    usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id", ondelete="RESTRICT"), nullable=True)
+    atendido_por_id: Mapped[int | None] = mapped_column(ForeignKey('usuarios.id', ondelete='RESTRICT'))
+    comprador_registrado: Mapped[bool] = mapped_column(Boolean, default=True)
     reserva_id: Mapped[int | None] = mapped_column(ForeignKey("reservas.id", ondelete="SET NULL"), unique=True)
     sucursal_id: Mapped[int | None] = mapped_column(ForeignKey("sucursales.id", ondelete="SET NULL"))
     estado: Mapped[str] = mapped_column(order_status_enum, default="PENDIENTE_PAGO")

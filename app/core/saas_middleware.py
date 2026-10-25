@@ -51,7 +51,7 @@ def resolve_scope(headers, path):
             return tenant_id
         if not tenant_id:
             raise HTTPException(400, 'Selecciona una empresa para continuar')
-        if not path.startswith('/api/v1/auth'):
+        if not path.startswith('/api/v1/auth') and not path.endswith('/public-receipt'):
             feature = None
             if '/reports/' in path and path.startswith('/api/v1/ai'): feature = 'ai_reports'
             elif '/metrics/' in path or '/sales/history' in path: feature = 'reports'

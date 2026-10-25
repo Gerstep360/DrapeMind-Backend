@@ -630,11 +630,42 @@ def checkout_cart(
     shipping: Decimal,
     observation: str | None,
     promotion_code: str | None = None,
+    branch_id: int | None = None,
+    channel: str = 'WEB',
 ) -> Order:
     cart = get_active_cart(db, user.id, create=False)
+    if cart:
+        cart=db.scalar(select(Cart).where(Cart.id==cart.id).with_for_update().execution_options(populate_existing=True))
+        if cart.estado!='ACTIVO': raise HTTPException(409,'Este carrito ya fue confirmado')
     items = db.scalars(select(CartItem).where(CartItem.carrito_id == cart.id if cart else -1)).all()
     if not items:
         raise HTTPException(409, "El carrito esta vacio")
+    if delivery_type=='RECOJO' and not branch_id:
+        raise HTTPException(422,'Elige una sucursal para recoger tu compra')
+    # Lock variants in a stable order. All prices are refreshed from the catalog.
+    for item in sorted(items,key=lambda item:item.variante_id):
+        variant=db.scalar(select(ProductVariant).where(ProductVariant.id==item.variante_id).with_for_update())
+        product=db.get(Product,variant.producto_id) if variant else None
+        if not variant or not variant.activo or not product or not product.activo:
+            raise HTTPException(409,'Una de las prendas ya no está disponible. Revisa tu carrito.')
+        item.precio_referencia=product.precio
+    branches=list(db.scalars(select(Branch).where(Branch.activo.is_(True)).order_by(Branch.id)))
+    if branch_id:
+        branches=[branch for branch in branches if branch.id==branch_id]
+        if not branches: raise HTTPException(404,'La sucursal no pertenece a esta tienda o no está disponible')
+    branch=None
+    for candidate in branches:
+        available={stock.variante_id:stock.stock_total-stock.stock_reservado for stock in db.scalars(select(BranchStock).where(BranchStock.sucursal_id==candidate.id,BranchStock.activo.is_(True)))}
+        if all(available.get(item.variante_id,0)>=item.cantidad for item in items):
+            branch=candidate;break
+    if not branch:
+        raise HTTPException(409,'La sucursal elegida no tiene todas las cantidades solicitadas. Elige otra sucursal o ajusta tu carrito.' if branch_id else 'Ninguna sucursal puede preparar todas las cantidades de este pedido. Ajusta el carrito o contacta con la tienda.')
+    stocks={}
+    for item in sorted(items,key=lambda item:item.variante_id):
+        stock=db.scalar(select(BranchStock).where(BranchStock.sucursal_id==branch.id,BranchStock.variante_id==item.variante_id,BranchStock.activo.is_(True)).with_for_update().execution_options(populate_existing=True))
+        if not stock or stock.stock_total-stock.stock_reservado<item.cantidad:
+            raise HTTPException(409,'El stock de la sucursal cambió. Revisa las cantidades antes de confirmar.')
+        stocks[item.variante_id]=stock
     address_snapshot = {}
     if delivery_type == "DELIVERY":
         address = db.scalar(select(Address).where(Address.id == address_id, Address.usuario_id == user.id))
@@ -682,7 +713,7 @@ def checkout_cart(
     final_obs = f"{observation} {promo_tag}".strip() if promo_tag else observation
 
     order = Order(
-        usuario_id=user.id, estado="PENDIENTE_PAGO", canal="MOBILE", tipo_entrega=delivery_type,
+        usuario_id=user.id, comprador_registrado=True, sucursal_id=branch.id, estado="PENDIENTE_PAGO", canal=channel, tipo_entrega=delivery_type,
         subtotal=subtotal, descuento=descuento, costo_envio=shipping, total=total_amount,
         direccion_entrega_snapshot=address_snapshot, observacion=final_obs,
     )
@@ -691,13 +722,12 @@ def checkout_cart(
     for item in items:
         variant = db.scalar(select(ProductVariant).where(ProductVariant.id == item.variante_id).with_for_update())
         product = db.get(Product, variant.producto_id)
-        available = variant.stock_total - variant.stock_reservado
-        if item.cantidad > available:
-            db.rollback()
-            raise HTTPException(409, f"Stock insuficiente para {variant.sku}")
         previous_total = variant.stock_total
-        variant.stock_total -= item.cantidad
+        stocks[item.variante_id].stock_total-=item.cantidad
+        db.flush()
+        _sync_variant_inventory(db,variant)
         movement = _movement(variant, "VENTA", -item.cantidad, user.id, "PEDIDO", order.id)
+        movement.sucursal_id=branch.id
         movement.stock_total_anterior = previous_total
         db.add(movement)
         db.add(OrderItem(
@@ -728,6 +758,7 @@ def convert_reservation_to_order(db: Session, reservation: Reservation, actor_id
     subtotal = sum((item.precio_referencia * item.cantidad for item in items), Decimal("0.00"))
     order = Order(
         usuario_id=reservation.usuario_id, reserva_id=reservation.id,
+        atendido_por_id=actor_id, comprador_registrado=True,
         sucursal_id=reservation.sucursal_id, estado="PENDIENTE_PAGO",
         canal="TIENDA", tipo_entrega="TIENDA", subtotal=subtotal, descuento=0,
         costo_envio=0, total=subtotal,
@@ -844,11 +875,20 @@ def cancel_unpaid_order(db: Session, order: Order, actor_id: int) -> Order:
         if not variant:
             continue
         previous_total = variant.stock_total
-        variant.stock_total += item.cantidad
+        if order.sucursal_id:
+            branch_stock=db.scalar(select(BranchStock).where(BranchStock.sucursal_id==order.sucursal_id,BranchStock.variante_id==variant.id).with_for_update())
+            if not branch_stock: raise HTTPException(409,'No se puede reponer el stock: falta el inventario de la sucursal del pedido')
+            branch_stock.stock_total+=item.cantidad
+            db.flush()
+            _sync_variant_inventory(db,variant)
+        else:
+            # Historical orders without a branch retain their original ledger.
+            variant.stock_total += item.cantidad
         movement = _movement(
             variant, "DEVOLUCION", item.cantidad, actor_id, "PEDIDO", order.id
         )
         movement.stock_total_anterior = previous_total
+        movement.sucursal_id=order.sucursal_id
         movement.observacion = "Reposicion por cancelacion antes del pago"
         db.add(movement)
     order.estado = "CANCELADO"

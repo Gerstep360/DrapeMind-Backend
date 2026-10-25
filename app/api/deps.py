@@ -36,6 +36,11 @@ def get_current_user(
         raise credentials_error
     if user.estado != UserStatus.ACTIVO:
         raise HTTPException(status_code=403, detail="La cuenta no esta activa")
+    if user.customer_account_id:
+        from app.models.saas import CustomerAccount
+        identity=db.get(CustomerAccount,user.customer_account_id)
+        if not identity or not identity.active or user.rol!=Role.CLIENTE:
+            raise HTTPException(403,'La cuenta personal no está disponible')
     return user
 
 

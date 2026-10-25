@@ -158,6 +158,8 @@ def actualizar_usuario_administrativo(
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
     next_role = payload.rol if payload.rol is not None else user.rol
+    if user.customer_account_id and (next_role!=Role.CLIENTE or payload.password):
+        raise HTTPException(409,'Esta es una cuenta personal del cliente. Su contraseña se gestiona fuera de la tienda y no puede convertirse en una cuenta de empleado.')
     next_status = payload.estado if payload.estado is not None else user.estado
     _ensure_active_admin(db,user,next_role,next_status)
 

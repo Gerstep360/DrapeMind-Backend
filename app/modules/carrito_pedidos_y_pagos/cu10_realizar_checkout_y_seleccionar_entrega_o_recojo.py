@@ -32,6 +32,8 @@ def realizar_checkout(
         payload.costo_envio,
         payload.observacion,
         payload.codigo_promocion,
+        payload.sucursal_id,
+        payload.canal,
     )
     background_tasks.add_task(
         event_hub.publish,

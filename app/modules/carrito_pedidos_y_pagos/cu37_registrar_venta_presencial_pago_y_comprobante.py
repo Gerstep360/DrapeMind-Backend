@@ -9,8 +9,8 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import require_roles
 from app.db.session import get_db
-from app.models import Branch, BranchStock, Order, OrderItem, Payment, Product, ProductVariant, Role, User
-from app.services.store import staff_can_access_branch
+from app.models import Branch, BranchStock, Order, OrderItem, Payment, Product, ProductVariant, Role, User, InventoryMovement, UserStatus
+from app.services.store import staff_can_access_branch, _sync_variant_inventory
 
 router = APIRouter()
 
@@ -46,8 +46,10 @@ def registrar_venta_pos(
     branch = db.get(Branch, payload.sucursal_id)
     if not branch or not branch.activo:
         raise HTTPException(404, 'Sucursal no disponible')
-    if payload.cliente_id and not db.get(User, payload.cliente_id):
-        raise HTTPException(404, 'Cliente no encontrado')
+    if payload.cliente_id:
+        customer=db.get(User,payload.cliente_id)
+        if not customer or customer.rol!=Role.CLIENTE or customer.estado!=UserStatus.ACTIVO:
+            raise HTTPException(404,'Cliente no encontrado en esta tienda')
     if payload.metodo_pago.upper() not in {'EFECTIVO', 'QR', 'TARJETA', 'TRANSFERENCIA'}:
         raise HTTPException(422, 'Método de pago no válido')
     ids = [item.variante_id for item in payload.items]
@@ -60,6 +62,7 @@ def registrar_venta_pos(
         stock = db.scalar(select(BranchStock).where(
             BranchStock.sucursal_id == payload.sucursal_id,
             BranchStock.variante_id == line.variante_id,
+            BranchStock.activo.is_(True),
         ).with_for_update())
         if not variant or not variant.activo or not product or not product.activo:
             raise HTTPException(404, 'Prenda no disponible')
@@ -71,7 +74,9 @@ def registrar_venta_pos(
     total = sum((item.precio_unitario * item.cantidad for item in payload.items), Decimal("0.00"))
 
     order = Order(
-        usuario_id=payload.cliente_id or vendedor.id,
+        usuario_id=payload.cliente_id,
+        atendido_por_id=vendedor.id,
+        comprador_registrado=payload.cliente_id is not None,
         sucursal_id=payload.sucursal_id,
         estado="ENTREGADO",
         canal="TIENDA",
@@ -115,9 +120,11 @@ def registrar_venta_pos(
             )
 
         # Descontar de sucursal e inventario global
-        if branch_stock:
-            branch_stock.stock_total = max(0, branch_stock.stock_total - item_data.cantidad)
-        variant.stock_total = max(0, variant.stock_total - item_data.cantidad)
+        previous_total=variant.stock_total
+        branch_stock.stock_total-=item_data.cantidad
+        db.flush()
+        _sync_variant_inventory(db,variant)
+        db.add(InventoryMovement(sucursal_id=branch.id,variante_id=variant.id,tipo='VENTA',cantidad=-item_data.cantidad,stock_total_anterior=previous_total,stock_total_nuevo=variant.stock_total,stock_reservado_anterior=variant.stock_reservado,stock_reservado_nuevo=variant.stock_reservado,referencia_tipo='PEDIDO',referencia_id=order.id,usuario_id=vendedor.id))
 
         order_item = OrderItem(
             pedido_id=order.id,

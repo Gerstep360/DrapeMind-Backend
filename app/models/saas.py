@@ -1,6 +1,7 @@
 """Shared-database SaaS control plane and tenant ownership contract."""
 from datetime import datetime
 from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint, CheckConstraint, func
+from sqlalchemy.dialects.postgresql import JSONB, CITEXT
 from sqlalchemy.orm import Mapped, mapped_column, declared_attr
 from app.db.base import Base
 
@@ -21,6 +22,21 @@ class Tenant(Base):
     admin_user_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey('usuarios.id', use_alter=True, name='fk_saas_admin_user'))
     stripe_customer_id: Mapped[str | None] = mapped_column(String(100), unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    address: Mapped[str | None] = mapped_column(String(250))
+    phone: Mapped[str | None] = mapped_column(String(30))
+    contact_email: Mapped[str | None] = mapped_column(String(150))
+
+
+class CustomerAccount(Base):
+    """Personal sign-in identity. Commercial records retain their own tenant."""
+    __tablename__ = 'customer_accounts'
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    email: Mapped[str] = mapped_column(CITEXT, unique=True)
+    password_hash: Mapped[str] = mapped_column(String(255))
+    name: Mapped[str] = mapped_column(String(120))
+    phone: Mapped[str | None] = mapped_column(String(30))
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    personal_data: Mapped[dict] = mapped_column(JSONB, default=dict)
 
 
 class SaaSPlan(Base):

@@ -29,7 +29,7 @@ La tabla de características detallada proporcionada por el usuario es la refere
 - La cuenta de plataforma tiene `tenant_id=NULL` y acceso al panel administrativo. No puede entrar al catálogo privado como si fuera un empleado de una empresa.
 - WebSockets, notificaciones, conversaciones, herramientas de IA, perfil, pedidos, pagos y métricas conservan el contexto de empresa. El backend nunca delega el aislamiento al modelo NVIDIA.
 
-Una cuenta pertenece a una sola empresa. Puede haber cuentas con el mismo correo en empresas diferentes. Los clientes que compren en varias empresas usan su cuenta correspondiente en cada una.
+Los empleados pertenecen a su empresa. Los clientes tienen una cuenta personal universal y una relación interna que se prepara automáticamente al visitar cada tienda; no repiten registro. Los permisos empresariales no se comparten. Véase [identidad, compras y sucursales](COMPRAS_POR_TIENDA.md).
 
 ## Suscripciones y límites
 

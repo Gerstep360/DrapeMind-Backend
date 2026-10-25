@@ -108,7 +108,7 @@ async def test_onboarding_saves_before_inference_and_reports_real_failure(monkey
     db = MagicMock()
     profile = SimpleNamespace()
     db.scalar.return_value = profile
-    user = SimpleNamespace(id=7, has_style_profile=False)
+    user = SimpleNamespace(id=7, has_style_profile=False,customer_account_id=None)
 
     async def infer(preferences):
         assert db.commit.call_count == 1

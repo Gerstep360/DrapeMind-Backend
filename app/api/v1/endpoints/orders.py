@@ -51,6 +51,7 @@ def checkout(
     order = checkout_cart(
         db, current_user, payload.tipo_entrega, payload.direccion_id,
         payload.costo_envio, payload.observacion, payload.codigo_promocion,
+        payload.sucursal_id,payload.canal,
     )
     background_tasks.add_task(
         event_hub.publish,

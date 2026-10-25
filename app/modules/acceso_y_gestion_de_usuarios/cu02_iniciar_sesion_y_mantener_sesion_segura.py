@@ -13,6 +13,22 @@ from app.services.sign_in import sign_in, user_profile
 
 router = APIRouter()
 
+from pydantic import BaseModel, Field, ConfigDict
+class StoreEntryRequest(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    slug: str = Field(min_length=1,max_length=80,pattern=r'^[a-z0-9]+(?:-[a-z0-9]+)*$')
+
+@router.post('/store',response_model=TokenResponse)
+def entrar_en_tienda(payload: StoreEntryRequest,user: User=Depends(get_current_user),db: Session=Depends(get_db)):
+    from app.models.saas import CustomerAccount
+    from app.services.customer_identity import enter_customer_store
+    from app.services.sign_in import sign_in_response
+    if not user.customer_account_id or user.is_platform_admin:
+        raise HTTPException(403,'El cambio de tienda está disponible para cuentas personales de clientes.')
+    account=db.get(CustomerAccount,user.customer_account_id)
+    member,tenant=enter_customer_store(db,account,payload.slug)
+    return sign_in_response(db,member,tenant)
+
 
 @router.post(
     "/forgot-password",

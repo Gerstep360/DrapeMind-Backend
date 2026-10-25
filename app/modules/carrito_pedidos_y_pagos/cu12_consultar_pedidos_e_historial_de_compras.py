@@ -11,6 +11,7 @@ from app.db.session import get_db
 from app.models import Branch, Order, OrderItem, Payment, Role, User
 from app.schemas.api import OrderOut, OrderStatusUpdate
 from app.services.realtime import event_hub
+from app.services.merchant_identity import receipt_identity
 from app.services.store import (
     cancel_unpaid_order,
     confirm_payment,
@@ -232,8 +233,9 @@ def download_receipt(
             select(OrderItem).where(OrderItem.pedido_id == order_id).order_by(OrderItem.id)
         )
     )
-    cliente = db.get(User, order.usuario_id)
+    cliente = db.get(User, order.usuario_id) if order.usuario_id and order.comprador_registrado else None
     sucursal = db.get(Branch, order.sucursal_id) if order.sucursal_id else None
+    merchant=receipt_identity(db,order)
 
     if format == "json":
         return {
@@ -250,16 +252,10 @@ def download_receipt(
                 "total": float(order.total),
                 "observacion": order.observacion,
             },
-            "sucursal": {
-                "id": sucursal.id if sucursal else 1,
-                "nombre": sucursal.nombre if sucursal else "Showroom Central DrapeMind",
-                "ciudad": "Santa Cruz",
-                "direccion": sucursal.direccion if sucursal else "Av. Las Américas #780, Equipetrol",
-                "telefono": sucursal.telefono if sucursal else "63014529",
-            },
+            **merchant,
             "cliente": {
                 "id": cliente.id if cliente else None,
-                "nombre": cliente.nombre if cliente else "Cliente DrapeMind",
+                "nombre": cliente.nombre if cliente else "Comprador no registrado",
                 "email": cliente.email if cliente else "",
                 "telefono": cliente.telefono if cliente else "",
             },
@@ -292,13 +288,13 @@ def download_receipt(
     # Fallback texto plano
     lines = [
         "==================================================",
-        "              DRAPEMIND ATELIER MODA              ",
+        merchant['empresa']['nombre'],
         "         Comprobante de Venta y Entrega           ",
         "==================================================",
         "",
         f"Código de Pedido : {order.codigo_publico}",
         f"Fecha y Hora     : {order.created_at.strftime('%Y-%m-%d %H:%M:%S') if order.created_at else ''}",
-        f"Sucursal         : {sucursal.nombre if sucursal else 'Showroom Central'}",
+        f"Sucursal         : {merchant['sucursal']['nombre']}",
         f"Modalidad        : {order.tipo_entrega}",
         f"Estado del Pedido: {order.estado}",
         "",
@@ -326,7 +322,7 @@ def download_receipt(
         "--------------------------------------------------",
         f"Método de Pago   : {', '.join(p.metodo for p in payments) if payments else 'PAGO EN TIENDA / EFECTIVO'}",
         "",
-        "¡Gracias por confiar en el estilo y confección DrapeMind!",
+        f"Gracias por comprar en {merchant['empresa']['nombre']}.",
         "Documento interno informativo y comprobante de entrega.",
         "==================================================",
     ])
@@ -346,9 +342,11 @@ def download_receipt(
 )
 def get_public_receipt(
     order_id: int,
+    code: str,
     db: Session = Depends(get_db),
 ):
     order = db.get(Order, order_id)
+    if order and str(order.codigo_publico)!=code: order=None
     if not order:
         raise HTTPException(404, "Comprobante de compra no encontrado")
 
@@ -362,12 +360,13 @@ def get_public_receipt(
             select(OrderItem).where(OrderItem.pedido_id == order_id).order_by(OrderItem.id)
         )
     )
-    cliente = db.get(User, order.usuario_id)
+    cliente = db.get(User, order.usuario_id) if order.usuario_id and order.comprador_registrado else None
     sucursal = db.get(Branch, order.sucursal_id) if order.sucursal_id else None
+    merchant=receipt_identity(db,order)
 
     return {
         "verified": True,
-        "verification_seal": "OFICIAL_DRAPEMIND_CLOUD_ERP",
+        "verification_seal": "COMPROBANTE_VERIFICADO",
         "verified_at": datetime.now(timezone.utc).isoformat(),
         "order": {
             "id": order.id,
@@ -382,16 +381,10 @@ def get_public_receipt(
             "total": float(order.total),
             "observacion": order.observacion,
         },
-        "sucursal": {
-            "id": sucursal.id if sucursal else 1,
-            "nombre": sucursal.nombre if sucursal else "Showroom Central DrapeMind",
-            "ciudad": "Santa Cruz",
-            "direccion": sucursal.direccion if sucursal else "Av. Las Américas #780, Equipetrol",
-            "telefono": sucursal.telefono if sucursal else "63014529",
-        },
-        "cliente": {
+        **merchant,
+            "cliente": {
             "id": cliente.id if cliente else None,
-            "nombre": cliente.nombre if cliente else "Cliente DrapeMind",
+            "nombre": cliente.nombre if cliente else "Comprador no registrado",
             "email": cliente.email if cliente else "",
             "telefono": cliente.telefono if cliente else "",
         },

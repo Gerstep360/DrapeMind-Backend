@@ -110,6 +110,7 @@ def test_cu12_receipt_json_allows_pending_order():
     db = MagicMock()
     order = SimpleNamespace(
         id=42,
+        tenant_id=1,comprador_registrado=True,atendido_por_id=None,
         usuario_id=10,
         sucursal_id=1,
         estado="PENDIENTE_PAGO",
@@ -123,7 +124,9 @@ def test_cu12_receipt_json_allows_pending_order():
         total=Decimal("320.00"),
         observacion=None,
     )
-    db.get.side_effect = lambda model, obj_id: order if obj_id == 42 else None
+    from app.models.saas import Tenant
+    tenant=SimpleNamespace(id=1,name='Tienda de prueba',slug='prueba',address=None,phone=None,contact_email=None)
+    db.get.side_effect = lambda model, obj_id: tenant if model is Tenant else order if obj_id == 42 else None
     db.scalars.return_value = []
 
     user = SimpleNamespace(id=10, rol=Role.CLIENTE)
@@ -131,6 +134,8 @@ def test_cu12_receipt_json_allows_pending_order():
     assert isinstance(result, dict)
     assert result["order"]["id"] == 42
     assert result["order"]["estado"] == "PENDIENTE_PAGO"
+    assert result['empresa']['nombre']=='Tienda de prueba'
+    assert result['sucursal']['id'] is None
 
     # En cambio, si format != 'json' y no tiene pago aprobado, debe levantar 409
     with pytest.raises(HTTPException) as exc:

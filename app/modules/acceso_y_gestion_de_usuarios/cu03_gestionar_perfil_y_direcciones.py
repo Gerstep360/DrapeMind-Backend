@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.db.session import get_db
+from app.services.customer_identity import remember_personal_data
 from app.models import Address, User, UserStyleProfile
 from app.schemas.api import (
     AddressInput, AddressOut, StyleProfileInput, StyleProfileOut, UserOut, UserUpdate,
@@ -29,6 +30,7 @@ def actualizar_perfil_me(
 ) -> User:
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(current_user, field, value)
+    remember_personal_data(db,current_user)
     db.commit()
     db.refresh(current_user)
     return current_user
@@ -74,6 +76,7 @@ def crear_direccion_me(
         )
     address = Address(usuario_id=current_user.id, **data)
     db.add(address)
+    remember_personal_data(db,current_user)
     db.commit()
     db.refresh(address)
     return address
@@ -101,6 +104,7 @@ def actualizar_direccion_me(
         )
     for field, value in payload.model_dump().items():
         setattr(address, field, value)
+    remember_personal_data(db,current_user)
     db.commit()
     db.refresh(address)
     return address
@@ -131,6 +135,7 @@ def eliminar_direccion_me(
         )
         if replacement:
             replacement.es_principal = True
+    remember_personal_data(db,current_user)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -186,6 +191,7 @@ async def guardar_perfil_estilo_me(
     profile.adn_estilo_ia = None
     profile.primer_outfit_ia = None
     current_user.has_style_profile = True
+    remember_personal_data(db,current_user)
     db.commit()
     db.refresh(profile)
     profile.inferencia_error = None
@@ -210,6 +216,7 @@ async def guardar_perfil_estilo_me(
         profile.primer_outfit_ia = {'items': result.get('productos', []), 'sesion_id': result['sesion_id']}
 
     current_user.has_style_profile = True
+    remember_personal_data(db,current_user)
     db.commit()
     db.refresh(profile)
     return profile

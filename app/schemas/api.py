@@ -53,6 +53,7 @@ class LoginTenant(BaseModel):
 class UserOut(ORMModel):
     tenant_id: int | None = None
     is_platform_admin: bool = False
+    is_universal_customer: bool = False
     tenant_slug: str | None = None
     tenant_name: str | None = None
     id: int
@@ -329,6 +330,8 @@ class QRValidationRequest(BaseModel):
 
 class CheckoutRequest(BaseModel):
     tipo_entrega: Literal["DELIVERY", "RECOJO"]
+    sucursal_id: int | None = Field(default=None,gt=0)
+    canal: Literal['WEB','MOBILE'] = 'WEB'
     direccion_id: int | None = None
     costo_envio: Decimal = Field(default=0, ge=0)
     observacion: str | None = Field(default=None, max_length=300)
@@ -338,6 +341,8 @@ class CheckoutRequest(BaseModel):
     def require_address_for_delivery(self) -> "CheckoutRequest":
         if self.tipo_entrega == "DELIVERY" and self.direccion_id is None:
             raise ValueError("direccion_id es obligatorio para DELIVERY")
+        if self.tipo_entrega == 'RECOJO' and self.sucursal_id is None:
+            raise ValueError('Elige la sucursal donde recogerás tu compra')
         return self
 
 
@@ -345,6 +350,8 @@ class OrderOut(ORMModel):
     id: int
     codigo_publico: UUID
     usuario_id: int | None = None
+    atendido_por_id: int | None = None
+    comprador_registrado: bool = True
     sucursal_id: int | None = None
     estado: str
     canal: str
