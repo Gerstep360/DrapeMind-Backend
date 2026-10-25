@@ -36,11 +36,11 @@ ICON_DOT="*"
 ICON_PACKAGE="[PKG]"
 ICON_DATABASE="[DB]"
 
-SERVER_IP="157.173.102.129"
-BACKEND_PORT=8045
+SERVER_IP="${SERVER_IP:-167.86.106.105}"
+BACKEND_PORT="${BACKEND_PORT:-8045}"
 
 # Resolver directorio raíz del backend
-if [[ -z "${BACKEND_DIR}" ]]; then
+if [[ -z "${BACKEND_DIR:-}" ]]; then
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     BACKEND_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 fi

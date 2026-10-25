@@ -6,6 +6,8 @@ from decimal import Decimal
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
+from app.services.saas import aware
 
 from app.api.deps import get_current_user_optional, require_role
 from app.db.session import get_db
@@ -145,7 +147,10 @@ def crear_promocion(
         activo=payload.activo,
     )
     db.add(promo)
-    db.commit()
+    try:db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409,'El código de promoción ya está registrado en esta empresa')
     db.refresh(promo)
 
     serialized = _serialize_promo(db, promo)
@@ -228,7 +233,10 @@ def actualizar_promocion(
     promo.producto_id = payload.producto_id
     promo.activo = payload.activo
 
-    db.commit()
+    try:db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409,'El código de promoción ya está registrado en esta empresa')
     db.refresh(promo)
     return _serialize_promo(db, promo)
 
@@ -277,14 +285,14 @@ def validar_promocion(
         )
 
     now = datetime.now(timezone.utc)
-    if promo.fecha_inicio and promo.fecha_inicio > now:
+    if promo.fecha_inicio and aware(promo.fecha_inicio) > now:
         return PromoValidationResponse(
             valido=False,
             codigo=codigo_clean,
             mensaje="La promoción aún no ha comenzado.",
         )
 
-    if promo.fecha_fin and promo.fecha_fin < now:
+    if promo.fecha_fin and aware(promo.fecha_fin) < now:
         return PromoValidationResponse(
             valido=False,
             codigo=codigo_clean,
@@ -326,7 +334,7 @@ def validar_promocion(
     if promo.tipo_descuento == "PORCENTAJE":
         descuento = (payload.monto_subtotal * (promo.valor_descuento / Decimal("100"))).quantize(Decimal("0.01"))
     elif promo.tipo_descuento == "DOS_POR_UNO":
-        descuento = (payload.monto_subtotal * Decimal("0.50")).quantize(Decimal("0.01"))
+        return PromoValidationResponse(valido=True,codigo=codigo_clean,mensaje='Regla válida. El 2x1 se calcula con pares del mismo producto y cantidades reales al confirmar el carrito.',tipo_descuento=promo.tipo_descuento,valor_descuento=promo.valor_descuento,descuento_calculado=Decimal('0.00'),producto_id=promo.producto_id,producto_nombre=prod_name)
     else:  # MONTO_FIJO o COMPRA_MINIMA
         descuento = min(promo.valor_descuento, payload.monto_subtotal)
 

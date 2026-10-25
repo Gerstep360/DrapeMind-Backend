@@ -148,13 +148,20 @@ def create_tenant(payload: TenantInput, admin: User = Depends(platform_admin), d
     if db.scalar(select(Tenant.id).where(Tenant.slug==payload.slug)): raise HTTPException(409,'El identificador de empresa ya está registrado')
     plan = db.get(SaaSPlan,payload.plan_id)
     if not plan or not plan.active: raise HTTPException(404,'Plan no encontrado')
-    tenant = Tenant(name=payload.name,slug=payload.slug,active=True)
-    db.add(tenant); db.flush()
-    owner = User(tenant_id=tenant.id,is_platform_admin=False,nombre=payload.admin_name,email=str(payload.admin_email).lower(),password_hash=hash_password(payload.admin_password),rol=Role.ADMIN,estado=UserStatus.ACTIVO)
-    db.add(owner); db.flush()
-    tenant.admin_user_id = owner.id
-    db.add(TenantSubscription(tenant_id=tenant.id,plan_id=plan.id,status='PENDING',source='STRIPE'))
-    db.commit()
+    try:
+        tenant = Tenant(name=payload.name,slug=payload.slug,active=True)
+        db.add(tenant); db.flush()
+        owner = User(tenant_id=tenant.id,is_platform_admin=False,nombre=payload.admin_name,email=str(payload.admin_email).lower(),password_hash=hash_password(payload.admin_password),rol=Role.ADMIN,estado=UserStatus.ACTIVO)
+        db.add(owner); db.flush()
+        tenant.admin_user_id = owner.id
+        db.add(TenantSubscription(tenant_id=tenant.id,plan_id=plan.id,status='PENDING',source='STRIPE'))
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409,'La empresa o su administrador ya están registrados')
+    except Exception:
+        db.rollback()
+        raise
     return tenant_summary(db,tenant.id)
 
 

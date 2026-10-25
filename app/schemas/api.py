@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
@@ -500,6 +500,20 @@ class PromotionInput(BaseModel):
     limite_usos: int | None = Field(default=None, ge=1)
     producto_id: int | None = Field(default=None, ge=1)
     activo: bool = True
+
+    @model_validator(mode='after')
+    def validate_promotion_rules(self):
+        if not self.codigo.strip():
+            raise ValueError('Indica un código de promoción válido')
+        if self.tipo_descuento == 'PORCENTAJE' and self.valor_descuento > 100:
+            raise ValueError('El porcentaje no puede superar 100')
+        start=self.fecha_inicio
+        end=self.fecha_fin
+        if start and end:
+            start=start.replace(tzinfo=timezone.utc) if start.tzinfo is None else start
+            end=end.replace(tzinfo=timezone.utc) if end.tzinfo is None else end
+            if end<=start:raise ValueError('La fecha final debe ser posterior al inicio')
+        return self
 
 
 class PromotionOut(ORMModel):

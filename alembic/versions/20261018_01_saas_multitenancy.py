@@ -14,6 +14,12 @@ OWNED = ('categorias','ciudades','temporadas_colecciones','usuarios','ai_sesione
 
 def upgrade():
     connection = op.get_bind()
+    # La migración puede ejecutarse con el dueño de la base sin SUPERUSER.
+    # FORCE RLS también alcanza a ese dueño: las comprobaciones de las FK
+    # compuestas deben poder leer las filas ya migradas de las tablas padre.
+    # El ámbito es local a esta transacción, nunca a las conexiones HTTP.
+    previous_scope = connection.scalar(sa.text("SELECT current_setting('app.saas_system',true)"))
+    op.execute("SELECT set_config('app.saas_system','true',true)")
     op.execute("""CREATE TABLE saas_tenants (
         id BIGSERIAL PRIMARY KEY, name VARCHAR(150) NOT NULL, slug VARCHAR(80) NOT NULL UNIQUE,
         active BOOLEAN NOT NULL DEFAULT true, is_demo BOOLEAN NOT NULL DEFAULT false,
@@ -89,6 +95,7 @@ def upgrade():
     op.execute('CREATE TRIGGER saas_branch_limit BEFORE INSERT OR UPDATE OF activo,tenant_id ON sucursales FOR EACH ROW EXECUTE FUNCTION saas_check_branch_limit()')
     for view in inspector.get_view_names():
         op.execute(sa.text(f'ALTER VIEW "{view}" SET (security_invoker=true)'))
+    connection.execute(sa.text("SELECT set_config('app.saas_system',:previous,true)"), {'previous':previous_scope or ''})
 
 
 def downgrade():
