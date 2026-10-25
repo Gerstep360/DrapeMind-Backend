@@ -24,8 +24,10 @@ class RegisterRequest(BaseModel):
 
 
 class LoginRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     email: EmailStr
     password: str = Field(min_length=1, max_length=72)
+    tenant_slug: str | None = Field(default=None,max_length=80,pattern=r'^[a-z0-9]+(?:-[a-z0-9]+)*$')
 
 
 class ForgotPasswordRequest(BaseModel):
@@ -37,11 +39,22 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: Literal["bearer"] = "bearer"
     expires_in: int
+    user: 'UserOut | None' = None
+    tenant: 'LoginTenant | None' = None
+    redirect_path: str | None = None
+
+
+class LoginTenant(BaseModel):
+    id: int
+    slug: str
+    name: str
 
 
 class UserOut(ORMModel):
     tenant_id: int | None = None
     is_platform_admin: bool = False
+    tenant_slug: str | None = None
+    tenant_name: str | None = None
     id: int
     nombre: str
     email: EmailStr

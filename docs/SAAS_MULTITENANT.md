@@ -23,7 +23,7 @@ La tabla de características detallada proporcionada por el usuario es la refere
 
 - `saas_tenants`, `saas_plans`, `saas_subscriptions` y las tablas de facturación forman el plano administrativo.
 - Las 28 tablas comerciales incluyen `tenant_id`. Las claves foráneas compuestas impiden asociar registros de empresas distintas. Los identificadores comerciales y el correo se pueden repetir entre empresas.
-- El JWT contiene `tid`, sujeto y rol. El backend verifica la pertenencia actual del usuario. `X-Tenant` identifica a la empresa al iniciar sesión o consultar contenido público; no permite cambiar la empresa de una sesión autenticada.
+- El JWT contiene `tid`, sujeto y rol. El backend verifica la pertenencia actual del usuario. El acceso solicita correo y contraseña y resuelve automáticamente la empresa y el destino; ignora cabeceras y tokens de sesiones anteriores. `X-Tenant` se conserva para contenido público y no permite cambiar la empresa de una sesión autenticada. Véase [acceso unificado](ACCESO_UNIFICADO.md).
 - `TenantSession` limita lecturas, joins, actualizaciones, borrados y relaciones. Las altas reciben la empresa de la sesión. Las consultas SQL libres están bloqueadas.
 - PostgreSQL aplica `FORCE ROW LEVEL SECURITY`. El proceso HTTP usa un rol distinto del dueño de las tablas, sin `SUPERUSER` ni `BYPASSRLS`. Sin contexto, una consulta comercial no devuelve registros. El arranque rechaza un rol que omita RLS.
 - La cuenta de plataforma tiene `tenant_id=NULL` y acceso al panel administrativo. No puede entrar al catálogo privado como si fuera un empleado de una empresa.
@@ -106,7 +106,7 @@ Para una defensa:
 
 ## Móvil y funcionamiento offline
 
-Flutter solicita el identificador de empresa antes de iniciar sesión y envía el contexto en todas las peticiones. Mi cuenta abre el plan empresarial, con selección mensual/anual y Checkout/portal externos. Al volver de Stripe actualiza el estado. Una empresa sin licencia activa entra en la pantalla de suscripción.
+Flutter solicita únicamente correo y contraseña. La empresa y los permisos proceden de la cuenta validada; los enlaces `drapemind://tienda/<slug>` aportan el contexto cuando hace falta distinguir cuentas repetidas. La cuenta SaaS abre su resumen de empresas; las cuentas empresariales conservan su espacio y sus permisos. Mi cuenta abre el plan empresarial, con selección mensual/anual y Checkout/portal externos. Al volver de Stripe actualiza el estado. Una empresa sin licencia activa entra en la pantalla de suscripción.
 
 La caché offline guarda únicamente catálogo y disponibilidad ya consultados, separada por empresa, usuario y recurso. Exige un JWT vigente y una licencia guardada con función offline activa y fecha futura. Otra cuenta no puede leer esa caché. La interfaz indica que precios y stock deben confirmarse al reconectar. Pagos, ventas y modificaciones de stock requieren conexión; no se implementó una cola de ventas offline.
 

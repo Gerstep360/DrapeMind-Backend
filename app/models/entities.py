@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Enum, ForeignKey, Integer, Numeric, SmallInteger, String, Text, UniqueConstraint, func
+from sqlalchemy import BigInteger, Boolean, DateTime, Enum, ForeignKey, Integer, Numeric, SmallInteger, String, Text, UniqueConstraint, Index, func
 from sqlalchemy.dialects.postgresql import ARRAY, CITEXT, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -66,6 +66,7 @@ class User(TenantOwned, TimestampMixin, Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     nombre: Mapped[str] = mapped_column(String(120))
     email: Mapped[str] = mapped_column(CITEXT, index=True)
+    __table_args__ = (Index('ix_usuarios_login_email',func.lower(email)),)
     password_hash: Mapped[str] = mapped_column(String(255))
     telefono: Mapped[str | None] = mapped_column(String(30))
     rol: Mapped[Role] = mapped_column(role_enum, default=Role.CLIENTE)

@@ -1,15 +1,15 @@
 """CU-02: Iniciar sesión y mantener sesión segura.
 Paquete: Acceso y gestión de usuarios (PK-01).
 """
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
-from app.core.security import create_access_token, hash_password, verify_password
+from app.core.security import create_access_token
 from app.db.session import get_db
-from app.models import Role, User, UserStatus, UserStyleProfile
+from app.models import User
 from app.schemas.api import ForgotPasswordRequest, LoginRequest, Message, TokenResponse, UserOut
+from app.services.sign_in import sign_in, user_profile
 
 router = APIRouter()
 
@@ -31,33 +31,7 @@ def restablecer_contrasena(payload: ForgotPasswordRequest, db: Session = Depends
     description="Autenticación con email y contraseña, emitiendo un Bearer JWT de acceso seguro.",
 )
 def iniciar_sesion(payload: LoginRequest, db: Session = Depends(get_db)) -> dict:
-    """CU-02: Autentica credenciales y emite token JWT."""
-    user = db.scalar(select(User).where(func.lower(User.email) == str(payload.email).lower()))
-    if not user or not verify_password(payload.password, user.password_hash):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Credenciales incorrectas",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    if user.estado != UserStatus.ACTIVO:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Usuario inactivo o bloqueado",
-        )
-
-    user.has_style_profile = (
-        db.scalar(
-            select(UserStyleProfile.id).where(UserStyleProfile.usuario_id == user.id)
-        )
-        is not None
-    )
-    token, expires_in = create_access_token(user.id, user.rol.value, tenant_id=user.tenant_id, platform=bool(user.is_platform_admin))
-    return {
-        "access_token": token,
-        "token_type": "bearer",
-        "expires_in": expires_in,
-        "user": user,
-    }
+    return sign_in(db,str(payload.email),payload.password,payload.tenant_slug)
 
 
 @router.get(
@@ -68,15 +42,9 @@ def iniciar_sesion(payload: LoginRequest, db: Session = Depends(get_db)) -> dict
 )
 def obtener_usuario_actual(
     user: User = Depends(get_current_user), db: Session = Depends(get_db)
-) -> User:
+) -> UserOut:
     """CU-02: Valida y devuelve el usuario de la sesión actual."""
-    user.has_style_profile = (
-        db.scalar(
-            select(UserStyleProfile.id).where(UserStyleProfile.usuario_id == user.id)
-        )
-        is not None
-    )
-    return user
+    return user_profile(db,user)
 
 
 @router.post(

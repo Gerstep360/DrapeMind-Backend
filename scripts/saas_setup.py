@@ -31,9 +31,13 @@ def backup():
         executable = str(candidates[0]) if candidates else None
     if not executable: raise RuntimeError('Instala pg_dump antes de migrar')
     folder = BACKEND_DIR / 'backups'; folder.mkdir(exist_ok=True)
-    target = folder / ('pre_saas_'+datetime.now().strftime('%Y%m%d_%H%M%S')+'.dump')
-    env = dict(os.environ, PGPASSWORD=url.password or '')
-    result = subprocess.run([executable,'-h',url.host or 'localhost','-p',str(url.port or 5432),'-U',url.username or 'postgres','-d',url.database,'-Fc','-f',str(target)],env=env,capture_output=True)
+    target = folder / ('pre_saas_'+datetime.now().strftime('%Y%m%d_%H%M%S_%f')+'.dump')
+    # FORCE RLS también se aplica al dueño de las tablas. El contexto global se
+    # limita al proceso administrativo de respaldo; no altera el rol HTTP.
+    env = dict(os.environ, PGPASSWORD=url.password or '',PGOPTIONS='-c app.saas_system=true')
+    fd=os.open(target,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+    with os.fdopen(fd,'wb') as output:
+        result = subprocess.run([executable,'-h',url.host or 'localhost','-p',str(url.port or 5432),'-U',url.username or 'postgres','-d',url.database,'-Fc','--enable-row-security','--inserts'],env=env,stdout=output,stderr=subprocess.PIPE)
     if result.returncode: raise RuntimeError('No se pudo crear el respaldo PostgreSQL')
     print('Respaldo PostgreSQL creado en backend/backups/'+target.name)
 
@@ -74,12 +78,14 @@ def demo():
     credentials_path=BACKEND_DIR/'.saas-demo-credentials.json'
     credentials=json.loads(credentials_path.read_text(encoding='utf-8')) if credentials_path.exists() else {'platform':{},'companies':[]}
     with factory() as db, system_scope(db):
-        root=db.scalar(select(User).where(User.is_platform_admin.is_(True),User.tenant_id.is_(None)))
+        root=db.scalar(select(User).where(User.is_platform_admin.is_(True),User.tenant_id.is_(None),User.email=='adminsaas@drapemind.com'))
         if not root:
             password=secrets.token_urlsafe(18)
-            root=User(tenant_id=None,is_platform_admin=True,nombre='Administrador SaaS',email='saas-admin@example.com',password_hash=hash_password(password),rol=Role.ADMIN,estado=UserStatus.ACTIVO)
+            root=User(tenant_id=None,is_platform_admin=True,nombre='Administrador SaaS',email='adminsaas@drapemind.com',password_hash=hash_password(password),rol=Role.ADMIN,estado=UserStatus.ACTIVO)
             db.add(root);db.flush()
-            credentials['platform']={'email':root.email,'password':password,'url':'http://localhost:4200/saas-platform'}
+            if credentials.get('platform'):
+                credentials.setdefault('previous_platform_accounts',[]).append(credentials['platform'])
+            credentials['platform']={'email':root.email,'password':password,'url':'http://localhost:4200/login'}
         for slug,name,code,amount in [('moda-oriente','Moda Oriente (demo)','BASIC','80.00'),('urban-fit','Urban Fit (demo)','PRO','150.00')]:
             tenant=db.scalar(select(Tenant).where(Tenant.slug==slug))
             if tenant: continue
@@ -106,6 +112,7 @@ def demo():
             credentials['companies'].append({'company':slug,'email':owner.email,'password':password,'plan':code})
         db.commit()
     credentials_path.write_text(json.dumps(credentials,ensure_ascii=False,indent=2),encoding='utf-8')
+    credentials_path.chmod(0o600)
     print('Empresas demo y administrador disponibles. Credenciales locales: backend/.saas-demo-credentials.json (no se publican).')
 
 
@@ -122,11 +129,18 @@ def prices():
     print('Precios mensuales y anuales publicados en Stripe. No se cobró a ningún cliente.')
 
 
+def generic_admin():
+    import sys
+    sys.path.insert(0,str(BACKEND_DIR/'scripts/deploy'))
+    from platform_config import ensure_admin
+    ensure_admin(BACKEND_DIR.parent)
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action',choices=['backup','runtime-role','demo','stripe-prices'])
+    parser.add_argument('action',choices=['backup','runtime-role','demo','stripe-prices','platform-admin'])
     args=parser.parse_args()
-    try: {'backup':backup,'runtime-role':runtime_role,'demo':demo,'stripe-prices':prices}[args.action]()
+    try: {'backup':backup,'runtime-role':runtime_role,'demo':demo,'stripe-prices':prices,'platform-admin':generic_admin}[args.action]()
     except Exception as exc:
         # Driver/provider exceptions may contain secrets: report only the exception class.
         print('No se completó la operación SaaS ('+type(exc).__name__+'). Revisa la configuración local.')

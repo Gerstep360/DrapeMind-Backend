@@ -76,7 +76,7 @@ class PriceInput(StrictInput):
     billing_interval: Literal['month','year']
 
 
-@router.post('/platform/login',response_model=TokenResponse)
+@router.post('/platform/login',response_model=TokenResponse,deprecated=True)
 def login_platform(payload: LoginRequest, db: Session = Depends(get_db)):
     with system_scope(db):
         user = db.scalar(select(User).where(User.is_platform_admin.is_(True),User.tenant_id.is_(None),func.lower(User.email)==str(payload.email).lower()))
@@ -89,6 +89,13 @@ def login_platform(payload: LoginRequest, db: Session = Depends(get_db)):
 @router.get('/companies')
 def companies(db: Session = Depends(get_db)):
     return [{'slug':t.slug,'name':t.name} for t in db.scalars(select(Tenant).where(Tenant.active.is_(True)).order_by(Tenant.name).limit(200))]
+
+
+@router.get('/companies/{slug}')
+def company_entry(slug: str, db: Session = Depends(get_db)):
+    tenant=db.scalar(select(Tenant).where(Tenant.slug==slug,Tenant.active.is_(True)))
+    if not tenant: raise HTTPException(404,'Esta tienda no está disponible')
+    return {'slug':tenant.slug,'name':tenant.name,'login_path':'/tienda/'+tenant.slug}
 
 
 @router.get('/me')

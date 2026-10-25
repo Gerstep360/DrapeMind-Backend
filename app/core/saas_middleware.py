@@ -12,6 +12,10 @@ def resolve_scope(headers, path):
     from app.models import User, UserStatus
     from app.models.saas import Tenant
     from app.services.saas import require_active_subscription
+    if path == '/api/v1/auth/login' or path.startswith('/api/v1/saas/companies'):
+        # La identidad de login se determina en el servidor antes de vincular tenant.
+        # Un token anterior o un contexto guardado no decide qué cuenta autenticar.
+        return None
     # Provider endpoints authenticate the raw body signature, then resolve the
     # company from the persisted payment/customer. They do not accept client scope.
     if path in ('/api/v1/payments/webhook','/api/v1/payments/stripe-webhook','/api/v1/payments/stripe-local-webhook','/api/v1/saas/stripe-webhook'):

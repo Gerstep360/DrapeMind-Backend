@@ -246,7 +246,7 @@ ALTER DEFAULT PRIVILEGES FOR ROLE {owner} IN SCHEMA public GRANT USAGE,SELECT ON
 
 
 def ensure_admin(app):
-    from sqlalchemy import create_engine, select
+    from sqlalchemy import create_engine, select, text
     from sqlalchemy.orm import sessionmaker
     from app.core.config import settings
     from app.core.security import hash_password
@@ -254,17 +254,21 @@ def ensure_admin(app):
     from app.db.tenant_session import TenantSession
     from app.models import User, Role, UserStatus
     engine = create_engine(settings.database_uri)
+    email = 'adminsaas@drapemind.com'
     with sessionmaker(bind=engine, class_=TenantSession)() as db, system_scope(db):
-        existing = db.scalar(select(User).where(User.is_platform_admin.is_(True), User.tenant_id.is_(None)))
+        if db.get_bind().dialect.name=='postgresql':
+            db.execute(text('SELECT pg_advisory_xact_lock(60102501)'))
+        existing = db.scalar(select(User).where(User.is_platform_admin.is_(True), User.tenant_id.is_(None),User.email==email))
         if existing:
-            print('Se conserva el administrador de plataforma existente.')
+            print('Se conserva la cuenta SaaS genérica existente, sin cambiar su contraseña.')
             return
         password = secrets.token_urlsafe(24)
-        email = 'saas-admin@example.com'
         db.add(User(tenant_id=None, is_platform_admin=True, nombre='Administrador de plataforma', email=email,
                     password_hash=hash_password(password), rol=Role.ADMIN, estado=UserStatus.ACTIVO))
         # Credenciales antes de commit: no se pierde la contraseña si falla escribir el archivo.
         target = app/'.deploy/admin-access.json'
+        if target.exists():
+            private_write(app/'.deploy/admin-access.previous.json',target.read_text(encoding='utf-8'))
         private_write(target, json.dumps(dict(email=email, password=password), indent=2)+'\n')
         db.commit()
     print('Administrador inicial creado. Acceso privado: '+str(target))

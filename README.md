@@ -1,5 +1,7 @@
 # DrapeMind API
 
+[Acceso automático por correo, enlaces de tienda y cuenta SaaS genérica](docs/ACCESO_UNIFICADO.md).
+
 FastAPI + SQLAlchemy + PostgreSQL; NVIDIA API es el único proveedor de IA.
 
 Plataforma SaaS de base compartida: [empresas, planes, Stripe y preparación local](docs/SAAS_MULTITENANT.md). El proceso HTTP requiere `RUNTIME_DATABASE_URL` con un rol sin bypass RLS; se configura desde el panel o `python -m scripts.saas_setup runtime-role`.

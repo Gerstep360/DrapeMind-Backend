@@ -163,15 +163,6 @@ def seed_users(db, branches: list[Branch], log_fn: Callable[[str], None] = print
             "direccion": "Calle 21 de Calacoto #1200, La Paz",
             "branch": None,
         },
-        {
-            "nombre": "German Rojas (SuperAdmin)",
-            "email": "rojascruzgermanlino@gmail.com",
-            "password": "Password123!",
-            "rol": Role.ADMIN,
-            "telefono": "63014529",
-            "direccion": "Av. Las Américas #780, Equipetrol, Santa Cruz",
-            "branch": None,
-        },
         # Encargados de Tienda
         {
             "nombre": "Elena Encargada Central",
