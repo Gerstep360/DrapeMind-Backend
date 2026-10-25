@@ -16,4 +16,4 @@ También puedes usar `.venv/Scripts/python.exe -m uvicorn app.main:app --reload 
 
 `python -m pytest -q`. Las pruebas del transporte, herramientas, concurrencia, permisos y guardado del perfil usan dobles herméticos y no consumen la API real.
 
-[Arquitectura](docs/ARQUITECTURA_AI.md) · [Linux](../DEPLOYMENT_LINUX.md)
+[Arquitectura](docs/ARQUITECTURA_AI.md) · [Instalación nativa y mantenimiento del VPS](docs/INSTALACION_VPS.md)

@@ -52,3 +52,6 @@ backups/
 .saas-test-results.txt
 
 .tools/
+.deploy/
+deploy.json
+!.env.production.example
