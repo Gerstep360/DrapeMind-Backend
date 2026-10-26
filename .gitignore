@@ -37,6 +37,7 @@ huggingface/
 *.tar.gz
 *.zip
 !docs/entregas/Incremento_I_Capitulo_IV.zip
+!docs/entregas/Incremento_I_Casos_de_Uso_Individuales.zip
 # Firebase Service Account Credentials
 *firebase*.json
 *service_account*.json
