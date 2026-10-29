@@ -332,10 +332,13 @@ location ^~ {prefix}/api/ {{
     {proxy}
 }}
 '''
-    for name in ('config.json','index.html'):
+    for name in ('config.json','index.html','sw.js','sw-assets.json','manifest.webmanifest'):
+        content_type = {'sw.js':'application/javascript', 'sw-assets.json':'application/json',
+                        'manifest.webmanifest':'application/manifest+json'}.get(name)
+        mime = f'    default_type {content_type};\n' if content_type else ''
         result += f'''location = {prefix}/{name} {{
     alias /var/www/drapemind/current/{name};
-    add_header Cache-Control "no-store" always;
+{mime}    add_header Cache-Control "no-store" always;
 }}
 '''
     result += f'''location ^~ {prefix}/ {{
