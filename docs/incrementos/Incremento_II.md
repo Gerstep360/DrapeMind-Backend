@@ -1,6 +1,8 @@
 # Incremento II — Proveedores y operación sin conexión
 
-Entrega funcional del segundo parcial. CU-01 a CU-10 continúan en Incremento I; CU-11 a CU-14 pertenecen a este incremento. La numeración histórica de los paquetes del primer parcial conserva su significado original.
+Entrega funcional del segundo parcial. CU-01 a CU-10 continúan en Incremento I; CU-11 a CU-20 pertenecen a este incremento. La numeración histórica de los paquetes del primer parcial conserva su significado original.
+
+[Ampliación funcional CU-15 a CU-20](CU15_CU20_FUNCIONAL.md). Sus fichas están en requisitos/CU-15.md a CU-20.md. Caja y reservas, consulta/sincronización, conflictos y cambios permanecen dentro del mismo módulo Incremento II de cada proyecto.
 
 ## Organización del código
 

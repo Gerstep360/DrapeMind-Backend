@@ -54,6 +54,11 @@ def download(response: Response, user: User = Depends(offline_user), db: Session
                    'disponible': max(0, s.stock_total - s.stock_reservado)} for s in db.scalars(
             select(BranchStock).where(BranchStock.activo.is_(True), BranchStock.sucursal_id.in_(branch_ids), BranchStock.variante_id.in_(variant_ids)))],
     }
+    if user.rol in (Role.ADMIN,Role.ENCARGADO,Role.CAJERO):
+        from .cu15_cu19_operaciones import attending_snapshots
+        data['reservations']=attending_snapshots(db,user)
+    else:
+        data['reservations']=[]
     now = datetime.now(timezone.utc)
     response.headers['Cache-Control'] = 'no-store'
     return {'schema_version': 1, 'owner': f'{user.tenant_id}:{user.id}', 'tenant_id': user.tenant_id,
@@ -63,9 +68,14 @@ def download(response: Response, user: User = Depends(offline_user), db: Session
 
 @router.post('/reservations')
 def synchronize(payload: OfflineReservation, response: Response, user: User = Depends(offline_user), db: Session = Depends(get_db)):
+    return apply_reservation(payload, response, user, db)
+
+
+def apply_reservation(payload, response, user, db, *, commit_changes=True):
     require_active_subscription(db, user.tenant_id, 'offline')
     require_active_subscription(db, user.tenant_id, 'reservations')
-    expire_due_reservations(db)
+    if commit_changes:
+        expire_due_reservations(db)
     # Serialize retries by authenticated owner; receipt and stock commit together.
     db.scalar(select(User).where(User.id == user.id).with_for_update())
     fingerprint = digest(payload.model_dump(mode='json'))
@@ -113,9 +123,13 @@ def synchronize(payload: OfflineReservation, response: Response, user: User = De
                                                   cantidad=item.cantidad, precio_referencia=product.precio)])
         db.add(OfflineReservationReceipt(usuario_id=user.id, operacion_id=str(payload.operacion_id),
                                         payload_hash=fingerprint, reserva_id=reservation.id))
-        db.commit()
+        if commit_changes:
+            db.commit()
+        else:
+            db.flush()
     except Exception:
-        db.rollback()
+        if commit_changes:
+            db.rollback()
         raise
     response.status_code = 201
     return receipt_payload(reservation, str(payload.operacion_id), False)

@@ -297,7 +297,7 @@ def recopilar_metricas_bd(db: Session, periodo: str):
 
     # Filtros temporales
     order_filter = []
-    payment_filter = [Payment.estado == "APROBADO"]
+    payment_filter = [Payment.estado.in_(["APROBADO","REEMBOLSADO"])]
     ai_filter = []
     if start_date:
         order_filter.append(Order.created_at >= start_date)
@@ -316,11 +316,10 @@ def recopilar_metricas_bd(db: Session, periodo: str):
         )
     ) or 0
 
-    total_revenue = db.scalar(
-        select(func.coalesce(func.sum(Payment.monto), Decimal("0.00"))).where(*payment_filter)
-    ) or Decimal("0.00")
+    from app.services.financials import net_payments
+    total_revenue = net_payments(db,*payment_filter)
 
-    if total_revenue == Decimal("0.00"):
+    if not db.scalar(select(func.count(Payment.id)).where(*payment_filter)):
         total_revenue = db.scalar(
             select(func.coalesce(func.sum(Order.total), Decimal("0.00"))).where(
                 Order.estado.in_(["ENTREGADO", "PAGADO", "LISTO", "ENVIADO"]),
@@ -329,9 +328,7 @@ def recopilar_metricas_bd(db: Session, periodo: str):
         ) or Decimal("0.00")
 
     historical_orders = db.scalar(select(func.count(Order.id))) or 0
-    historical_revenue = db.scalar(
-        select(func.coalesce(func.sum(Payment.monto), Decimal("0.00"))).where(Payment.estado == "APROBADO")
-    ) or Decimal("0.00")
+    historical_revenue = net_payments(db)
 
     ticket_promedio = (
         (total_revenue / total_orders)

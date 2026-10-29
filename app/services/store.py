@@ -441,6 +441,8 @@ def _movement(variant: ProductVariant, movement_type: str, quantity: int, user_i
 
 
 def _sync_variant_inventory(db: Session, variant: ProductVariant) -> None:
+    # Sessions disable autoflush: totals must include the branch changes made in this transaction.
+    db.flush()
     totals = db.execute(
         select(
             func.coalesce(func.sum(BranchStock.stock_total), 0),

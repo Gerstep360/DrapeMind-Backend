@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from app.api.deps import require_role
 from app.db.session import get_db
 from app.models import AIInteraction, AISession, Order, Payment, Product, Role, User
+from app.services.financials import net_payments
 
 router = APIRouter()
 
@@ -34,9 +35,7 @@ def obtener_dashboard_comercial(
     db: Session = Depends(get_db),
 ) -> dict:
     """CU-40: Métricas comerciales e indicadores clave (KPIs)."""
-    total_ventas = db.scalar(
-        select(func.coalesce(func.sum(Payment.monto), 0)).where(Payment.estado == "APROBADO")
-    ) or 0
+    total_ventas = net_payments(db)
     total_pedidos = db.scalar(select(func.count(Order.id))) or 0
     total_usuarios = db.scalar(select(func.count(User.id))) or 0
     total_productos = db.scalar(select(func.count(Product.id)).where(Product.activo == True)) or 0

@@ -44,7 +44,7 @@ reservation_status_enum = Enum(
 order_status_enum = Enum("PENDIENTE_PAGO", "PAGADO", "PREPARANDO", "LISTO", "ENVIADO", "ENTREGADO", "CANCELADO", name="estado_pedido")
 order_channel_enum = Enum("MOBILE", "WEB", "TIENDA", name="canal_pedido")
 delivery_type_enum = Enum("DELIVERY", "RECOJO", "TIENDA", name="tipo_entrega")
-payment_method_enum = Enum("QR", "TARJETA", "EFECTIVO", "TRANSFERENCIA", name="metodo_pago")
+payment_method_enum = Enum("QR", "TARJETA", "EFECTIVO", "TRANSFERENCIA", "CREDITO_CAMBIO", name="metodo_pago")
 payment_status_enum = Enum("PENDIENTE", "PROCESANDO", "APROBADO", "RECHAZADO", "REEMBOLSADO", name="estado_pago")
 movement_type_enum = Enum("ENTRADA", "VENTA", "RESERVA", "LIBERACION_RESERVA", "DEVOLUCION", "AJUSTE", name="tipo_movimiento_inventario")
 ai_session_status_enum = Enum("ACTIVA", "CERRADA", "EXPIRADA", name="estado_ai_sesion")

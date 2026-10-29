@@ -28,6 +28,20 @@ from test_saas_incremento_ii import (
     test_cu11_supplier_portal_and_receiving_updates_inventory_once,
     test_cu11_cancel_confirmed_restores_offer_without_entering_stock,
 )
+from test_saas_incremento_ii_retail import (
+    clerk, sale_body, sync,
+    test_cash_sale_idempotent_and_isolated,
+    test_price_conflict_is_audited_and_only_manager_can_accept_saved_price,
+    test_rejection_requires_refund_confirmation_and_remains_terminal,
+    test_attend_and_cash_pickup_consumes_reserved_units_once,
+    test_exchange_partial_return_credit_and_duplicate_protection,
+    test_closed_branch_cash_conflict_can_be_refunded_and_audited,
+    test_exchange_refund_preserves_net_revenue,
+    test_conflicted_reservation_cancel_is_visible_to_manager_and_terminal,
+    test_cash_multiple_lines_roll_back_without_partial_sale,
+    test_result_lookup_is_scoped_to_the_authenticated_owner,
+    test_expired_reservation_releases_branch_and_global_inventory,
+)
 
 TEST_URL = os.environ.get('INCREMENTO_II_TEST_DATABASE_URL')
 pytestmark = pytest.mark.skipif(not TEST_URL, reason='PostgreSQL desechable no configurado')
@@ -39,7 +53,7 @@ def factory():
     assert url.database == 'incremento_ii_test', 'Only the disposable integration database is permitted'
     admin = create_engine(url)
     with admin.begin() as connection:
-        assert connection.scalar(text('SELECT version_num FROM alembic_version')) == '20261028_01'
+        assert connection.scalar(text('SELECT version_num FROM alembic_version')) == '20261028_02'
         tables = connection.scalars(text("SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename!='alembic_version'")).all()
         connection.exec_driver_sql('TRUNCATE '+','.join('"'+t+'"' for t in tables)+' RESTART IDENTITY CASCADE')
         connection.exec_driver_sql("DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='incremento_ii_runtime') THEN CREATE ROLE incremento_ii_runtime LOGIN NOSUPERUSER NOBYPASSRLS; END IF; END $$")
@@ -115,3 +129,19 @@ def test_two_buyers_cannot_reserve_more_than_branch_stock(client, stock, factory
     with factory(tenant_id=1) as db:
         assert db.scalar(select(func.count(Reservation.id)))==1
         assert db.get(ProductVariant,1).stock_reservado==7
+
+
+def test_cash_sale_simultaneous_retries_never_double_charge(client,clerk,factory):
+    body=sale_body();barrier=Barrier(2)
+    def send():
+        barrier.wait(timeout=10)
+        return sync(client,clerk,body)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results=list(pool.map(lambda _:send(),range(2)))
+    assert all(r.status_code==200 and r.json()['estado']=='CONFIRMED' for r in results),[r.text for r in results]
+    assert len({r.json()['resultado']['sale']['pedido_id'] for r in results})==1
+    from app.models import Order,Payment
+    with factory(tenant_id=1) as db:
+        assert db.get(ProductVariant,1).stock_total==8
+        assert db.scalar(select(func.count(Order.id)))==1
+        assert db.scalar(select(func.count(Payment.id)))==1

@@ -1,6 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 from decimal import Decimal
+from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.schemas.api import SupplierInput, SupplierProductInput
 
@@ -63,4 +64,68 @@ class OfflineReservation(Input):
             raise ValueError('Agrupa las cantidades de una misma variante')
         if self.creado_at.tzinfo is None:
             raise ValueError('La fecha debe incluir la zona horaria')
+        return self
+
+
+class CashLine(ReservationLine):
+    precio_unitario: Decimal = Field(ge=0, max_digits=10, decimal_places=2)
+
+
+class CashSale(OfflineReservation):
+    items: list[CashLine] = Field(min_length=1, max_length=50)
+    cliente_id: int | None = Field(default=None, gt=0)
+    efectivo_recibido: Decimal = Field(ge=0, max_digits=12, decimal_places=2)
+
+
+class ReservationPickup(CashSale):
+    reserva_id: int = Field(gt=0)
+
+
+class SyncEnvelope(Input):
+    tipo: Literal['RESERVATION','SALE','PICKUP']
+    payload: dict
+
+    @model_validator(mode='after')
+    def validate_payload(self):
+        model = {'RESERVATION':OfflineReservation,'SALE':CashSale,'PICKUP':ReservationPickup}[self.tipo]
+        self.payload = model.model_validate(self.payload).model_dump(mode='json')
+        return self
+
+
+class ConflictResolution(Input):
+    accion: Literal['RETRY','REJECT']
+    motivo: str = Field(min_length=5,max_length=300)
+    aceptar_precio_guardado: bool = False
+    efectivo_devuelto: bool = False
+
+
+class OperationLookup(Input):
+    operaciones: list[UUID] = Field(min_length=1,max_length=100)
+
+
+class ReservationPreparation(Input):
+    estado: Literal['CONFIRMADA','EN_PREPARACION','LISTA']
+
+
+class ReturnedLine(Input):
+    item_pedido_id: int = Field(gt=0)
+    cantidad: int = Field(gt=0,le=100)
+
+
+class ExchangeCreate(Input):
+    operacion_id: UUID
+    pedido_origen_id: int = Field(gt=0)
+    sucursal_id: int = Field(gt=0)
+    motivo: str = Field(min_length=5,max_length=300)
+    devoluciones: list[ReturnedLine] = Field(min_length=1,max_length=50)
+    prendas_nuevas: list[ReservationLine] = Field(min_length=1,max_length=50)
+    efectivo_recibido: Decimal = Field(ge=0, max_digits=12, decimal_places=2)
+    efectivo_devuelto: Decimal = Field(ge=0, max_digits=12, decimal_places=2)
+
+    @model_validator(mode='after')
+    def unique_lines(self):
+        if len({i.item_pedido_id for i in self.devoluciones}) != len(self.devoluciones):
+            raise ValueError('Agrupa cada prenda devuelta en una línea')
+        if len({i.variante_id for i in self.prendas_nuevas}) != len(self.prendas_nuevas):
+            raise ValueError('Agrupa cada variante nueva en una línea')
         return self

@@ -17,6 +17,7 @@ from app.schemas.api import (
     OrderOut, ProductInput, ProductOut, ReservationOut, VariantInput, VariantOut,
 )
 from app.services.ai import call_nvidia
+from app.services.financials import net_delivered_orders
 from app.services.ai_errors import AIProviderError
 from app.services.store import variant_payload
 from app.services.store import expire_due_reservations
@@ -252,7 +253,7 @@ def sales_inventory_metrics(
 ) -> dict:
     sales = db.execute(select(func.count(Order.id).label('pedidos_entregados'),func.coalesce(func.sum(Order.total),0).label('ingresos')).where(Order.estado=='ENTREGADO')).mappings().one()
     inventory = db.execute(select(func.count(ProductVariant.id).label('variantes'),func.coalesce(func.sum(ProductVariant.stock_total-ProductVariant.stock_reservado),0).label('unidades_disponibles'),func.count(case((ProductVariant.stock_total-ProductVariant.stock_reservado<=3,1))).label('stock_bajo')).where(ProductVariant.activo.is_(True))).mappings().one()
-    return {'ventas':dict(sales),'inventario':dict(inventory)}
+    return {'ventas':{**dict(sales),'ingresos':net_delivered_orders(db)},'inventario':dict(inventory)}
 
 
 
