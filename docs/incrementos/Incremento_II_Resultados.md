@@ -16,3 +16,11 @@ Fecha de ejecución: 28 de octubre de 2026.
 La comprobación de concurrencia envía dos solicitudes con el mismo UUID y obtiene una sola reserva. Otra prueba hace competir a dos compradores por siete unidades cada uno con stock diez: solo una reserva se confirma y la otra recibe conflicto de stock. La confirmación usa el precio actual de PostgreSQL, aunque la descarga conserve un precio anterior.
 
 Las pruebas aisladas no envían cargos a Stripe ni consultas a NVIDIA. No se ha ejecutado una prueba manual en un teléfono físico. La suite conserva una advertencia previa de Pydantic sobre configuración de clase obsoleta.
+
+## Publicación en VPS
+
+Publicado en https://167.86.106.105/DrapeMind/ mediante el actualizador nativo, con respaldo previo de PostgreSQL. Backend y web permanecen en Main.
+
+La comprobación posterior verificó HTTP 200 en /offline/status, /offline/bundle, /supply/suppliers, /supply/orders y /supply/destinations usando una sesión empresarial autorizada. Un intento de cambiar el tenant mediante cabecera recibió HTTP 403. La base quedó en 20261028_01 con RLS habilitado y forzado en las tres tablas nuevas.
+
+La PWA publicada sirve un trabajador con versión, cabecera no-store, manifiesto application/manifest+json y 66 recursos del shell. La ruta /DrapeMind/offline responde correctamente y el certificado HTTPS se verificó sin desactivar la validación TLS.
