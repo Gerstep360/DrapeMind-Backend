@@ -109,6 +109,14 @@ def test_exchange_partial_return_credit_and_duplicate_protection(client,clerk,fa
     assert Decimal(result.json()['credito'])==100 and Decimal(result.json()['diferencia'])==50
     replay=client.post('/api/v1/retail/exchanges',headers=clerk,json=payload)
     assert replay.json()['id']==result.json()['id']
+    lookup=f"/api/v1/retail/exchanges/operations/{payload['operacion_id']}"
+    assert client.get(lookup,headers=clerk).json()['id']==result.json()['id']
+    assert client.get(lookup,headers=headers(2,2,'b')).status_code==404
+    from app.models import Branch
+    with factory(tenant_id=1) as db:db.get(Branch,1).activo=False;db.commit()
+    assert client.get(lookup,headers=clerk).json()['id']==result.json()['id']
+    assert client.post('/api/v1/retail/exchanges',headers=clerk,json=payload).json()['id']==result.json()['id']
+    with factory(tenant_id=1) as db:db.get(Branch,1).activo=True;db.commit()
     with factory(tenant_id=1) as db:
         assert db.get(ProductVariant,1).stock_total==9 and db.get(ProductVariant,3).stock_total==4
         assert db.scalar(select(func.count(GarmentExchange.id)))==1
@@ -117,6 +125,12 @@ def test_exchange_partial_return_credit_and_duplicate_protection(client,clerk,fa
         assert {p.metodo for p in payments}=={'EFECTIVO','CREDITO_CAMBIO'}
     payload['operacion_id']=str(uuid4());payload['devoluciones'][0]['cantidad']=2
     assert client.post('/api/v1/retail/exchanges',headers=clerk,json=payload).status_code==409
+
+
+@pytest.mark.parametrize('code',['9'*40,'%%%%%%%%','________','00000000%','0','-1','not-a-code'])
+def test_order_search_rejects_overflow_and_wildcards(client,clerk,code):
+    response=client.get('/api/v1/retail/orders/find',headers=clerk,params={'code':code})
+    assert response.status_code==422,response.text
 
 
 def test_closed_branch_cash_conflict_can_be_refunded_and_audited(client,clerk,factory):

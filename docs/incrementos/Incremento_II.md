@@ -1,5 +1,15 @@
 # Incremento II — Proveedores y operación sin conexión
 
+## Entrega completa CU-11 a CU-20
+
+[Capítulos, fichas, diagramas, modelos de datos, pruebas y Excel](../entregas/Incremento_II_Completo.zip). El archivo conserva la estructura de `segundo parcial/Incremento II` e incluye las fuentes PlantUML y sus SVG/PNG.
+
+La revisión del 30/10/2026 protege la cancelación ante cambios de sesión y permite recuperar cambios confirmados mediante `GET /api/v1/retail/exchanges/operations/{uuid}`, incluso si la sucursal se desactivó después. La búsqueda de comprobantes rechaza comodines y valores fuera del rango BIGINT. El navegador conserva el cuerpo pendiente ante una sesión expirada.
+
+Validación: 228 pruebas backend, 24 integraciones PostgreSQL, 38 Angular y 56 Flutter. Los recorridos Edge incluyen alta de proveedor, solicitud y recepción, operación offline, revisión y recuperación de cambios. No se ejecutó una prueba manual en teléfono físico.
+
+[Android 1.2.1+15](https://github.com/Gerstep360/DrapeMind-Movil/releases/tag/v1.2.1), compilada para el VPS.
+
 Entrega funcional del segundo parcial. CU-01 a CU-10 continúan en Incremento I; CU-11 a CU-20 pertenecen a este incremento. La numeración histórica de los paquetes del primer parcial conserva su significado original.
 
 [Ampliación funcional CU-15 a CU-20](CU15_CU20_FUNCIONAL.md). Sus fichas están en requisitos/CU-15.md a CU-20.md. Caja y reservas, consulta/sincronización, conflictos y cambios permanecen dentro del mismo módulo Incremento II de cada proyecto.

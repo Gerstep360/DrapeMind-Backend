@@ -2,6 +2,7 @@
 from datetime import datetime,timezone
 from decimal import Decimal
 from uuid import uuid4,UUID
+import re
 from fastapi import APIRouter,Depends,Query
 from sqlalchemy import select,func,cast,String,or_
 from sqlalchemy.orm import Session
@@ -36,16 +37,18 @@ def exchange_payload(db,exchange):
 @router.get('/orders/find')
 def find_order(code:str=Query(min_length=1,max_length=40),user:User=Depends(staff),db:Session=Depends(get_db)):
     value=code.strip()
-    if value.isdecimal():
+    if value.isascii() and value.isdecimal() and 0<int(value)<=9223372036854775807:
         condition=Order.id==int(value)
-    elif len(value)>=8:
-        condition=cast(Order.codigo_publico,String).ilike(value.replace('%','').replace('_','')+'%')
+    elif re.fullmatch(r'[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{0,4}(?:-[0-9a-fA-F]{0,4}(?:-[0-9a-fA-F]{0,4}(?:-[0-9a-fA-F]{0,12})?)?)?)?',value):
+        condition=cast(Order.codigo_publico,String).ilike(value+'%')
     else:fail('INVALID_CODE','Introduce el número de pedido o al menos ocho caracteres del comprobante',422)
     orders=list(db.scalars(select(Order).where(condition).limit(2)))
     if len(orders)!=1:fail('NOT_FOUND','No se encontró un comprobante único con ese código',404)
     order=orders[0]
     branch_access(db,user,order.sucursal_id)
-    returned=dict(db.execute(select(ExchangeReturn.item_pedido_id,func.sum(ExchangeReturn.cantidad)).group_by(ExchangeReturn.item_pedido_id)).all())
+    returned=dict(db.execute(select(ExchangeReturn.item_pedido_id,func.sum(ExchangeReturn.cantidad)).join(
+        OrderItem,OrderItem.id==ExchangeReturn.item_pedido_id).where(OrderItem.pedido_id==order.id)
+        .group_by(ExchangeReturn.item_pedido_id)).all())
     return {**ticket(order),'cliente_id':order.usuario_id,'items':[{'id':i.id,'variante_id':i.variante_id,'nombre':i.nombre_snapshot,
         'talla':i.talla_snapshot,'color':i.color_snapshot,'cantidad':i.cantidad,'precio_unitario':str(i.precio_unitario),
         'credito_unitario':str((i.subtotal*merchandise_factor(order)/i.cantidad).quantize(CENT)),
@@ -67,14 +70,27 @@ def create_exchange(payload:ExchangeCreate,preview:bool=False,user:User=Depends(
         fail('EXCHANGE_CONFLICT','El comprobante cambió o esta operación ya fue registrada. Comprueba el resultado antes de repetirla.')
 
 
+@router.get('/exchanges/operations/{operation_id}')
+def exchange_result(operation_id:UUID,user:User=Depends(staff),db:Session=Depends(get_db)):
+    previous=db.scalar(select(GarmentExchange).where(GarmentExchange.operacion_id==str(operation_id)))
+    if not previous:fail('NOT_FOUND','No se encontró un cambio confirmado con este identificador',404)
+    branch_access(db,user,previous.sucursal_id,require_active=False)
+    return exchange_payload(db,previous)
+
+
 def apply_exchange(payload,preview,user,db):
+    fingerprint=digest(payload.model_dump(mode='json'))
+    previous=db.scalar(select(GarmentExchange).where(GarmentExchange.operacion_id==str(payload.operacion_id)))
+    if previous:
+        branch_access(db,user,previous.sucursal_id,require_active=False)
+        if previous.payload_hash!=fingerprint:fail('OPERATION_REUSED','Ese cambio ya se registró con otros datos')
+        return exchange_payload(db,previous)
     require_active_subscription(db,user.tenant_id,'products_sales')
     branch_access(db,user,payload.sucursal_id)
     # Serialize all returns of the source ticket, including requests from different cashiers.
     source=db.scalar(select(Order).where(Order.id==payload.pedido_origen_id).with_for_update())
     if not source:fail('NOT_FOUND','Comprobante de origen no encontrado',404)
     branch_access(db,user,source.sucursal_id,require_active=False)
-    fingerprint=digest(payload.model_dump(mode='json'))
     previous=db.scalar(select(GarmentExchange).where(GarmentExchange.operacion_id==str(payload.operacion_id)))
     if previous:
         if previous.payload_hash!=fingerprint:fail('OPERATION_REUSED','Ese cambio ya se registró con otros datos')
