@@ -12,6 +12,25 @@ from app.services import llm_provider, nvidia_agent
 from app.services.ai_errors import AIProviderError
 
 
+@pytest.mark.asyncio
+async def test_catalog_listing_does_not_prove_inference_access(monkeypatch):
+    original_client = httpx.AsyncClient
+    monkeypatch.setattr(settings, "NVIDIA_API_KEY", "catalog-test")
+    monkeypatch.setattr(llm_provider, '_execution_state', None)
+    def handle(request):
+        if request.method == 'GET':
+            return httpx.Response(200, json={'data': [{'id': settings.NVIDIA_MODEL}]})
+        return httpx.Response(404, json={'detail': 'private account identifier'})
+    monkeypatch.setattr(llm_provider.httpx, 'AsyncClient', lambda **kwargs: original_client(**kwargs, transport=httpx.MockTransport(handle)))
+    initial = await llm_provider.provider_status()
+    assert initial['catalog_available'] is True and initial['healthy'] is False
+    with pytest.raises(AIProviderError, match='acceso de la cuenta') as error:
+        await llm_provider.complete([{'role': 'user', 'content': 'Hola'}])
+    assert 'private account identifier' not in str(error.value)
+    result = await llm_provider.provider_status()
+    assert result['execution_verified'] is False and result['healthy'] is False
+
+
 
 
 

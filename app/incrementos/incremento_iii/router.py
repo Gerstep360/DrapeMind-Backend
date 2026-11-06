@@ -12,6 +12,7 @@ from app.models import Order,OrderItem,Payment,Product,ProductVariant,Branch,Bra
 from app.models.saas import Tenant
 from app.services.saas import require_active_subscription
 from app.services.ai import call_nvidia
+from app.services.ai_errors import AIProviderError
 from app.services.financials import net_payments
 from app.modules.carrito_pedidos_y_pagos.cu12_consultar_pedidos_e_historial_de_compras import download_receipt,get_order
 from .models import BusinessReport,CheckoutConfirmation
@@ -125,6 +126,8 @@ async def generate_report(payload:ReportInput,user:User=Depends(admin),db:Sessio
         title=generated['titulo'];analysis=generated['analisis'];recommendations=generated['recomendaciones']
         if not isinstance(title,str) or not isinstance(analysis,str) or not isinstance(recommendations,list) or not all(isinstance(r,str) for r in recommendations):raise ValueError('Invalid report')
         if not title.strip() or not analysis.strip():raise ValueError('Empty report')
+    except AIProviderError as exc:
+        raise HTTPException(503, str(exc)) from exc
     except Exception as exc:
         raise HTTPException(503,'NVIDIA no pudo generar el análisis. Los datos no se sustituyen por cifras inventadas; puedes reintentar.') from exc
     result={'titulo':title[:200],'analisis':analysis[:12000],'recomendaciones':[r[:2000] for r in recommendations[:8]],'datos':data,'origen':'NVIDIA'}

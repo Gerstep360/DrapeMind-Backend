@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import time
+import hashlib
 
 import httpx
 
@@ -11,6 +12,16 @@ from app.core.config import settings
 from app.services.ai_errors import AIProviderError
 
 logger = logging.getLogger("drapemind.llm")
+_execution_state = None
+
+
+def _provider_identity():
+    return (settings.llm_base_url, settings.llm_model, hashlib.sha256(settings.llm_api_key.encode()).digest())
+
+
+def _record_execution(success):
+    global _execution_state
+    _execution_state = (_provider_identity(), time.monotonic(), success)
 
 
 def provider_headers() -> dict[str, str]:
@@ -81,6 +92,7 @@ async def complete(
                         raise AIProviderError(
                             "La respuesta de IA quedó incompleta. Puedes reintentar."
                         )
+                    _record_execution(True)
                     return data
                 async with client.stream(
                     "POST",
@@ -153,25 +165,36 @@ async def complete(
         message = {"role": "assistant", "content": content or None}
         if calls:
             message["tool_calls"] = [calls[index] for index in sorted(calls)]
+        _record_execution(True)
         return {
             "choices": [{"message": message, "finish_reason": finish_reason}],
             "usage": usage,
         }
     except httpx.HTTPStatusError as exc:
+        _record_execution(False)
         # Never include response bodies, credentials or customer prompts in errors/logs.
+        if exc.response.status_code in (403, 404, 410):
+            raise AIProviderError(
+                f"NVIDIA respondió HTTP {exc.response.status_code}: la cuenta no pudo ejecutar el modelo configurado. El administrador debe revisar el acceso de la cuenta al modelo en NVIDIA."
+            ) from exc
         raise AIProviderError(
             f"El proveedor de IA respondió HTTP {exc.response.status_code}. Revisa la clave, el modelo y sus permisos."
         ) from exc
     except (httpx.TimeoutException, TimeoutError) as exc:
+        _record_execution(False)
         logger.warning("NVIDIA request timed out: %s", type(exc).__name__)
         raise AIProviderError(
             "NVIDIA tardó demasiado en responder. No pude verificar la consulta; puedes reintentar."
         ) from exc
     except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+        _record_execution(False)
         logger.warning("NVIDIA transport failed: %s", type(exc).__name__)
         raise AIProviderError(
             "No se pudo completar la conexión con la IA. Puedes reintentar."
         ) from exc
+    except AIProviderError:
+        _record_execution(False)
+        raise
     finally:
         logger.info(
             "LLM model=%s ttft_ms=%s total_ms=%.0f usage=%s",
@@ -256,9 +279,13 @@ async def provider_status() -> dict:
                 )
         except (httpx.HTTPError, ValueError):
             pass
+    verified = (_execution_state[2] if _execution_state and _execution_state[0] == _provider_identity()
+                and time.monotonic() - _execution_state[1] < 300 else None)
     return {
         "provider": "nvidia",
         "configured": bool(settings.NVIDIA_API_KEY),
-        "healthy": healthy,
+        "catalog_available": healthy,
+        "execution_verified": verified,
+        "healthy": healthy and verified is True,
         "model": settings.NVIDIA_MODEL,
     }
