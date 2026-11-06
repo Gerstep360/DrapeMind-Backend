@@ -25,6 +25,7 @@ ProductVariant.__table__.append_constraint(UniqueConstraint("tenant_id", "sku", 
 ProductVariant.__table__.append_constraint(UniqueConstraint("tenant_id", "codigo_barras", name="uq_variantes_tenant_barcode"))
 from app.db.base import Base
 from app.incrementos.incremento_ii.models import SupplyOrder, SupplyOrderItem, OfflineReservationReceipt, SyncOperation, SyncAudit, GarmentExchange, ExchangeReturn
+from app.incrementos.incremento_iii.models import CheckoutConfirmation,BusinessReport
 tenant_metadata_constraints(Base.metadata)
 
 Promotion.__table__.append_constraint(UniqueConstraint("tenant_id", "codigo", name="uq_promociones_tenant_codigo"))

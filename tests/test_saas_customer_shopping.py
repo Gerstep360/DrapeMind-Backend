@@ -87,8 +87,9 @@ def test_unavailable_store_sends_customer_to_shopping_directory(client,factory):
 
 @pytest.fixture
 def stocked(factory):
-    with factory.kw['bind'].connect() as connection:
-        connection.connection.driver_connection.create_function('gen_random_uuid',0,lambda:uuid4().hex)
+    if factory.kw['bind'].dialect.name=='sqlite':
+        with factory.kw['bind'].connect() as connection:
+            connection.connection.driver_connection.create_function('gen_random_uuid',0,lambda:uuid4().hex)
     with factory(tenant_id=1) as db:
         user=User(nombre='Comprador',email='buyer@example.com',password_hash='test',rol=Role.CLIENTE,estado=UserStatus.ACTIVO)
         db.add(user);db.flush()

@@ -58,3 +58,5 @@ backups/
 .deploy/
 deploy.json
 !.env.production.example
+
+!docs/entregas/Incremento_III_Completo.zip

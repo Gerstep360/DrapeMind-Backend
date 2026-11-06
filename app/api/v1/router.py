@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 from app.incrementos.incremento_i.router import router as incremento_i_router
 from app.incrementos.incremento_ii.router import router as incremento_ii_router
+from app.incrementos.incremento_iii.router import router as incremento_iii_router
 
 from app.modules.acceso_y_gestion_de_usuarios import admin_users_router, auth_router, users_router
 from app.modules.analitica_y_control import analytics_router
@@ -22,6 +23,7 @@ from app.modules.sucursales_inventario_y_proveedores import (
 api_router = APIRouter()
 api_router.include_router(incremento_i_router)
 api_router.include_router(incremento_ii_router)
+api_router.include_router(incremento_iii_router)
 
 # Notificaciones y Dispositivos Multi-Terminal (1:N)
 api_router.include_router(notifications_router, tags=["Notificaciones y Dispositivos Push"])

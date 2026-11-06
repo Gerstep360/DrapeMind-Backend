@@ -7,6 +7,7 @@ from app.models import Order, User
 from app.schemas.api import CheckoutRequest, OrderOut
 from app.services.realtime import event_hub
 from app.services.store import checkout_cart
+from app.incrementos.incremento_ii.common import digest
 
 router = APIRouter()
 
@@ -34,17 +35,20 @@ def realizar_checkout(
         payload.codigo_promocion,
         payload.sucursal_id,
         payload.canal,
+        str(payload.operacion_id) if payload.operacion_id else None,
+        digest(payload.model_dump(mode='json')),
     )
+    if db.info.get('checkout_replayed'):return order
     background_tasks.add_task(
         event_hub.publish,
         {"type": "order_created", "order_id": order.id, "status": order.estado},
         None,
         {"ADMIN", "VENDEDOR"},
     )
-    from app.services.push_notifications import dispatch_notification
+    from app.incrementos.incremento_iii.notifications import notify
     background_tasks.add_task(
-        dispatch_notification,
-        db,
+        notify,
+        order.tenant_id,
         order.usuario_id,
         "Compra Registrada",
         f"Tu pedido #{order.id} ha sido registrado exitosamente por Bs. {float(order.total):,.2f}.",

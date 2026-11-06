@@ -128,6 +128,7 @@ def test_cu12_receipt_json_allows_pending_order():
     tenant=SimpleNamespace(id=1,name='Tienda de prueba',slug='prueba',address=None,phone=None,contact_email=None)
     db.get.side_effect = lambda model, obj_id: tenant if model is Tenant else order if obj_id == 42 else None
     db.scalars.return_value = []
+    db.scalar.return_value = order
 
     user = SimpleNamespace(id=10, rol=Role.CLIENTE)
     result = download_receipt(42, format="json", current_user=user, db=db)

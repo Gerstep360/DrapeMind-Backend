@@ -1,14 +1,14 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException,Query
 from fastapi.responses import PlainTextResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_roles
 from app.db.session import get_db
-from app.models import Branch, Order, OrderItem, Payment, Role, User
+from app.models import Branch, BranchStaff, Order, OrderItem, Payment, Role, User
 from app.schemas.api import OrderOut, OrderStatusUpdate
 from app.services.realtime import event_hub
 from app.services.merchant_identity import receipt_identity
@@ -24,17 +24,16 @@ router = APIRouter()
 
 @router.get("", response_model=list[OrderOut], summary="CU-12: Historial de pedidos")
 def list_orders(
-    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+    current_user: User = Depends(get_current_user), db: Session = Depends(get_db),
+    limit:int=Query(200,ge=1,le=200),before_id:int|None=None,estado:str|None=None,
 ) -> list[Order]:
-    if current_user.rol in (Role.ADMIN, Role.VENDEDOR):
-        return list(db.scalars(select(Order).order_by(Order.created_at.desc())))
-    return list(
-        db.scalars(
-            select(Order)
-            .where(Order.usuario_id == current_user.id)
-            .order_by(Order.created_at.desc())
-        )
-    )
+    query=select(Order)
+    if current_user.rol in (Role.ENCARGADO,Role.CAJERO,Role.VENDEDOR):
+        query=query.where(Order.sucursal_id.in_(select(BranchStaff.sucursal_id).where(BranchStaff.usuario_id==current_user.id,BranchStaff.activo.is_(True))))
+    elif current_user.rol!=Role.ADMIN:query=query.where(Order.usuario_id==current_user.id)
+    if before_id is not None:query=query.where(Order.id<before_id)
+    if estado:query=query.where(Order.estado==estado)
+    return list(db.scalars(query.order_by(Order.id.desc()).limit(limit)))
 
 
 @router.get(
@@ -47,7 +46,7 @@ def get_order(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Order:
-    if current_user.rol in (Role.ADMIN, Role.VENDEDOR):
+    if current_user.rol in (Role.ADMIN, Role.VENDEDOR,Role.ENCARGADO,Role.CAJERO):
         order = db.get(Order, order_id)
     else:
         order = db.scalar(
@@ -57,6 +56,8 @@ def get_order(
         )
     if not order:
         raise HTTPException(404, "Pedido no encontrado")
+    if order.usuario_id!=current_user.id and current_user.rol!=Role.ADMIN and not staff_can_access_branch(db,current_user,order.sucursal_id):
+        raise HTTPException(404,'Pedido no encontrado')
     return order
 
 
@@ -108,7 +109,7 @@ def update_status(
     background_tasks.add_task(
         event_hub.publish, event, None, {"ADMIN", "VENDEDOR"}
     )
-    from app.services.push_notifications import dispatch_notification
+    from app.incrementos.incremento_iii.notifications import notify
     estado_labels = {
         "PAGADO": "Pagado y confirmado",
         "PREPARANDO": "En preparacion en atelier",
@@ -119,8 +120,8 @@ def update_status(
     }
     label = estado_labels.get(order.estado, order.estado)
     background_tasks.add_task(
-        dispatch_notification,
-        db,
+        notify,
+        order.tenant_id,
         order.usuario_id,
         f"Pedido #{order.id}: {label}",
         f"Tu pedido #{order.id} ha cambiado al estado: {label}.",
@@ -205,7 +206,7 @@ def download_receipt(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    order = db.get(Order, order_id)
+    order = get_order(order_id,current_user,db)
     if not order or (
         order.usuario_id != current_user.id
         and current_user.rol not in (Role.ADMIN, Role.VENDEDOR, Role.ENCARGADO, Role.CAJERO)

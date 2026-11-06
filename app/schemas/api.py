@@ -329,11 +329,12 @@ class QRValidationRequest(BaseModel):
 
 
 class CheckoutRequest(BaseModel):
+    operacion_id: UUID | None = None
     tipo_entrega: Literal["DELIVERY", "RECOJO"]
     sucursal_id: int | None = Field(default=None,gt=0)
     canal: Literal['WEB','MOBILE'] = 'WEB'
     direccion_id: int | None = None
-    costo_envio: Decimal = Field(default=0, ge=0)
+    costo_envio: Decimal = Field(default=Decimal('0.00'), ge=0)
     observacion: str | None = Field(default=None, max_length=300)
     codigo_promocion: str | None = Field(default=None, max_length=50)
 

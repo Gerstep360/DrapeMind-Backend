@@ -634,7 +634,19 @@ def checkout_cart(
     promotion_code: str | None = None,
     branch_id: int | None = None,
     channel: str = 'WEB',
+    operation_id: str | None = None,
+    payload_hash: str | None = None,
 ) -> Order:
+    if operation_id:
+        from app.incrementos.incremento_iii.models import CheckoutConfirmation
+        db.info['checkout_replayed']=False
+        db.scalar(select(User).where(User.id==user.id).with_for_update())
+        prior=db.scalar(select(CheckoutConfirmation).where(CheckoutConfirmation.usuario_id==user.id,CheckoutConfirmation.operacion_id==operation_id))
+        if prior:
+            if prior.payload_hash!=payload_hash:
+                raise HTTPException(409,'Esta confirmación ya se utilizó con otros datos. Revisa el pedido existente.')
+            db.info['checkout_replayed']=True
+            return db.get(Order,prior.pedido_id)
     cart = get_active_cart(db, user.id, create=False)
     if cart:
         cart=db.scalar(select(Cart).where(Cart.id==cart.id).with_for_update().execution_options(populate_existing=True))
@@ -711,6 +723,7 @@ def checkout_cart(
                 promo.usos_actuales += 1
                 promo_tag = f"[Cupón: {promo.codigo}]"
 
+    shipping=settings.DELIVERY_FEE_BOB if delivery_type=='DELIVERY' else Decimal('0.00')
     total_amount = max(Decimal("0.00"), subtotal - descuento + shipping)
     final_obs = f"{observation} {promo_tag}".strip() if promo_tag else observation
 
@@ -740,6 +753,8 @@ def checkout_cart(
             descuento=0, subtotal=item.precio_referencia * item.cantidad,
         ))
     cart.estado = "CONVERTIDO"
+    if operation_id:
+        db.add(CheckoutConfirmation(usuario_id=user.id,operacion_id=operation_id,payload_hash=payload_hash,pedido_id=order.id))
     db.commit()
     db.refresh(order)
     return order

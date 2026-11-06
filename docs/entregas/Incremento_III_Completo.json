@@ -1,0 +1,1028 @@
+{
+  "incremento": "III",
+  "casos": "CU-21 a CU-25",
+  "diagramas": 76,
+  "archivos": [
+    {
+      "archivo": "00_TRAZABILIDAD.md",
+      "sha256": "527b5f4b2125030bc3192aba1a6a2c61b0ce2c47d563dba6ede56bae6150fd3a"
+    },
+    {
+      "archivo": "README.md",
+      "sha256": "e017359cbf44db2d08f06c5dfe27960cb522281e0c2494d23506e0bee8273e81"
+    },
+    {
+      "archivo": "capitulo-I\\ALCANCE.md",
+      "sha256": "c8d21facd719e2eb27740ffbd7747b6ff989a4a011145b21ab5dc8ec4908410f"
+    },
+    {
+      "archivo": "capitulo-III\\3.1_Modelo_de_dominio\\CU-21\\CU-21_Dominio.png",
+      "sha256": "29d6f901a5b208914981c3540e0e7a9cf7e91bff9b8cfdac46127bac2ab5ac4c"
+    },
+    {
+      "archivo": "capitulo-III\\3.1_Modelo_de_dominio\\CU-21\\CU-21_Dominio.puml",
+      "sha256": "aa2bbe3861bc45095e4e8f452fcc87196d0e2e72f2837087ae852e5e59651f26"
+    },
+    {
+      "archivo": "capitulo-III\\3.1_Modelo_de_dominio\\CU-21\\CU-21_Dominio.svg",
+      "sha256": "716e31e1f41013012ae0a8606cdf7d4333becbbb579f9a78bbf9ee8146719b2d"
+    },
+    {
+      "archivo": "capitulo-III\\3.1_Modelo_de_dominio\\CU-22\\CU-22_Dominio.png",
+      "sha256": "4b5e8fbc3e8dee70b6efff60dc7b670e3e27d9be7c2b51f772d0038abd707cf3"
+    },
+    {
+      "archivo": "capitulo-III\\3.1_Modelo_de_dominio\\CU-22\\CU-22_Dominio.puml",
+      "sha256": "86d6b2968ab568d295e1f756e8fbc93d5c4cd7c135538db7594eaf8dde936bc1"
+    },
+    {
+      "archivo": "capitulo-III\\3.1_Modelo_de_dominio\\CU-22\\CU-22_Dominio.svg",
+      "sha256": "bd77be76a40e13e4075fdf66bd0643a27004e445225813e67903d0c472c3b6a3"
+    },
+    {
+      "archivo": "capitulo-III\\3.1_Modelo_de_dominio\\CU-23\\CU-23_Dominio.png",
+      "sha256": "ab0e04f589a0abdd3a25a863f1d2397f5f0292601e38f4ac05b7bcf368984c25"
+    },
+    {
+      "archivo": "capitulo-III\\3.1_Modelo_de_dominio\\CU-23\\CU-23_Dominio.puml",
+      "sha256": "22591f7e7086ef31f7121d1a4e519bfb34c510f63dd2f732ed552535c0908eed"
+    },
+    {
+      "archivo": "capitulo-III\\3.1_Modelo_de_dominio\\CU-23\\CU-23_Dominio.svg",
+      "sha256": "809d50d0d5eca3257093c4864398faa8bd514fcb9d8adb93c871ea7a9040fd13"
+    },
+    {
+      "archivo": "capitulo-III\\3.1_Modelo_de_dominio\\CU-24\\CU-24_Dominio.png",
+      "sha256": "8c19f82ac504d93d59637c6564dd011c9f8efa635152fad70f301ae16cad7b86"
+    },
+    {
+      "archivo": "capitulo-III\\3.1_Modelo_de_dominio\\CU-24\\CU-24_Dominio.puml",
+      "sha256": "e67fde4839f2f760b2edeae00fc8a5fef9568dd2ca0050e52f410977015eb6da"
+    },
+    {
+      "archivo": "capitulo-III\\3.1_Modelo_de_dominio\\CU-24\\CU-24_Dominio.svg",
+      "sha256": "493e07b0d1aacd4f4fd940955e460e23cdd412835a2d713f246f385fc2400cad"
+    },
+    {
+      "archivo": "capitulo-III\\3.1_Modelo_de_dominio\\CU-25\\CU-25_Dominio.png",
+      "sha256": "5617663f177d59270323c2c216646a7117dcca9e0aff8d555775f9103bbb3b0d"
+    },
+    {
+      "archivo": "capitulo-III\\3.1_Modelo_de_dominio\\CU-25\\CU-25_Dominio.puml",
+      "sha256": "b61c976fbb40f8a9674266e87d07051bad7877ef0885dedeea519389c664aca4"
+    },
+    {
+      "archivo": "capitulo-III\\3.1_Modelo_de_dominio\\CU-25\\CU-25_Dominio.svg",
+      "sha256": "d69b2642c268939123733074a873e54eb90ca05d9ca25042629619c014531539"
+    },
+    {
+      "archivo": "capitulo-III\\3.2_Diagramas_de_robustez\\CU-21\\CU-21_Robustez.png",
+      "sha256": "9a7a96dbe7b21e6e84b9243a6aa850a4a096e8ec88f5176c7bcaa26cd7b17a50"
+    },
+    {
+      "archivo": "capitulo-III\\3.2_Diagramas_de_robustez\\CU-21\\CU-21_Robustez.puml",
+      "sha256": "4c409784560fbda1fb28036db5941fa271b1075ee65bd45d9f5898e7d462a7bb"
+    },
+    {
+      "archivo": "capitulo-III\\3.2_Diagramas_de_robustez\\CU-21\\CU-21_Robustez.svg",
+      "sha256": "7577587d06c63e8956180c533e0934cefb24eb801878ec20640902b2728ddc8b"
+    },
+    {
+      "archivo": "capitulo-III\\3.2_Diagramas_de_robustez\\CU-22\\CU-22_Robustez.png",
+      "sha256": "f15daf980010ec26ca7f0e54fb31a662663d9cc0f205bf5481822d28b15b6919"
+    },
+    {
+      "archivo": "capitulo-III\\3.2_Diagramas_de_robustez\\CU-22\\CU-22_Robustez.puml",
+      "sha256": "5a3f8c5f3532a8877fd4b812ab3617a157de4583196ba46d7b9dd7485c5488f4"
+    },
+    {
+      "archivo": "capitulo-III\\3.2_Diagramas_de_robustez\\CU-22\\CU-22_Robustez.svg",
+      "sha256": "3aaf6c36baf62312f5795766812764a37ac66e4f538693169927ae0d06ed0309"
+    },
+    {
+      "archivo": "capitulo-III\\3.2_Diagramas_de_robustez\\CU-23\\CU-23_Robustez.png",
+      "sha256": "35bd88ea818c389e6b0b37b70d9a5ae2225bd540272e35421ff75d230ec22f40"
+    },
+    {
+      "archivo": "capitulo-III\\3.2_Diagramas_de_robustez\\CU-23\\CU-23_Robustez.puml",
+      "sha256": "1effb70fcd3d7b89ef90b746ba899a14b9a566b9a2e994ca410806a93953b24b"
+    },
+    {
+      "archivo": "capitulo-III\\3.2_Diagramas_de_robustez\\CU-23\\CU-23_Robustez.svg",
+      "sha256": "6c84ea8b7f17c422b4668914bb0566c11e7b5fbafdb230ac03a9e340630fab08"
+    },
+    {
+      "archivo": "capitulo-III\\3.2_Diagramas_de_robustez\\CU-24\\CU-24_Robustez.png",
+      "sha256": "938c61f20151ab68c2e7fa220bfc538c1677275d3cf5f6c7ff1204b7e62b013d"
+    },
+    {
+      "archivo": "capitulo-III\\3.2_Diagramas_de_robustez\\CU-24\\CU-24_Robustez.puml",
+      "sha256": "edfa6b5eea570a1d23bb4706fa104ba8a81558e608e65084bb73dee0167460e8"
+    },
+    {
+      "archivo": "capitulo-III\\3.2_Diagramas_de_robustez\\CU-24\\CU-24_Robustez.svg",
+      "sha256": "ce711a9e341b04c5cc4a2480d13babdb95d5501004cd0f8b9101d02b23504bea"
+    },
+    {
+      "archivo": "capitulo-III\\3.2_Diagramas_de_robustez\\CU-25\\CU-25_Robustez.png",
+      "sha256": "94ad3058b1eb7479f044ac07e35531141cb9cc7da253ef2d61a3585ca2c6e7e2"
+    },
+    {
+      "archivo": "capitulo-III\\3.2_Diagramas_de_robustez\\CU-25\\CU-25_Robustez.puml",
+      "sha256": "1dd7d02d64c7c1602ff28522bd53ef4ed7976aa26eab3d61de8028e22ef6de93"
+    },
+    {
+      "archivo": "capitulo-III\\3.2_Diagramas_de_robustez\\CU-25\\CU-25_Robustez.svg",
+      "sha256": "5b836f133de95a06618e26d6bce5144c2a37291f42f18057cd7abdebabe6f59f"
+    },
+    {
+      "archivo": "capitulo-III\\3.3_Diagramas_de_secuencia_UML\\CU-21\\CU-21_Secuencia.png",
+      "sha256": "85ce9a72048cdabe99216720d4a23bb7cc65c4f99421e04745cba798ff47f5ff"
+    },
+    {
+      "archivo": "capitulo-III\\3.3_Diagramas_de_secuencia_UML\\CU-21\\CU-21_Secuencia.puml",
+      "sha256": "48a25b6c97f9739535d1a0e05f2b6f06581705af93b604f1fda0b08ebe550ff9"
+    },
+    {
+      "archivo": "capitulo-III\\3.3_Diagramas_de_secuencia_UML\\CU-21\\CU-21_Secuencia.svg",
+      "sha256": "5683a47375e7cb9584e1b43b00e2cfa430500e163a520d2704d4c26d7bac84d6"
+    },
+    {
+      "archivo": "capitulo-III\\3.3_Diagramas_de_secuencia_UML\\CU-22\\CU-22_Secuencia.png",
+      "sha256": "765373360e374c4f1aa6e2f23f286193fe86bebe95690c5e69214cab63768045"
+    },
+    {
+      "archivo": "capitulo-III\\3.3_Diagramas_de_secuencia_UML\\CU-22\\CU-22_Secuencia.puml",
+      "sha256": "93c6c611ceed4eae4281e88b7984ec7b66cb365a5451466068a942b7a27aed60"
+    },
+    {
+      "archivo": "capitulo-III\\3.3_Diagramas_de_secuencia_UML\\CU-22\\CU-22_Secuencia.svg",
+      "sha256": "359c8ffbea362e7829fb666db9c3986631e693196b2c7540a7368000a08dc442"
+    },
+    {
+      "archivo": "capitulo-III\\3.3_Diagramas_de_secuencia_UML\\CU-23\\CU-23_Secuencia.png",
+      "sha256": "37c20ab89c112c99f7ceaff2eea318f11395ea03668593b432c849ca50935a84"
+    },
+    {
+      "archivo": "capitulo-III\\3.3_Diagramas_de_secuencia_UML\\CU-23\\CU-23_Secuencia.puml",
+      "sha256": "e0dbe02098b4dd139bca57703a0813514dbb0931665c15a1d6f288d7a99bb616"
+    },
+    {
+      "archivo": "capitulo-III\\3.3_Diagramas_de_secuencia_UML\\CU-23\\CU-23_Secuencia.svg",
+      "sha256": "4c90d9e52aaee229a7be4e84bafcb366bcc5913b5417a81772e17c9da72349a4"
+    },
+    {
+      "archivo": "capitulo-III\\3.3_Diagramas_de_secuencia_UML\\CU-24\\CU-24_Secuencia.png",
+      "sha256": "97533f7ad3c35453580041b73b77fdddb4e336fe5ba576dbd2eabb6f2bc67995"
+    },
+    {
+      "archivo": "capitulo-III\\3.3_Diagramas_de_secuencia_UML\\CU-24\\CU-24_Secuencia.puml",
+      "sha256": "fa4aaf18d52e4ca1f3b15d6d8d78dd2ffb80115d3e49e16ef71a8c58c2671fcb"
+    },
+    {
+      "archivo": "capitulo-III\\3.3_Diagramas_de_secuencia_UML\\CU-24\\CU-24_Secuencia.svg",
+      "sha256": "f58c239cc8a2ed9ba94243d568485f92572c5ef1cf0e4ad68d20de01d1ae9aa7"
+    },
+    {
+      "archivo": "capitulo-III\\3.3_Diagramas_de_secuencia_UML\\CU-25\\CU-25_Secuencia.png",
+      "sha256": "71cb94925cd3257421799e3a61a9081435867bc6a51e491feed419201b25c662"
+    },
+    {
+      "archivo": "capitulo-III\\3.3_Diagramas_de_secuencia_UML\\CU-25\\CU-25_Secuencia.puml",
+      "sha256": "ea04524e7b3ce14059f5e469980692ccf55126d1b7edef3d61ec52b7d7f0105a"
+    },
+    {
+      "archivo": "capitulo-III\\3.3_Diagramas_de_secuencia_UML\\CU-25\\CU-25_Secuencia.svg",
+      "sha256": "d6e873bac3492726da938063b1466ab06590b2eee8d7bb06299127214bb0f198"
+    },
+    {
+      "archivo": "capitulo-III\\3.4_Diagrama_de_clases_UML\\CU-21\\CU-21_Clases.png",
+      "sha256": "969ef84ce4cf2b27f8c63a3640ae61e59186c2b786a5e38c2cd7d5cb0acc5a39"
+    },
+    {
+      "archivo": "capitulo-III\\3.4_Diagrama_de_clases_UML\\CU-21\\CU-21_Clases.puml",
+      "sha256": "e9be8077e44dd0930d3fb890ecf8bc6eb2dd2fc51fca1ba78432419185ce61b1"
+    },
+    {
+      "archivo": "capitulo-III\\3.4_Diagrama_de_clases_UML\\CU-21\\CU-21_Clases.svg",
+      "sha256": "f2c9dbc831c377aafc612da2d9ee2693f645ccbb41bb7fad507cb7a7cc88f678"
+    },
+    {
+      "archivo": "capitulo-III\\3.4_Diagrama_de_clases_UML\\CU-22\\CU-22_Clases.png",
+      "sha256": "1bc81d351f3149e449e9b7c04b650b463de887e4251fc3491da95f0065b0151b"
+    },
+    {
+      "archivo": "capitulo-III\\3.4_Diagrama_de_clases_UML\\CU-22\\CU-22_Clases.puml",
+      "sha256": "306e1421baf42aded2c7bc0da0e6b153b3a7eb3e421ce3452b206a36c1ee88f2"
+    },
+    {
+      "archivo": "capitulo-III\\3.4_Diagrama_de_clases_UML\\CU-22\\CU-22_Clases.svg",
+      "sha256": "563d466f60c85938b72d8b52a205a6c0797d079056922081b40d69a41a0bd1a4"
+    },
+    {
+      "archivo": "capitulo-III\\3.4_Diagrama_de_clases_UML\\CU-23\\CU-23_Clases.png",
+      "sha256": "9a1a560696ede923e873e0ccb5554bd6f1a1e695a223a2956f3893f79d0e26bd"
+    },
+    {
+      "archivo": "capitulo-III\\3.4_Diagrama_de_clases_UML\\CU-23\\CU-23_Clases.puml",
+      "sha256": "749c678ef107c487f5776d838418ccf401e4ea57ac074799140f3245187c70cd"
+    },
+    {
+      "archivo": "capitulo-III\\3.4_Diagrama_de_clases_UML\\CU-23\\CU-23_Clases.svg",
+      "sha256": "847b9da759d24a0c91e95ae4bfc2f93c74b6a15991c80fa8d7a6b19d960d5574"
+    },
+    {
+      "archivo": "capitulo-III\\3.4_Diagrama_de_clases_UML\\CU-24\\CU-24_Clases.png",
+      "sha256": "88717e3fa12fbf8f2c724065e14951aad353508add719df1f9a310e24333d36a"
+    },
+    {
+      "archivo": "capitulo-III\\3.4_Diagrama_de_clases_UML\\CU-24\\CU-24_Clases.puml",
+      "sha256": "e4b4253d8a37ed6c4b37160b18051e9a778fd07d0d9bb734cdd739a035f332e8"
+    },
+    {
+      "archivo": "capitulo-III\\3.4_Diagrama_de_clases_UML\\CU-24\\CU-24_Clases.svg",
+      "sha256": "263db86070294370276f2e8a67af3e288b7f4972233dc08b3c90bbcaf0b6aa4f"
+    },
+    {
+      "archivo": "capitulo-III\\3.4_Diagrama_de_clases_UML\\CU-25\\CU-25_Clases.png",
+      "sha256": "153993ba211780f9bfcebd7523487d0e68b071d63892da421cd5302f1303a17f"
+    },
+    {
+      "archivo": "capitulo-III\\3.4_Diagrama_de_clases_UML\\CU-25\\CU-25_Clases.puml",
+      "sha256": "d140aa6bd158ac009b006a88e8e368406b9a9d1e4d05eb4980821a1651cfeb24"
+    },
+    {
+      "archivo": "capitulo-III\\3.4_Diagrama_de_clases_UML\\CU-25\\CU-25_Clases.svg",
+      "sha256": "3da1a0764746c9f0ebdfd45ff0dc245f989d873f52132f5ffc4fc0ecb6055c7c"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\esquema_verificado.json",
+      "sha256": "e82540deb12bea13150ea44871e27dc3088bd63ca84604b228b1a46943e9dae2"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico_PostgreSQL.sql",
+      "sha256": "2244d1f2ac744efb043de47745c818e9c261af8ef140c6998b09866195cd7a95"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_conceptual\\Modelo_conceptual.png",
+      "sha256": "72b744355b3301659023177218131db0be74fb83352c3fcc7dba74c271707286"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_conceptual\\Modelo_conceptual.puml",
+      "sha256": "a16b3a4a2e51cd3e5dd61b074e86911c317b4ebcf9370c2a061456b30f97778d"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_conceptual\\Modelo_conceptual.svg",
+      "sha256": "8ae58b43d9070d2910667ebf4f6a2c5ccfe1f69a032dd4f59aa7740cd932b800"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_abastecimiento_items.png",
+      "sha256": "4e57fb4dc91385896dccd58d465a7df14ad0aa126f6390137bb1ffd1c5febc02"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_abastecimiento_items.puml",
+      "sha256": "c3d31f447a8d7c088457a1a70326aa6054eaa20fd4d7dcdb3be681cc7f94d19f"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_abastecimiento_items.svg",
+      "sha256": "c50fff11ffecfdcb0f080d8dc82abd22d2f17e50b22dadb383b585332fae9715"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_abastecimiento_pedidos.png",
+      "sha256": "9cc543dd058bf389d03546122bf5ad6cdf764eea4ade411a75684a26a36fa092"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_abastecimiento_pedidos.puml",
+      "sha256": "4dbf9ec847c046844db9e0ee369603dff0de3d36391d230b56fc3d16c77e26d3"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_abastecimiento_pedidos.svg",
+      "sha256": "9128881ef11ba2c5b88a82df8aec66a465297c3e357734562328b2f7c73d695f"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_cambios_prendas.png",
+      "sha256": "035f97036e7089620b1491c7a8114b0d0a25b8c29ab360a7f2ec46c5735ff83a"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_cambios_prendas.puml",
+      "sha256": "e069bd346c9bd28c816c38aefd74b330d14b365f446d76065b7946db3772df7d"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_cambios_prendas.svg",
+      "sha256": "0813d8732d14c247e35b38f29502c3a0d30e1cfe4d50db1ef0b4fdf7da02a4bc"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_cambios_prendas_devoluciones.png",
+      "sha256": "7ee42a737b87a88157984274f51b966bc0c3400ea8178f5f48f98ece32b85100"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_cambios_prendas_devoluciones.puml",
+      "sha256": "7dda027df36baf87371b7b8220df732ad4663b0ac3a6847688ed3c0cb84ca6a8"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_cambios_prendas_devoluciones.svg",
+      "sha256": "7f430e1c31206bdce9c7dfa80de6044459861de9718fd84404e9ba6962bcc6bc"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_carritos.png",
+      "sha256": "db0ecc1994ee3ea0c885d29846432c637bed4d50780c6d5636a6b894ad2ce250"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_carritos.puml",
+      "sha256": "5eb70c195db577b2c183a5022ac1fcc9e5c5075e9cc32bf7400a91521a011581"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_carritos.svg",
+      "sha256": "c3e1330e3a0173e73906c7e445c07e9a2f9f3846848c8883d462fa8927fd167c"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_categorias.png",
+      "sha256": "2cc1769d6c070932b9247d7b7d4b442556f603f9b68ce97450fd765ef84e81f6"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_categorias.puml",
+      "sha256": "cf6ee22845b597cc4ce36c070d98cf84a8569c0c5cfc69a5fa9c678a3127a4c7"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_categorias.svg",
+      "sha256": "ca5c35f6d7f8ae529261d499976aa65ce56899c7925be88d762e658afd0020e3"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_checkout_confirmaciones.png",
+      "sha256": "366f612565a94ba895364b13753d1b9e481985f48ed8e5d034a874af36878426"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_checkout_confirmaciones.puml",
+      "sha256": "6021960baf69cc11e236ab66eaff3054170536168d3c3e894c685f3df1223cf7"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_checkout_confirmaciones.svg",
+      "sha256": "c454bab6702ec37c40b2f1fff654910050c1f9ed4bcdc862b4a81c3ca918ee2a"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_ciudades.png",
+      "sha256": "efae7970cb0d45a057487dc841f8b7ed624f8f6160e74005e2a57c523d486071"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_ciudades.puml",
+      "sha256": "6dd0aa3a60f3469cb5bd1cdc45eabeeb731267e23cc2b746a14d083ca16cdb51"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_ciudades.svg",
+      "sha256": "36393255da3b91963a992b56ee1f2a0e076d2f5b624d37dc4e2bb51c406728d5"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_customer_accounts.png",
+      "sha256": "ec4b31e33923faa22f2df5dadf072857f05c896ea7d08daa010d4151acec9abf"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_customer_accounts.puml",
+      "sha256": "44840bdbb7efb756e4d1c71df5ace28b2d16161a3df8ca155dcbc63e8b19c699"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_customer_accounts.svg",
+      "sha256": "c93c25d2a79acb55d22c26c4339b69ccb6f6ecf1cdd03f73bbbc787ab1d37580"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_direcciones.png",
+      "sha256": "f9b7d98ddb9f6ccd54256e48a818130961b4020f99ddb4d67d070aed80074826"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_direcciones.puml",
+      "sha256": "fd79844479e8ad0672028a3fc56f25ce44f6ca2f09751bf4d932a9fc1b5826f7"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_direcciones.svg",
+      "sha256": "6d076fc8000313760407bfc031acf11849016d3429f21a42747646fed473e13a"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_items_carrito.png",
+      "sha256": "603d24ab279b4cb3a42a38251f03f845491f643ff6d29ec33d364fdecf9364f3"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_items_carrito.puml",
+      "sha256": "e6050a427dbf40f56f108360dfad1e1ad4735884bfab4517290f588009d76500"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_items_carrito.svg",
+      "sha256": "549215bb2032e18386a9306ac831ebb666ecc918cc5f16956f55b2e09045295a"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_items_pedido.png",
+      "sha256": "9a11d770166e6f955df7f134a9e001028abde69764fea75618d8de383bd51719"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_items_pedido.puml",
+      "sha256": "d58e6abb40c3e4f8c89502d63dee1fb39d4cffb5b8d639fb5679caae67adbc04"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_items_pedido.svg",
+      "sha256": "e9c20f2c798c7e6dce95c0ee5a67d31399fb96747ae5789779605e1685e5ef27"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_items_reserva.png",
+      "sha256": "1b4fa2270eef496871293a1352dd9476e62c6f99dc92dad3b6034501156f76ee"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_items_reserva.puml",
+      "sha256": "b2814c6d9ff42e07f9bd3de42ca100135a8f39ee2766e97dace04653f62fabf9"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_items_reserva.svg",
+      "sha256": "fd248885de8356fe8a76eb8ca05b1186e39395ec840adae38b324c239dbeb127"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_movimientos_inventario.png",
+      "sha256": "364b62e14cfd523c94e21ac7f35453112e165ea43c4d20b6719a5c6e76067905"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_movimientos_inventario.puml",
+      "sha256": "38032cabafd18eedb0d65fec7ad2434d90e5179a307c9797995d60afc3db6978"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_movimientos_inventario.svg",
+      "sha256": "ac1f2d0b4dedf68e57b0921efd08350a2319788a7d6ab4feadb74cbd50dcf731"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_offline_operaciones.png",
+      "sha256": "6ba05def8b345a5dd0adabbebef07e1cba2e86b034e8ffeb316cfdad142ddaf0"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_offline_operaciones.puml",
+      "sha256": "5e70b20814431882eb7caaf87996732aae175c0960eacfca66fa3fce3c193ca2"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_offline_operaciones.svg",
+      "sha256": "fd377c58934383ac7972092441f885cf903e6038fc766de47da382f5f650e93b"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_offline_operaciones_auditoria.png",
+      "sha256": "bca5f63e6b91ca67fe4b6b9587ada97d35c7d0f1f0f252800dc41a5b1248c07c"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_offline_operaciones_auditoria.puml",
+      "sha256": "f049ece4e9cade5d8a8c934bfa36871508ec98390f35ff0c3727d227fb9aa4c5"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_offline_operaciones_auditoria.svg",
+      "sha256": "a67f8134eb28b4edcf965e5754bf109b119fac11efe1c44b028ae3c4f7c03cdf"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_offline_reservas_recibidas.png",
+      "sha256": "b4a8d00671e2a6ade945f4dd1ff81928f0c901d59b10518a9cb5c330a34ca167"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_offline_reservas_recibidas.puml",
+      "sha256": "5737155b3213687fc0f2ceaa0c5b6f4c2fb10487e289b0ca34abfc2a23364b7b"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_offline_reservas_recibidas.svg",
+      "sha256": "1d971aa747b557ef6445cf0c8a8ed4c8cd517f04ff8842729b106011d4b5f8fa"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_pagos.png",
+      "sha256": "130f04ab47e689795ab2075d53e59ed45aac13159f22cdde940cb7f83cb60191"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_pagos.puml",
+      "sha256": "a1e1f69563ce833c19401adfd71209eb29d2c121b1285787bbf2b9df9d8de37d"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_pagos.svg",
+      "sha256": "0e1ce29fb880776e51cbb3317a1b811fbef98ab26e1cb2d0cc150972fac656c7"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_pedidos.png",
+      "sha256": "461eacf4d2b0abe5e5930fef7c84d99f2a72f0274380312a90a0fc1c70c6fec8"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_pedidos.puml",
+      "sha256": "4d483244ddd81eba744bf83794aa14c751c9271bb5c1f5800e8ddf5ed015baf8"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_pedidos.svg",
+      "sha256": "68f1574113e190e8571989a4eeb84a0fb0529266a05a81c63445fad02a3a29a2"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_personal_sucursal.png",
+      "sha256": "310345499ef759710f177efb4cd93d40b72e867ca44b32f59fc7e3d4884031b8"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_personal_sucursal.puml",
+      "sha256": "afd04a8aa0ee83efc8bdae2b88dfc1b2db3d70f838049af8881bb6da0d7a572c"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_personal_sucursal.svg",
+      "sha256": "92518769e67253c6ca457e8da835001d62a4941421aa5284645827c86c04dab5"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_productos.png",
+      "sha256": "bc871685221af75d8239db60b61403778af9d4cd17d6bd902d9996dd5cf952aa"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_productos.puml",
+      "sha256": "20ecdf160da666448fdd688b7ded9ba007559a52fc4a9b01ff333d49874923f2"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_productos.svg",
+      "sha256": "20bb4f2f5b74827c2c494fa6b00fba3849e4ddd1b05a2d47e8176b73248dbd73"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_promociones.png",
+      "sha256": "564463c08a21cb6310d0b0fd082a6403c3cd4890456bb64ded7d5a1f7a3dab1a"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_promociones.puml",
+      "sha256": "e6ca9d8e94131391f5b4586a53614ef69f5a842f9a0aaddccf56ad200879bec3"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_promociones.svg",
+      "sha256": "7bdbdfa590a100ef7b84181645fb0151b9bf29058f525aa751fbc08660f7f483"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_proveedores.png",
+      "sha256": "9ea5228d756037d0b5879f03c5ca14827c20680a6a5c100982050fbea7b09957"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_proveedores.puml",
+      "sha256": "42d32daa3a4b60c3a0e1aee0068de5111ebb36f6b16ce8a1430599439276590e"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_proveedores.svg",
+      "sha256": "b91020b6afbec061b2e1baeaff78be7038d37cecb146364a7bb06f6b82de5d27"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_proveedor_suministros.png",
+      "sha256": "d1a5f1d39f0983bc5e6447da57719db0afb7e026252a93edc49fb663f8c73b36"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_proveedor_suministros.puml",
+      "sha256": "805db695d0bb2cdc215d7ee127ecc51173b8af8eb13fcfc665db118d1421f098"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_proveedor_suministros.svg",
+      "sha256": "c80fb3482ff152ec009673c9deb5a89c8e03f1f813eae4651d6e5e2ee1e919f1"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_reportes_empresariales.png",
+      "sha256": "72612c57c982c20281fbf208a1ec7f373f0dcf6620328b388b9dd43e1967ca0c"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_reportes_empresariales.puml",
+      "sha256": "a919c29a0b7acc1f7d26050a174b2ced6b0edf70279cb6631654c313a5330285"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_reportes_empresariales.svg",
+      "sha256": "6a76efc9780a31a5d4e9b7d0d3cff9e34ccfd50d992c7a6f4b3e17d5ddcb9450"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_reservas.png",
+      "sha256": "efe4ab5359db609c5cc5f8aa96996f35d6bcb7aae0d287ce295ba09c3a7c235d"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_reservas.puml",
+      "sha256": "4c720e792a7e7b9dce4d4b016cefdbac785b1d96005e43d3e2b29b6c08d62b86"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_reservas.svg",
+      "sha256": "b9cb88dabdc723d06d93cf4b665e94006874cc272dfeca33a58795d920aef7d2"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_saas_billing_events.png",
+      "sha256": "493cd205fc7aebada7b2b21cb22cdeec510e1321aeb26b25c1faa8cc9fef26fb"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_saas_billing_events.puml",
+      "sha256": "1e2d0ccc48a628719ec7386c89744346f8213e2ef0715a898b22b2a741e8bd84"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_saas_billing_events.svg",
+      "sha256": "17d37e5bfe7b55c65b8836d9757f9a08e195992ba19909cbbdce50415d9f8d37"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_saas_checkout_attempts.png",
+      "sha256": "977b4504deb01ffe1178aea65be49f9b436cc49f654c27b8d322abccb3998d52"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_saas_checkout_attempts.puml",
+      "sha256": "689ac1d09b9a4dfe611ac87b6e8c0cdae814698986fb3b52ceb499dbcdd78225"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_saas_checkout_attempts.svg",
+      "sha256": "670b15d861bca24a605ef7c1e3fc2efcf78a0058885bf68139b8d180a732be1f"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_saas_plans.png",
+      "sha256": "0b977ca98260478a223290e41ae6e86458de70f18764d9d78081226d7e731407"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_saas_plans.puml",
+      "sha256": "4de9e6e02a0f20767db7a8fc8816ed5d6bb51b1035140dd6eef3dae2f00b89b1"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_saas_plans.svg",
+      "sha256": "63425d8186019576b3dbbc6cac99291d011f99986ca0645a4a1c5ba85a51e2fe"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_saas_prices.png",
+      "sha256": "489ad33a9e641d900d75790ef4e9c02c56ce91ae88f137f8ffd22e401ab675f5"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_saas_prices.puml",
+      "sha256": "38d10e2ad55172ac0587a748c8c2f481055d3e448cd5617dc224d3b5b977f9b3"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_saas_prices.svg",
+      "sha256": "5feaaa205507fecef0d40d65e623caed9fd16745199441cfeea16e1e266313bf"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_saas_subscriptions.png",
+      "sha256": "ab7cbe79a3ecd29dff689b899010df9e14415551aa0254cd6aad4e1d3ee3cf7f"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_saas_subscriptions.puml",
+      "sha256": "46cac20c7b7dc52f50d77abdafe589a5128fa93ae3deba521f116e8dcabe3d63"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_saas_subscriptions.svg",
+      "sha256": "1daf1b2cc84ad900459d8a3b7900d23c5a24f8da25b149c32a85a71be4cdf050"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_saas_tenants.png",
+      "sha256": "4274aa335c064c7df13f6d4af48f2f4d0fcf6e5e24cefc85dd723bdc3bd22f03"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_saas_tenants.puml",
+      "sha256": "08387253092c64af58307423b15eeaaae8bdc4806316ef85c5aff8a3a4faeb06"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_saas_tenants.svg",
+      "sha256": "225eed284f3a85a1455f9db44a36ef73099aa9dc31ab52d51859a58738597573"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_stock_sucursal.png",
+      "sha256": "a18d75ead586012936cb213cc7593cce3ac71a2a72bf4eb43c8bad9ec953d595"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_stock_sucursal.puml",
+      "sha256": "038feef087dded6e6f61366417508727a38222eb067b6d8228572b01cad80d5d"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_stock_sucursal.svg",
+      "sha256": "b93f5621f285ea87dc8df68ade8926f65419ab63b38d4093689d9888805733a8"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_sucursales.png",
+      "sha256": "9c7346c301c9521a1d463e002dc8259beec30440820f40a8ae3ddb8db60ed9fa"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_sucursales.puml",
+      "sha256": "5fc1cb6059744704922662de618f2a81d57e52685edb472bc2ad2b9f68a94482"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_sucursales.svg",
+      "sha256": "27b105625c86d2c4ba6a9e1199ff75e0c81571c07b1d79c2d175e5ce3f5e4861"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_usuarios.png",
+      "sha256": "05f7e133e00ba516e194b74404d794946a3b581b5e2022e5fc89766504cdf9a1"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_usuarios.puml",
+      "sha256": "2872bc1211cdc5eba56fda031a6fe1a4a9150934e1533ea5ee223f7bc601785f"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_usuarios.svg",
+      "sha256": "acb5d53d76a913226b2983155efcf9cf911667cace3e6272497f478abba9a127"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_variantes_producto.png",
+      "sha256": "25c2e881dbe2110c0b07c9ec00c2449c97ba55fd25d15b063b7a628ed8e36950"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_variantes_producto.puml",
+      "sha256": "c99f40d165f7378d957da876910319e7f95e460418cfed4f5b1a9d9e012cf817"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_fisico\\Tablas\\TABLA_variantes_producto.svg",
+      "sha256": "187f7177711cc833f8c778176d0b23a0eab6be9a8f98fe50e27434063c42b825"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_logico\\Modelo_logico.png",
+      "sha256": "d1451618573a34210a3986f8e0bd9e69d8961e7aa5f27bcb777d42e62d591c10"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_logico\\Modelo_logico.puml",
+      "sha256": "645d257abe7bfc1f6009c9b9ed4e0224af38456790b30b53aae95e7c98d29182"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Modelo_logico\\Modelo_logico.svg",
+      "sha256": "5867ad12af8f0de02b126136529078c2147fb2f62cedbfe134ad21d55e91f6dc"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Persistencia_local\\Confirmacion_checkout.png",
+      "sha256": "7136fb6b7d1a620226453265bf288599bca982586ffbb6245661c3befca113ba"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Persistencia_local\\Confirmacion_checkout.puml",
+      "sha256": "3044cf195030238bbd20632768c859505e4f955c4c2edb653cff018a7b1f76a2"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Persistencia_local\\Confirmacion_checkout.svg",
+      "sha256": "c6cbee5cd35ebab6eb9808a77f128ba63f4bd1630bb249b65d5f25b6fabc38a6"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Persistencia_local\\Persistencia_local_general.png",
+      "sha256": "a414990361c1835fd195c5b3d0d08405a56671c5958f65966748eee752edfe0d"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Persistencia_local\\Persistencia_local_general.puml",
+      "sha256": "5053508481c4f76f37aac31c9d5f8b715c94c16e0966c65bc61536dd1e6aa6bf"
+    },
+    {
+      "archivo": "capitulo-III\\3.5_Diseno_de_la_base_de_datos\\Persistencia_local\\Persistencia_local_general.svg",
+      "sha256": "8ca8c7496ba0fa17883c7ab2de26e4d8c758f58d4cc191a3b57dbd25b58c535c"
+    },
+    {
+      "archivo": "capitulo-IV\\Mapa_de_navegacion.png",
+      "sha256": "3e5518a17edd37f56b46e35ef44b69dda15c160040caf8346d96ab1d6766583a"
+    },
+    {
+      "archivo": "capitulo-IV\\Mapa_de_navegacion.puml",
+      "sha256": "e62814e558a7830a8519fe5851a12a85fc630fa6408341b5c49842acdaded98d"
+    },
+    {
+      "archivo": "capitulo-IV\\Mapa_de_navegacion.svg",
+      "sha256": "7ffbf370d785dd90d433716e1c8112273827d89b70ac2cfb7211c59484ba488f"
+    },
+    {
+      "archivo": "capitulo-IV\\4.2_Diseno_de_la_arquitectura_del_sistema\\4.2.1_Arquitectura_general.png",
+      "sha256": "d9c5a0a28160f8c00bf3e70c79706b269f1064193e94499746df48d2254c6822"
+    },
+    {
+      "archivo": "capitulo-IV\\4.2_Diseno_de_la_arquitectura_del_sistema\\4.2.1_Arquitectura_general.puml",
+      "sha256": "e0da1232207f6faa851991220ad506053f10ecd105593c32232bdc00875b1f78"
+    },
+    {
+      "archivo": "capitulo-IV\\4.2_Diseno_de_la_arquitectura_del_sistema\\4.2.1_Arquitectura_general.svg",
+      "sha256": "db3115de06f6a33560810d68bdc0f19f482fa3649a14683dee329250fe1beb6f"
+    },
+    {
+      "archivo": "capitulo-IV\\4.2_Diseno_de_la_arquitectura_del_sistema\\4.2.2_SaaS_multitenant.png",
+      "sha256": "6d521aceb97b0b50559f5abecd44be28b199ea62af9e4f4bb9ddbfaf01a4debf"
+    },
+    {
+      "archivo": "capitulo-IV\\4.2_Diseno_de_la_arquitectura_del_sistema\\4.2.2_SaaS_multitenant.puml",
+      "sha256": "88e3725a10a9402e8af4c1e23f5fe7fa3c4d6b8a9295b485666523f665027afc"
+    },
+    {
+      "archivo": "capitulo-IV\\4.2_Diseno_de_la_arquitectura_del_sistema\\4.2.2_SaaS_multitenant.svg",
+      "sha256": "ad142a96e46682417fdc9cbfbdfb942e83d801edaf0802afdf2f509444da197e"
+    },
+    {
+      "archivo": "capitulo-IV\\4.2_Diseno_de_la_arquitectura_del_sistema\\4.2.3_Offline_y_sincronizacion.png",
+      "sha256": "2ae84e10a3c675785561163695a0506e19a68cda0be2617d80dc686dc4e4f0bd"
+    },
+    {
+      "archivo": "capitulo-IV\\4.2_Diseno_de_la_arquitectura_del_sistema\\4.2.3_Offline_y_sincronizacion.puml",
+      "sha256": "90d27f379b13459c3fc228dfe9c74ed5bbc1e601e9d402304d4307857da50dc2"
+    },
+    {
+      "archivo": "capitulo-IV\\4.2_Diseno_de_la_arquitectura_del_sistema\\4.2.3_Offline_y_sincronizacion.svg",
+      "sha256": "9b0042b0cbd14c6ae8dcb3108f99cfe4d02ad991c752fbf89ff9137e21950111"
+    },
+    {
+      "archivo": "capitulo-IV\\4.2_Diseno_de_la_arquitectura_del_sistema\\4.2.4_Despliegue_en_nube.png",
+      "sha256": "19571c5f13706fd33c2f58d53be83c427ff7ed441a5c1debcc8643a851aaba30"
+    },
+    {
+      "archivo": "capitulo-IV\\4.2_Diseno_de_la_arquitectura_del_sistema\\4.2.4_Despliegue_en_nube.puml",
+      "sha256": "2cce3dc018e2962861d4834433bc6141b3c489c73b364c8e4d2835ebf392b29e"
+    },
+    {
+      "archivo": "capitulo-IV\\4.2_Diseno_de_la_arquitectura_del_sistema\\4.2.4_Despliegue_en_nube.svg",
+      "sha256": "c6c98c9a7efe85af3caab05ab83e8bc33f611c091893607055bed56dba119e66"
+    },
+    {
+      "archivo": "capitulo-IV\\4.3_Integracion_de_componentes\\4.3.1_Clientes_FastAPI.png",
+      "sha256": "2b8d153ea8544197a34b9672f5d21031494ec60b94b28ff3241131a8700fa731"
+    },
+    {
+      "archivo": "capitulo-IV\\4.3_Integracion_de_componentes\\4.3.1_Clientes_FastAPI.puml",
+      "sha256": "ab79cf78c8d97ddd5156851384e34715fde875218e349328bf9d7c2eb0ebce9a"
+    },
+    {
+      "archivo": "capitulo-IV\\4.3_Integracion_de_componentes\\4.3.1_Clientes_FastAPI.svg",
+      "sha256": "0a4f1e237cc08f78130414e9b91ec8f1d1eeb3d184b349aadd9ae749042f897d"
+    },
+    {
+      "archivo": "capitulo-IV\\4.3_Integracion_de_componentes\\4.3.2_FastAPI_PostgreSQL.png",
+      "sha256": "d3daf60192d43e3f21b20c4546261ab419821c31e2306925f5cde71ca7c6c662"
+    },
+    {
+      "archivo": "capitulo-IV\\4.3_Integracion_de_componentes\\4.3.2_FastAPI_PostgreSQL.puml",
+      "sha256": "b44d521305d6422b34e665b4eb079b36d52a7d4ad129d30f23fef5bc1c926228"
+    },
+    {
+      "archivo": "capitulo-IV\\4.3_Integracion_de_componentes\\4.3.2_FastAPI_PostgreSQL.svg",
+      "sha256": "1a6de71ab3f584361fcf83c54a8232eb863df26ea804ee61512ed7d754e9668b"
+    },
+    {
+      "archivo": "capitulo-IV\\4.3_Integracion_de_componentes\\4.3.3_Stripe.png",
+      "sha256": "d4f1e9bde8c65ca7f370b64ee7cdbcccd3ee8691e28bcd9464678602be9ee0d1"
+    },
+    {
+      "archivo": "capitulo-IV\\4.3_Integracion_de_componentes\\4.3.3_Stripe.puml",
+      "sha256": "59b732ca7f578424c445a72d5493efc0d2b3bc988424928aad693bf9ec8abb36"
+    },
+    {
+      "archivo": "capitulo-IV\\4.3_Integracion_de_componentes\\4.3.3_Stripe.svg",
+      "sha256": "8fd1516f0d84a73b3ffc7b7707e2763f21d8a38ce63ff87c8bc66df40d129f93"
+    },
+    {
+      "archivo": "capitulo-IV\\4.3_Integracion_de_componentes\\4.3.4_NVIDIA.png",
+      "sha256": "11f91c2bbe8ef4901decc396706c3ee49054a24f90297f5b6daea3bf3be7bafe"
+    },
+    {
+      "archivo": "capitulo-IV\\4.3_Integracion_de_componentes\\4.3.4_NVIDIA.puml",
+      "sha256": "3f12497d3c86ce1aac75f05e770977042719d58afe53693ceecc4f92cbca2d92"
+    },
+    {
+      "archivo": "capitulo-IV\\4.3_Integracion_de_componentes\\4.3.4_NVIDIA.svg",
+      "sha256": "9174f87c76d34185359fce63d126f9d3900fff1b934ea7ed23e1432c5214472e"
+    },
+    {
+      "archivo": "capitulo-IV\\4.3_Integracion_de_componentes\\4.3.5_Persistencia_y_sincronizacion.png",
+      "sha256": "16d3644be5e37374c0a7d3c95a30989d4aae34f90a69f8cec01dfc1eaf50710a"
+    },
+    {
+      "archivo": "capitulo-IV\\4.3_Integracion_de_componentes\\4.3.5_Persistencia_y_sincronizacion.puml",
+      "sha256": "b7ee9ae5f8503708a8941f602694e15fa9b97fa8d9aa9a18ea2423c6e1f303d7"
+    },
+    {
+      "archivo": "capitulo-IV\\4.3_Integracion_de_componentes\\4.3.5_Persistencia_y_sincronizacion.svg",
+      "sha256": "4814a3024535852e18b3b5c5057ef78272d4a4b64e207bd243dc014e17e04e06"
+    },
+    {
+      "archivo": "capitulo-V\\RESULTADOS.md",
+      "sha256": "5a6377cdb595281e9ceb3282b3a8b44239cf85ea3bbd7ff6ad40d88fa189c360"
+    },
+    {
+      "archivo": "capitulo-V\\caso de pruebas\\CU-21.md",
+      "sha256": "f1817cbdd1e51ee99ff357f7775e67504c8f88cc364c74e47786b0d84a5ba5cf"
+    },
+    {
+      "archivo": "capitulo-V\\caso de pruebas\\CU-22.md",
+      "sha256": "8af16e5ec9dd19984c15332d03cb3d5e017d4c99e158a75b9f016b729bd5ab1d"
+    },
+    {
+      "archivo": "capitulo-V\\caso de pruebas\\CU-23.md",
+      "sha256": "d22e1d5fcdfb13ebc58de871c60f45558670291020aee779c12c62e5fe669a71"
+    },
+    {
+      "archivo": "capitulo-V\\caso de pruebas\\CU-24.md",
+      "sha256": "eedb5440bc73fbce3b27c4aa0c7ef1dd3611e56959b985129f134d691b87d63a"
+    },
+    {
+      "archivo": "capitulo-V\\caso de pruebas\\CU-25.md",
+      "sha256": "45d9b5454f5377607f6be301d52b13f323c8f28298624f4b517ea546e47a069a"
+    },
+    {
+      "archivo": "Capitulos-II\\Fichas_CU21_CU25.xlsx",
+      "sha256": "f027f04d98df1f76c7baceda1cf9beb640aa7ceb9b4d08a2abd0bfdac207c4e9"
+    },
+    {
+      "archivo": "Capitulos-II\\diagrama de CU\\Casos_de_uso_Incremento_III.png",
+      "sha256": "67e156c565cf1e92ad9d94bdb6b3f56dd2728d2cc93dd206ca93764c3b9290a0"
+    },
+    {
+      "archivo": "Capitulos-II\\diagrama de CU\\Casos_de_uso_Incremento_III.puml",
+      "sha256": "f4dbbc3f23fb3b814d710ed2addf312ee05b808aea40fc8c8cb4c8fdfce04613"
+    },
+    {
+      "archivo": "Capitulos-II\\diagrama de CU\\Casos_de_uso_Incremento_III.svg",
+      "sha256": "6e78433f4827de91b0d24a8ecf79be0a60ce4f0985f94ac0d9fcb29db94509eb"
+    },
+    {
+      "archivo": "Capitulos-II\\diagrama de CU\\CU-21\\CU-21_Caso_de_uso.png",
+      "sha256": "0390995b1be51cedcbcc80bb4167a39b75b6337aae0a10dcf55c3cb4e881497a"
+    },
+    {
+      "archivo": "Capitulos-II\\diagrama de CU\\CU-21\\CU-21_Caso_de_uso.puml",
+      "sha256": "bec6e6bb9356d862bd0743a35bfa0601f16b6fad98cc41521102de957299a917"
+    },
+    {
+      "archivo": "Capitulos-II\\diagrama de CU\\CU-21\\CU-21_Caso_de_uso.svg",
+      "sha256": "773c328078a32e3750a6bf6ecc3103b261e98b8acceebd3246edb4eccd58831e"
+    },
+    {
+      "archivo": "Capitulos-II\\diagrama de CU\\CU-22\\CU-22_Caso_de_uso.png",
+      "sha256": "fa2be60b58bc7f25e1b4825a0c78b1e241e4293df9bee81e02192dc472390f61"
+    },
+    {
+      "archivo": "Capitulos-II\\diagrama de CU\\CU-22\\CU-22_Caso_de_uso.puml",
+      "sha256": "2ce127b1b86cb432fd270a7c75ef1aaf90d29f167bc17613c92c75753feb9e13"
+    },
+    {
+      "archivo": "Capitulos-II\\diagrama de CU\\CU-22\\CU-22_Caso_de_uso.svg",
+      "sha256": "1f73e3ff2046ef9795e11e78cd87cb2b02e27a9883e351e7266ac49e28f266fa"
+    },
+    {
+      "archivo": "Capitulos-II\\diagrama de CU\\CU-23\\CU-23_Caso_de_uso.png",
+      "sha256": "6bff8a071f6993cf3ee26909fb6ca54752fb53d944619f2c2827607bb7abd7d8"
+    },
+    {
+      "archivo": "Capitulos-II\\diagrama de CU\\CU-23\\CU-23_Caso_de_uso.puml",
+      "sha256": "a4bcea2e68c2a691bf8a4a7ce95acab7706151e1b194d9427d47f0473731c270"
+    },
+    {
+      "archivo": "Capitulos-II\\diagrama de CU\\CU-23\\CU-23_Caso_de_uso.svg",
+      "sha256": "70f15a30c2205488e272ed2c25a007dbfcbff679ff50b6812b803c90375227c8"
+    },
+    {
+      "archivo": "Capitulos-II\\diagrama de CU\\CU-24\\CU-24_Caso_de_uso.png",
+      "sha256": "2e6e839b4da6621e290770c815f074f7b24c355fc91c93e8ccb85aa170026239"
+    },
+    {
+      "archivo": "Capitulos-II\\diagrama de CU\\CU-24\\CU-24_Caso_de_uso.puml",
+      "sha256": "0a598c69de0a513a8f914154312c28b36f4496b761485042016b890f1471deb9"
+    },
+    {
+      "archivo": "Capitulos-II\\diagrama de CU\\CU-24\\CU-24_Caso_de_uso.svg",
+      "sha256": "27e54372312a121362360dfdf364efe1b0c74102f29c65d1f6984bc6964ec518"
+    },
+    {
+      "archivo": "Capitulos-II\\diagrama de CU\\CU-25\\CU-25_Caso_de_uso.png",
+      "sha256": "aa7e5f2122b6b1fac923b64ed3168917e878351367dbf9f1a481d3e2c39885d4"
+    },
+    {
+      "archivo": "Capitulos-II\\diagrama de CU\\CU-25\\CU-25_Caso_de_uso.puml",
+      "sha256": "748ba85bd64fa7fdccfda340843c7674f5a3f9fb6681431feebebb8dff373d37"
+    },
+    {
+      "archivo": "Capitulos-II\\diagrama de CU\\CU-25\\CU-25_Caso_de_uso.svg",
+      "sha256": "943a457522c0b3aed95706a44aa0b3076175de0414683240ea8b2f39c20cc4be"
+    },
+    {
+      "archivo": "herramientas\\casos_verificados.json",
+      "sha256": "a907bae003f9d757216d8dd3f8d221edf8ea5f26e912ee0cbea464e53552b77c"
+    },
+    {
+      "archivo": "herramientas\\diagramas.json",
+      "sha256": "7296c5d57b2e49852dca0d20042d17f3c4fc0949c4b2195458ac25db374ff0d8"
+    },
+    {
+      "archivo": "herramientas\\finalize_iii_docs.py",
+      "sha256": "4eb56d24e36371d44b15ef1b2581aef80bfc5cf649d002721ad876fcd4b88637"
+    },
+    {
+      "archivo": "herramientas\\generate_iii_docs.py",
+      "sha256": "da0f0b3fddd27377e7e96dfc205e4e6321eaeb11e99929f154785cdc6720efd2"
+    },
+    {
+      "archivo": "herramientas\\README.md",
+      "sha256": "ec2293e4f420b8f09337c3c4672ef8513093f80aaddfc50adf120e02a869d455"
+    },
+    {
+      "archivo": "herramientas\\refine_iii_interactions.py",
+      "sha256": "fa156d3868c4cbc4628924ca8821c8a828dbbb6df5ea0717e46296ac84dd7b99"
+    },
+    {
+      "archivo": "pruebas\\mobile\\report-320.png",
+      "sha256": "eb84d5457baf1b33a5f929cfede85d29e4a03ec7aaae0d53e1864ef63a758937"
+    },
+    {
+      "archivo": "pruebas\\mobile\\report-390.png",
+      "sha256": "8effdd2ac42aacdf0265eff0671e1d319d3dc393ceb862e20c4d8d53372c0237"
+    },
+    {
+      "archivo": "pruebas\\web\\reports-1440.png",
+      "sha256": "33334951d8aa2ec66d2f0ccb359300822ae359eb9de2b838f2920da69b31aef8"
+    },
+    {
+      "archivo": "pruebas\\web\\reports-390.png",
+      "sha256": "811445dab9e08a6c6e93646296442ae9d3af5db038f49c863d0bd9cdce34383b"
+    },
+    {
+      "archivo": "requisitos\\CU-21.md",
+      "sha256": "a9b6f4442e8cabed0dd2db1952e33dbc4bcba5cc261b38bbacdaf2c71b014310"
+    },
+    {
+      "archivo": "requisitos\\CU-22.md",
+      "sha256": "48e90ecb31daa77481b9241613fd93dfc39bb48c2ef2f756f8cb3e52a7a6d97b"
+    },
+    {
+      "archivo": "requisitos\\CU-23.md",
+      "sha256": "31500abefb31e743830bcb5994da407099cc4025808b67e8b1b9702720afea93"
+    },
+    {
+      "archivo": "requisitos\\CU-24.md",
+      "sha256": "30038bff89f843875f251f6f60a7e420be388bfcb11f5300b8f8beed80ae0278"
+    },
+    {
+      "archivo": "requisitos\\CU-25.md",
+      "sha256": "fbe067e4e56f03d96c328ad58a464d3956e53f998c90d71ef97af9d7896edd81"
+    }
+  ],
+  "sha256": "a8fe70a5f7b7352c9eb27488795b0fba250c36df298dfd3546460a51dba911b8"
+}

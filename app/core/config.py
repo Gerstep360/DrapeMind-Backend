@@ -1,4 +1,5 @@
 import json
+from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
@@ -53,6 +54,7 @@ class Settings(BaseSettings):
     AI_MAX_TOKENS: int = 1024
     AI_TEMPERATURE: float = 0.35
     RESERVATION_TTL_MINUTES: int = 2880
+    DELIVERY_FEE_BOB: Decimal = Field(default=Decimal('15.00'),ge=0,max_digits=10,decimal_places=2)
     PAYMENT_PROVIDER: Literal["mock", "external", "stripe"] = "mock"
     PAYMENT_WEBHOOK_SECRET: str = "change-me-payment-webhook-secret"
     STRIPE_WEBHOOK_SECRET: str = ""
