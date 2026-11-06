@@ -25,6 +25,7 @@ class StoreDataReply(BaseModel):
     model_config = ConfigDict(extra="forbid")
     presentation: Literal["auto", "text"] = "auto"
     source_tool: str = Field(min_length=1, max_length=80, pattern=r'^[a-zA-Z0-9_]+$')
+    intro: str = Field(default='', max_length=300, description='Resumen breve de los hechos ya consultados que completan la petición, sin redactar precios ni cantidades. Por ejemplo, explicar el estado consultado del carrito antes de mostrar otra consulta.')
 
 
 def render_store_data(tool: str, data) -> str:

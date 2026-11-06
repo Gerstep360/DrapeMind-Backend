@@ -289,14 +289,8 @@ async def run_nvidia_agent(
                             raise ValueError(
                                 "Consulta primero esa herramienta en este turno."
                             )
-                        # Re-run the authorized read with its validated original arguments.
-                        fresh_data = execute_tool(
-                            source["name"],
-                            source["args"],
-                            ToolContext(
-                                db=db, user=user, preferences=state.constraints
-                            ),
-                        )
+                        # This is the server-owned observation from this turn, not model data.
+                        fresh_data = source['result']
                         if isinstance(fresh_data, dict) and fresh_data.get("error"):
                             raise ValueError(fresh_data["error"])
                         answer = render_store_data(source["name"], fresh_data)
@@ -306,6 +300,8 @@ async def run_nvidia_agent(
                             if block:
                                 ui_blocks.append(block)
                                 answer = "Aquí tienes el resultado de la consulta."
+                        if proposal.intro and not has_commercial_claim(proposal.intro):
+                            answer = proposal.intro + '\n\n' + answer
                         cards = []
                         finalized = True
                         data = {
@@ -388,13 +384,7 @@ async def run_nvidia_agent(
                                 raise ValueError(
                                     "Debes consultar esta fuente en el turno actual antes de mostrarla."
                                 )
-                            fresh = execute_tool(
-                                source["name"],
-                                source["args"],
-                                ToolContext(
-                                    db=db, user=user, preferences=state.constraints
-                                ),
-                            )
+                            fresh = source['result']
                             block = tool_presentation(source["name"], fresh)
                             if not block:
                                 raise ValueError(
