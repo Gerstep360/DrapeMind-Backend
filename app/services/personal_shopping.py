@@ -159,7 +159,7 @@ def _preferences(context, args):
         else (
             getattr(args, "budget", None)
             if getattr(args, "budget", None) is not None
-            else choice("max_price", "presupuesto_habitual")
+            else session.get("max_price", session.get("budget", profile.get("presupuesto_habitual")))
         ),
         "budget": choice("budget", "presupuesto_habitual"),
         "city": saved["city"],

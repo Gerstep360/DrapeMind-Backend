@@ -972,20 +972,8 @@
       "sha256": "7296c5d57b2e49852dca0d20042d17f3c4fc0949c4b2195458ac25db374ff0d8"
     },
     {
-      "archivo": "herramientas\\finalize_iii_docs.py",
-      "sha256": "4eb56d24e36371d44b15ef1b2581aef80bfc5cf649d002721ad876fcd4b88637"
-    },
-    {
-      "archivo": "herramientas\\generate_iii_docs.py",
-      "sha256": "da0f0b3fddd27377e7e96dfc205e4e6321eaeb11e99929f154785cdc6720efd2"
-    },
-    {
       "archivo": "herramientas\\README.md",
       "sha256": "ec2293e4f420b8f09337c3c4672ef8513093f80aaddfc50adf120e02a869d455"
-    },
-    {
-      "archivo": "herramientas\\refine_iii_interactions.py",
-      "sha256": "fa156d3868c4cbc4628924ca8821c8a828dbbb6df5ea0717e46296ac84dd7b99"
     },
     {
       "archivo": "pruebas\\mobile\\report-320.png",
@@ -1024,5 +1012,5 @@
       "sha256": "fbe067e4e56f03d96c328ad58a464d3956e53f998c90d71ef97af9d7896edd81"
     }
   ],
-  "sha256": "a8fe70a5f7b7352c9eb27488795b0fba250c36df298dfd3546460a51dba911b8"
+  "sha256": "2cbb032ade245a600a24c1e6e593acc4c9884d95b785a1d2ea582a7d7f280c45"
 }
