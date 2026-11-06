@@ -14,25 +14,7 @@ class QuestionOption(BaseModel):
 class UIProposal(BaseModel):
     model_config = ConfigDict(extra="forbid")
     type: Literal["product_grid", "question_options", "tool_result"]
-    source_tool: (
-        Literal[
-            "get_my_shopping_context",
-            "discover_for_me",
-            "recommend_pickup_branches",
-            "plan_more_for_less",
-            "find_cart_savings",
-            "compare_products",
-            "get_stock",
-            "get_branch_availability",
-            "calculate_cart_totals",
-            "calculate_selection_budget",
-            "get_my_orders",
-            "get_my_reservations",
-            "get_my_payment_status",
-            "get_store_policy",
-        ]
-        | None
-    ) = None
+    source_tool: str | None = Field(default=None, max_length=80, pattern=r'^[a-zA-Z0-9_]+$')
     title: str = Field(default="", max_length=120)
     product_ids: list[int] = Field(default_factory=list, max_length=6)
     options: list[QuestionOption] = Field(default_factory=list, max_length=3)

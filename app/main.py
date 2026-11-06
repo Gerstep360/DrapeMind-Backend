@@ -61,7 +61,7 @@ app.add_middleware(
     allow_origin_regex=settings.CORS_ORIGIN_REGEX,
     allow_credentials=settings.CORS_ALLOW_CREDENTIALS,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "Accept", "X-Tenant", "Stripe-Signature", "X-Webhook-Signature", "X-Request-ID", "Idempotency-Key"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "X-Tenant", "Stripe-Signature", "X-Webhook-Signature", "X-Request-ID", "Idempotency-Key", "MCP-Protocol-Version"],
     expose_headers=["X-Request-ID", "X-Process-Time-Ms"],
     max_age=600,
 )

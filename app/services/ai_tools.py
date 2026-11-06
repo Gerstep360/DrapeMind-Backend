@@ -302,6 +302,7 @@ class TrendingArgs(BaseModel):
 
 
 class NewArrivalsArgs(BaseModel):
+    use_profile: bool = False
     limit: int = Field(default=8, ge=1, le=15)
     exclude_product_ids: list[int] = Field(default_factory=list, max_length=24)
 
@@ -330,6 +331,7 @@ class ToolDefinition:
     read_only: bool = False
     # Optional server-owned presentation adapter; a new capability needs no agent branch.
     card_renderer: Callable[[ToolContext, dict, Any], list[dict]] | None = None
+    allowed_roles: tuple[str, ...] = ()
 
     def schema(self) -> dict:
         return {
@@ -361,111 +363,7 @@ def _cart(context: ToolContext, raw: BaseModel) -> Any:
     cart = cart_payload(context.db, context.user.id)
     items = cart.get("items", [])
 
-    sugerencias = []
-    try:
-        profile = None
-        if context.user:
-            try:
-                res = context.db.scalar(
-                    select(UserStyleProfile).where(
-                        UserStyleProfile.usuario_id == context.user.id
-                    )
-                )
-                if isinstance(res, UserStyleProfile):
-                    profile = res
-            except Exception:
-                pass
-        norm_g = normalize_gender(getattr(profile, "genero", None)) if profile else None
-        norm_gender = norm_g.value if norm_g else None
-
-        cart_prod_ids = {it.get("producto_id") for it in items}
-        cart_names = " ".join(it.get("nombre", "").lower() for it in items)
-        has_top = any(
-            k in cart_names
-            for k in ["polera", "camisa", "blusa", "polo", "top", "sueter", "sweater"]
-        )
-        has_bottom = any(
-            k in cart_names
-            for k in ["pantalon", "pantalón", "jean", "falda", "palazzo", "bermuda"]
-        )
-
-        available_products = search_products(
-            context.db, gender=norm_gender, only_available=True, limit=16
-        )
-        if not available_products and norm_gender:
-            available_products = search_products(
-                context.db, only_available=True, limit=16
-            )
-
-        for cand in available_products:
-            if cand.get("id") in cart_prod_ids:
-                continue
-            cand_name = (cand.get("nombre") or "").lower()
-            if items and has_top and not has_bottom:
-                if not any(
-                    k in cand_name
-                    for k in ["pantalon", "pantalón", "jean", "falda", "palazzo"]
-                ):
-                    continue
-
-            cand_id = cand["id"]
-            pref_size = None
-            if profile:
-                if any(
-                    k in cand_name
-                    for k in ["pantalon", "pantalón", "jean", "falda", "palazzo"]
-                ):
-                    pref_size = profile.talla_inferior
-                elif any(
-                    k in cand_name for k in ["zapato", "zapatilla", "bota", "mocas"]
-                ):
-                    pref_size = profile.talla_calzado
-                else:
-                    pref_size = profile.talla_superior
-
-            vars_list = context.db.scalars(
-                select(ProductVariant)
-                .where(
-                    ProductVariant.producto_id == cand_id,
-                    ProductVariant.activo.is_(True),
-                    ProductVariant.stock_total > ProductVariant.stock_reservado,
-                )
-                .order_by(ProductVariant.id)
-            ).all()
-            if not vars_list:
-                continue
-
-            var = None
-            if pref_size:
-                var = next(
-                    (
-                        v
-                        for v in vars_list
-                        if str(getattr(v, "talla", "")).strip().upper()
-                        == pref_size.strip().upper()
-                    ),
-                    None,
-                )
-            if not var:
-                var = vars_list[0]
-            if var:
-                sugerencias.append(
-                    {
-                        "id": cand["id"],
-                        "producto_id": cand["id"],
-                        "variante_id": var.id,
-                        "nombre": cand.get("nombre"),
-                        "precio": float(cand.get("precio") or 0),
-                        "color": var.color,
-                        "talla": var.talla,
-                        "imagen": var.imagen or ((cand.get("imagenes") or [None])[0]),
-                    }
-                )
-            if len(sugerencias) >= 4:
-                break
-    except Exception:
-        pass
-
+    sugerencias = []  # A cart read does not run a hidden recommendation workflow.
     if not items:
         return {
             "estado": "VACIO",
@@ -1496,9 +1394,29 @@ def _new_arrivals(context: ToolContext, raw: BaseModel) -> Any:
 
     products, *_ = _candidates(
         context,
-        DiscoverArgs(recent_days=30, exclude_product_ids=args.exclude_product_ids),
+        DiscoverArgs(recent_days=30, use_profile=args.use_profile, limit=min(args.limit,6), exclude_product_ids=args.exclude_product_ids),
     )
     return products[: args.limit]
+
+
+def _catalog_overview(context: ToolContext, raw: BaseModel) -> dict:
+    from datetime import datetime, timedelta, timezone
+    from app.models.saas import Tenant
+    now = datetime.now(timezone.utc)
+    available = select(ProductVariant.producto_id).where(
+        ProductVariant.activo.is_(True), ProductVariant.stock_total > ProductVariant.stock_reservado,
+    )
+    active = [Product.activo.is_(True)]
+    tenant = context.db.get(Tenant, context.user.tenant_id)
+    return {
+        'tienda': tenant.name if tenant else None,
+        'productos_activos': context.db.scalar(select(func.count(Product.id)).where(*active)) or 0,
+        'productos_con_stock': context.db.scalar(select(func.count(Product.id)).where(*active, Product.id.in_(available))) or 0,
+        'novedades_con_stock_ultimos_30_dias': context.db.scalar(select(func.count(Product.id)).where(*active, Product.id.in_(available), Product.created_at >= now-timedelta(days=30), Product.created_at <= now)) or 0,
+        'ultima_alta_catalogo': context.db.scalar(select(func.max(Product.created_at)).where(*active)),
+        'periodo_novedades_dias': 30,
+        'filtros_personales_aplicados': False,
+    }
 
 
 def _most_expensive(context: ToolContext, raw: BaseModel) -> Any:
@@ -1660,7 +1578,7 @@ TOOLS = {
         ),
         ReadToolDefinition(
             "get_my_cart",
-            "Lee el carrito para mostrar sus prendas. Para ahorrar usa directamente find_cart_savings y para elegir sucursal recommend_pickup_branches: ambas ya consultan el carrito. Si esta lectura es un paso intermedio usa presentation=continue para no terminar el análisis antes de tiempo.",
+            "Consulta exclusivamente prendas, cantidades y subtotal del carrito actual. Devuelve estado VACIO si no contiene prendas; no busca recomendaciones por su cuenta.",
             EmptyArgs,
             _cart,
         ),
@@ -1678,7 +1596,7 @@ TOOLS = {
         ),
         ReadToolDefinition(
             "get_new_arrivals",
-            "Obtiene novedades del catálogo con stock y evita repetir recomendaciones recientes de la conversación.",
+            "Consulta prendas creadas en los ultimos 30 dias con stock en esta tienda. Sin filtros personales por defecto; use_profile permite aplicarlos. Un resultado vacio no significa que toda la tienda este vacia.",
             NewArrivalsArgs,
             _new_arrivals,
         ),
@@ -1734,8 +1652,23 @@ TOOLS = {
 }
 
 
-def tool_catalog() -> list[dict]:
-    return [tool.schema() for tool in TOOLS.values() if tool.read_only]
+def tool_catalog(user=None) -> list[dict]:
+    catalog = []
+    for name in sorted(TOOLS):
+        tool = TOOLS[name]
+        if not tool.read_only:
+            continue
+        if user is not None and tool.allowed_roles and getattr(user, 'rol', None) not in tool.allowed_roles:
+            continue
+        schema = tool.schema()
+        params = schema['parameters']
+        for field in ('presentation', 'include_stock'):
+            params.get('properties', {}).pop(field, None)
+            if field in params.get('required', []):
+                params['required'].remove(field)
+        params['additionalProperties'] = False
+        catalog.append(schema)
+    return catalog
 
 
 TOOLS["get_store_policy"] = ReadToolDefinition(
@@ -1743,6 +1676,11 @@ TOOLS["get_store_policy"] = ReadToolDefinition(
     "Consulta políticas configuradas de envíos, devoluciones, pagos u horarios.",
     StorePolicyArgs,
     _store_policy,
+)
+TOOLS['get_catalog_overview'] = ReadToolDefinition(
+    'get_catalog_overview',
+    'Consulta el nombre de la tienda y cantidades reales de productos activos, con stock y recientes. Distingue una tienda vacía de una búsqueda sin resultados. No aplica preferencias personales.',
+    EmptyArgs, _catalog_overview,
 )
 
 from app.services.personal_shopping import (
@@ -1767,7 +1705,7 @@ for capability in [
     ),
     ReadToolDefinition(
         "discover_for_me",
-        "Descubre prendas reales para mí. Aplica perfil y preferencias de conversación por defecto; los filtros explícitos mandan. Usa recent_days=30 para novedades reales, exclude_product_ids para no repetir. Devuelve variantes exactas y razones de coincidencia. presentation=continue si necesitas consultar otra herramienta antes de responder.",
+        "Descubre prendas reales para mí. Aplica perfil y preferencias de conversación por defecto; los filtros explícitos mandan. Usa recent_days=30 para novedades reales, exclude_product_ids para no repetir. Devuelve variantes exactas y razones de coincidencia.",
         DiscoverArgs,
         discover,
     ),
@@ -1806,8 +1744,22 @@ def execute_tool(name: str, arguments: dict, context: ToolContext) -> Any:
         return {
             "error": "Esta operación requiere confirmación en la interfaz; no se ejecutó ningún cambio."
         }
+    if tool.allowed_roles and getattr(context.user, 'rol', None) not in tool.allowed_roles:
+        return {'error': 'No tienes permisos para esta herramienta.'}
+    if not isinstance(arguments, dict) or set(arguments) - tool.args_model.model_fields.keys():
+        return {'error': 'Argumentos desconocidos en la herramienta.'}
     try:
         validated = tool.args_model.model_validate(arguments or {})
         return tool.handler(context, validated)
     except Exception as exc:
-        return {"error": f"Error ejecutando {name}: {str(exc)}"}
+        from fastapi import HTTPException
+        from pydantic import ValidationError
+        if isinstance(exc, HTTPException):
+            return {'error': exc.detail, 'status': exc.status_code}
+        if isinstance(exc, ValidationError):
+            return {'error': 'Argumentos inválidos para la herramienta.'}
+        return {'error': 'No se pudo completar la consulta. Puedes reintentar.'}
+
+
+from app.services.business_tools import register as register_business_tools
+register_business_tools(TOOLS, ReadToolDefinition)

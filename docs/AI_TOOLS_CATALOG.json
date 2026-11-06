@@ -1,0 +1,1387 @@
+[
+  {
+    "name": "calculate_cart_totals",
+    "description": "Calcula cantidades, subtotales y líneas exactas del carrito de compras.",
+    "parameters": {
+      "properties": {},
+      "title": "EmptyArgs",
+      "type": "object",
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "calculate_selection_budget",
+    "description": "Calcula total exacto y saldo de una selección de variantes, una unidad por variante, sin cambiar el carrito.",
+    "parameters": {
+      "properties": {
+        "variant_ids": {
+          "items": {
+            "type": "integer"
+          },
+          "maxItems": 20,
+          "minItems": 1,
+          "title": "Variant Ids",
+          "type": "array"
+        },
+        "budget": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "title": "Budget"
+        }
+      },
+      "required": [
+        "variant_ids",
+        "budget"
+      ],
+      "title": "SelectionBudgetArgs",
+      "type": "object",
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "compare_products",
+    "description": "Compara precio y calidad entre múltiples prendas de forma objetiva.",
+    "parameters": {
+      "properties": {
+        "product_ids": {
+          "items": {
+            "type": "integer"
+          },
+          "maxItems": 8,
+          "minItems": 2,
+          "title": "Product Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "product_ids"
+      ],
+      "title": "CompareProductsArgs",
+      "type": "object",
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "discover_for_me",
+    "description": "Descubre prendas reales para mí. Aplica perfil y preferencias de conversación por defecto; los filtros explícitos mandan. Usa recent_days=30 para novedades reales, exclude_product_ids para no repetir. Devuelve variantes exactas y razones de coincidencia.",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "query": {
+          "anyOf": [
+            {
+              "maxLength": 150,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Solo términos de la prenda, no el mensaje completo.",
+          "title": "Query"
+        },
+        "category_id": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Category Id"
+        },
+        "gender": {
+          "anyOf": [
+            {
+              "maxLength": 30,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gender"
+        },
+        "size": {
+          "anyOf": [
+            {
+              "maxLength": 20,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Size"
+        },
+        "size_group": {
+          "anyOf": [
+            {
+              "pattern": "^(upper|lower|footwear|accessory)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Size Group"
+        },
+        "top_size": {
+          "anyOf": [
+            {
+              "maxLength": 20,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Top Size"
+        },
+        "bottom_size": {
+          "anyOf": [
+            {
+              "maxLength": 20,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bottom Size"
+        },
+        "shoe_size": {
+          "anyOf": [
+            {
+              "maxLength": 20,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Shoe Size"
+        },
+        "color": {
+          "anyOf": [
+            {
+              "maxLength": 60,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Color"
+        },
+        "styles": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 6,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Styles"
+        },
+        "max_price": {
+          "anyOf": [
+            {
+              "maximum": 1000000.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Price"
+        },
+        "use_profile": {
+          "default": true,
+          "title": "Use Profile",
+          "type": "boolean"
+        },
+        "recent_days": {
+          "anyOf": [
+            {
+              "maximum": 90,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Recent Days"
+        },
+        "exclude_product_ids": {
+          "items": {
+            "type": "integer"
+          },
+          "maxItems": 30,
+          "title": "Exclude Product Ids",
+          "type": "array"
+        },
+        "limit": {
+          "default": 4,
+          "maximum": 6,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        }
+      },
+      "title": "DiscoverArgs",
+      "type": "object"
+    }
+  },
+  {
+    "name": "evaluate_garment_fit",
+    "description": "Calcula la holgura en cm, caída sastrera y tensión de una talla específica para el probador AR.",
+    "parameters": {
+      "properties": {
+        "product_id": {
+          "title": "Product Id",
+          "type": "integer"
+        },
+        "size": {
+          "default": "M",
+          "maxLength": 10,
+          "title": "Size",
+          "type": "string"
+        },
+        "user_chest": {
+          "anyOf": [
+            {
+              "maximum": 160,
+              "minimum": 50,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "User Chest"
+        },
+        "user_waist": {
+          "anyOf": [
+            {
+              "maximum": 160,
+              "minimum": 40,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "User Waist"
+        },
+        "user_height": {
+          "anyOf": [
+            {
+              "maximum": 230,
+              "minimum": 120,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "User Height"
+        }
+      },
+      "required": [
+        "product_id"
+      ],
+      "title": "EvaluateGarmentFitArgs",
+      "type": "object",
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "find_alternatives",
+    "description": "Busca alternativas con stock para ahorrar, mejorar calidad o mantener el mismo estilo.",
+    "parameters": {
+      "properties": {
+        "product_id": {
+          "title": "Product Id",
+          "type": "integer"
+        },
+        "objective": {
+          "default": "similar_style",
+          "enum": [
+            "lower_price",
+            "quality_price",
+            "similar_style"
+          ],
+          "title": "Objective",
+          "type": "string"
+        },
+        "limit": {
+          "default": 5,
+          "maximum": 10,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "product_id"
+      ],
+      "title": "AlternativesArgs",
+      "type": "object",
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "find_cart_savings",
+    "description": "Consulta mi carrito y busca sustituciones más baratas de la misma categoría y talla, conservando cantidades y color por defecto. Calcula ahorro real y prendas extra que caben en ese ahorro. Propuesta sin aplicar cambios.",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "keep_color": {
+          "default": true,
+          "title": "Keep Color",
+          "type": "boolean"
+        },
+        "extra_items": {
+          "default": 2,
+          "maximum": 3,
+          "minimum": 0,
+          "title": "Extra Items",
+          "type": "integer"
+        }
+      },
+      "title": "CartSavingsArgs",
+      "type": "object"
+    }
+  },
+  {
+    "name": "get_branch_availability",
+    "description": "Busca showrooms con stock exacto por prenda, talla y color, e indica dirección.",
+    "parameters": {
+      "properties": {
+        "product_id": {
+          "exclusiveMinimum": 0,
+          "title": "Product Id",
+          "type": "integer"
+        },
+        "size": {
+          "anyOf": [
+            {
+              "maxLength": 20,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Size"
+        },
+        "color": {
+          "anyOf": [
+            {
+              "maxLength": 60,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Color"
+        }
+      },
+      "required": [
+        "product_id"
+      ],
+      "title": "BranchAvailabilityArgs",
+      "type": "object",
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "get_business_indicators",
+    "description": "Indicadores comerciales reales por periodo y sucursal: cobros netos, pedidos pagados, prendas e inventario actual.",
+    "parameters": {
+      "properties": {
+        "days": {
+          "default": 30,
+          "maximum": 366,
+          "minimum": 1,
+          "title": "Days",
+          "type": "integer"
+        },
+        "sucursal_id": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sucursal Id"
+        }
+      },
+      "title": "IndicatorArgs",
+      "type": "object",
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "get_catalog_overview",
+    "description": "Consulta el nombre de la tienda y cantidades reales de productos activos, con stock y recientes. Distingue una tienda vacía de una búsqueda sin resultados. No aplica preferencias personales.",
+    "parameters": {
+      "properties": {},
+      "title": "EmptyArgs",
+      "type": "object",
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "get_demand_predictions",
+    "description": "Demanda estimada y patrones calculados con pedidos reales. Informa historial insuficiente; no inventa predicciones.",
+    "parameters": {
+      "properties": {
+        "sucursal_id": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sucursal Id"
+        }
+      },
+      "title": "BranchArgs",
+      "type": "object",
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "get_most_expensive_product",
+    "description": "Devuelve exactamente una prenda: la de mayor precio con una variante disponible. No arma outfits.",
+    "parameters": {
+      "properties": {},
+      "title": "EmptyArgs",
+      "type": "object",
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "get_my_cart",
+    "description": "Consulta exclusivamente prendas, cantidades y subtotal del carrito actual. Devuelve estado VACIO si no contiene prendas; no busca recomendaciones por su cuenta.",
+    "parameters": {
+      "properties": {},
+      "title": "EmptyArgs",
+      "type": "object",
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "get_my_favorites",
+    "description": "Consulta los favoritos reales del usuario para personalizar sugerencias.",
+    "parameters": {
+      "properties": {},
+      "title": "EmptyArgs",
+      "type": "object",
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "get_my_orders",
+    "description": "Consulta los últimos pedidos y estados de compra del usuario autenticado.",
+    "parameters": {
+      "properties": {},
+      "title": "EmptyArgs",
+      "type": "object",
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "get_my_payment_status",
+    "description": "Lee el estado registrado del pago de un pedido propio; nunca aprueba pagos.",
+    "parameters": {
+      "properties": {
+        "order_id": {
+          "exclusiveMinimum": 0,
+          "title": "Order Id",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "order_id"
+      ],
+      "title": "OrderPaymentArgs",
+      "type": "object",
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "get_my_reservations",
+    "description": "Consulta reservas activas y fechas de vencimiento del usuario.",
+    "parameters": {
+      "properties": {},
+      "title": "EmptyArgs",
+      "type": "object",
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "get_my_shopping_context",
+    "description": "Lee mi perfil completo de compras, tallas, ciudad y categorías reales. No muestra direcciones privadas. Úsala para conocer o comprobar mis preferencias.",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {},
+      "title": "ShoppingArgs",
+      "type": "object"
+    }
+  },
+  {
+    "name": "get_new_arrivals",
+    "description": "Consulta prendas creadas en los ultimos 30 dias con stock en esta tienda. Sin filtros personales por defecto; use_profile permite aplicarlos. Un resultado vacio no significa que toda la tienda este vacia.",
+    "parameters": {
+      "properties": {
+        "use_profile": {
+          "default": false,
+          "title": "Use Profile",
+          "type": "boolean"
+        },
+        "limit": {
+          "default": 8,
+          "maximum": 15,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "exclude_product_ids": {
+          "items": {
+            "type": "integer"
+          },
+          "maxItems": 24,
+          "title": "Exclude Product Ids",
+          "type": "array"
+        }
+      },
+      "title": "NewArrivalsArgs",
+      "type": "object",
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "get_product_detail",
+    "description": "Obtiene información detallada de una prenda: material, variantes, colores, tallas y stock.",
+    "parameters": {
+      "properties": {
+        "product_id": {
+          "title": "Product Id",
+          "type": "integer"
+        },
+        "size": {
+          "anyOf": [
+            {
+              "maxLength": 20,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Talla explícita solicitada para esta prenda; no sustituir por otra.",
+          "title": "Size"
+        }
+      },
+      "required": [
+        "product_id"
+      ],
+      "title": "ProductArgs",
+      "type": "object",
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "get_saved_business_reports",
+    "description": "Consulta reportes generativos guardados de esta empresa. Requiere plan con reportes IA; no genera otra inferencia.",
+    "parameters": {
+      "properties": {
+        "limit": {
+          "default": 10,
+          "maximum": 50,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        }
+      },
+      "title": "HistoryArgs",
+      "type": "object",
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "get_stock",
+    "description": "Consulta stock real disponible por producto o variante.",
+    "parameters": {
+      "properties": {
+        "product_id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Product Id"
+        },
+        "variant_id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Variant Id"
+        }
+      },
+      "title": "StockArgs",
+      "type": "object",
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "get_store_policy",
+    "description": "Consulta políticas configuradas de envíos, devoluciones, pagos u horarios.",
+    "parameters": {
+      "properties": {
+        "topic": {
+          "enum": [
+            "shipping",
+            "returns",
+            "payments",
+            "hours"
+          ],
+          "title": "Topic",
+          "type": "string"
+        }
+      },
+      "required": [
+        "topic"
+      ],
+      "title": "StorePolicyArgs",
+      "type": "object",
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "get_suppliers",
+    "description": "Consulta proveedores registrados en la empresa actual.",
+    "parameters": {
+      "properties": {
+        "limit": {
+          "default": 10,
+          "maximum": 50,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        }
+      },
+      "title": "HistoryArgs",
+      "type": "object",
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "get_supply_orders",
+    "description": "Consulta pedidos de abastecimiento y sus estados en esta empresa.",
+    "parameters": {
+      "properties": {
+        "limit": {
+          "default": 10,
+          "maximum": 50,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        }
+      },
+      "title": "HistoryArgs",
+      "type": "object",
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "get_trending_pieces",
+    "description": "Obtiene las piezas más destacadas, de mayor calidad (Q5/Q4) y tendencia del atelier.",
+    "parameters": {
+      "properties": {
+        "category_id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Category Id"
+        },
+        "limit": {
+          "default": 8,
+          "maximum": 15,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        }
+      },
+      "title": "TrendingArgs",
+      "type": "object",
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "plan_more_for_less",
+    "description": "Calcula cómo llevar más prendas distintas dentro de un presupuesto explícito o habitual. Respeta tallas y filtros. Selecciona precios menores con stock, una unidad por prenda. No inventa rebajas ni modifica el carrito.",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "query": {
+          "anyOf": [
+            {
+              "maxLength": 150,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Solo términos de la prenda, no el mensaje completo.",
+          "title": "Query"
+        },
+        "category_id": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Category Id"
+        },
+        "gender": {
+          "anyOf": [
+            {
+              "maxLength": 30,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gender"
+        },
+        "size": {
+          "anyOf": [
+            {
+              "maxLength": 20,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Size"
+        },
+        "size_group": {
+          "anyOf": [
+            {
+              "pattern": "^(upper|lower|footwear|accessory)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Size Group"
+        },
+        "top_size": {
+          "anyOf": [
+            {
+              "maxLength": 20,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Top Size"
+        },
+        "bottom_size": {
+          "anyOf": [
+            {
+              "maxLength": 20,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bottom Size"
+        },
+        "shoe_size": {
+          "anyOf": [
+            {
+              "maxLength": 20,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Shoe Size"
+        },
+        "color": {
+          "anyOf": [
+            {
+              "maxLength": 60,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Color"
+        },
+        "styles": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 6,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Styles"
+        },
+        "max_price": {
+          "anyOf": [
+            {
+              "maximum": 1000000.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Price"
+        },
+        "use_profile": {
+          "default": true,
+          "title": "Use Profile",
+          "type": "boolean"
+        },
+        "recent_days": {
+          "anyOf": [
+            {
+              "maximum": 90,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Recent Days"
+        },
+        "exclude_product_ids": {
+          "items": {
+            "type": "integer"
+          },
+          "maxItems": 30,
+          "title": "Exclude Product Ids",
+          "type": "array"
+        },
+        "limit": {
+          "default": 4,
+          "maximum": 6,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "budget": {
+          "anyOf": [
+            {
+              "maximum": 1000000.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Budget"
+        },
+        "max_items": {
+          "default": 6,
+          "maximum": 6,
+          "minimum": 1,
+          "title": "Max Items",
+          "type": "integer"
+        }
+      },
+      "title": "MoreForLessArgs",
+      "type": "object"
+    }
+  },
+  {
+    "name": "recommend_outfit",
+    "description": "Arma outfits completos armonizados (top + inferior + calzado + accesorios) según ocasión (cena, fiesta, casual, oficina) y presupuesto.",
+    "parameters": {
+      "properties": {
+        "base_product_id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "ID numerico de la prenda base unicamente si el usuario solicito completar un producto especifico",
+          "title": "Base Product Id"
+        },
+        "base_product_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Nombre o texto de la prenda base para buscarla si no se tiene su ID numerico",
+          "title": "Base Product Name"
+        },
+        "query": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Texto libre o termino de busqueda de la prenda base o contexto del outfit",
+          "title": "Query"
+        },
+        "product_id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "ID numerico de prenda base (alias de base_product_id)",
+          "title": "Product Id"
+        },
+        "occasion": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Ocasion o estilo indicado por el usuario; no asumir",
+          "title": "Occasion",
+          "x-user-grounded": true
+        },
+        "max_budget": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Presupuesto maximo en Bs",
+          "title": "Max Budget"
+        },
+        "gender": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "HOMBRE, MUJER o UNISEX",
+          "title": "Gender"
+        },
+        "top_size": {
+          "anyOf": [
+            {
+              "maxLength": 20,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Talla de camisa o polera",
+          "title": "Top Size",
+          "x-user-grounded": true
+        },
+        "bottom_size": {
+          "anyOf": [
+            {
+              "maxLength": 20,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Talla del pantalón o falda",
+          "title": "Bottom Size",
+          "x-user-grounded": true
+        },
+        "shoe_size": {
+          "anyOf": [
+            {
+              "maxLength": 20,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Talla del calzado",
+          "title": "Shoe Size",
+          "x-user-grounded": true
+        },
+        "top_sizes": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 4,
+          "title": "Top Sizes",
+          "type": "array",
+          "x-user-grounded": true
+        },
+        "bottom_sizes": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 4,
+          "title": "Bottom Sizes",
+          "type": "array",
+          "x-user-grounded": true
+        },
+        "shoe_sizes": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 4,
+          "title": "Shoe Sizes",
+          "type": "array",
+          "x-user-grounded": true
+        },
+        "top_type": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Top Type"
+        },
+        "bottom_type": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bottom Type"
+        },
+        "bottom_fit": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bottom Fit"
+        },
+        "measurements": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Measurements",
+          "type": "object",
+          "x-context-only": true
+        },
+        "exclude_product_ids": {
+          "items": {
+            "type": "integer"
+          },
+          "maxItems": 24,
+          "title": "Exclude Product Ids",
+          "type": "array"
+        }
+      },
+      "title": "RecommendOutfitArgs",
+      "type": "object",
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "recommend_pickup_branches",
+    "description": "Recomienda sucursales por cobertura de stock de variantes exactas y ciudad explícita o guardada. Sin variant_ids revisa cantidades de mi carrito. No inventa proximidad ni tiempos de viaje.",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "variant_ids": {
+          "items": {
+            "type": "integer"
+          },
+          "maxItems": 12,
+          "title": "Variant Ids",
+          "type": "array"
+        },
+        "city": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "City"
+        }
+      },
+      "title": "BranchAdviceArgs",
+      "type": "object"
+    }
+  },
+  {
+    "name": "search_products",
+    "description": "Busca prendas reales en el catálogo con filtros de nombre, categoría, presupuesto, color o talla.",
+    "parameters": {
+      "properties": {
+        "query": {
+          "anyOf": [
+            {
+              "maxLength": 150,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Query"
+        },
+        "category_id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Category Id",
+          "x-context-only": true
+        },
+        "min_price": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min Price"
+        },
+        "max_price": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Price"
+        },
+        "gender": {
+          "anyOf": [
+            {
+              "maxLength": 20,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gender",
+          "x-user-grounded": true
+        },
+        "color": {
+          "anyOf": [
+            {
+              "maxLength": 60,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Color",
+          "x-user-grounded": true
+        },
+        "size": {
+          "anyOf": [
+            {
+              "maxLength": 20,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Size",
+          "x-user-grounded": true
+        },
+        "limit": {
+          "default": 12,
+          "maximum": 30,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        }
+      },
+      "title": "SearchProductsArgs",
+      "type": "object",
+      "additionalProperties": false
+    }
+  }
+]

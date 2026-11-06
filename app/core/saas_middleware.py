@@ -21,6 +21,8 @@ def resolve_scope(headers, path):
     if path in ('/api/v1/payments/webhook','/api/v1/payments/stripe-webhook','/api/v1/payments/stripe-local-webhook','/api/v1/saas/stripe-webhook'):
         return None
     token = headers.get('authorization', '')
+    if path == '/api/v1/mcp' and not token.startswith('Bearer '):
+        raise HTTPException(401, 'MCP requiere una sesión autenticada')
     slug = headers.get('x-tenant', '').strip().lower()
     tenant_id, platform = None, False
     with SessionLocal() as db:

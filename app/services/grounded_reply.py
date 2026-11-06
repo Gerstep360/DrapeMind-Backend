@@ -12,6 +12,7 @@ class ProductReply(BaseModel):
     product_ids: list[int] = Field(min_length=1, max_length=6)
     presentation: Literal["text", "cards"] = "text"
     include_stock: bool = False
+    intro: str = Field(default='', max_length=300)
 
 
 class QueryPresentation(BaseModel):
@@ -23,26 +24,21 @@ class QueryPresentation(BaseModel):
 class StoreDataReply(BaseModel):
     model_config = ConfigDict(extra="forbid")
     presentation: Literal["auto", "text"] = "auto"
-    source_tool: Literal[
-        "get_my_shopping_context",
-        "discover_for_me",
-        "recommend_pickup_branches",
-        "plan_more_for_less",
-        "find_cart_savings",
-        "get_branch_availability",
-        "get_stock",
-        "calculate_cart_totals",
-        "calculate_selection_budget",
-        "compare_products",
-        "get_my_orders",
-        "get_my_reservations",
-        "get_my_payment_status",
-        "get_store_policy",
-    ]
+    source_tool: str = Field(min_length=1, max_length=80, pattern=r'^[a-zA-Z0-9_]+$')
 
 
 def render_store_data(tool: str, data) -> str:
     """Small server-owned templates for non-catalog commerce capabilities."""
+    if tool == 'get_my_cart':
+        if not data.get('items'):
+            return 'Tu carrito está vacío.'
+        return data.get('resumen_texto') or 'Tu carrito contiene prendas; puedes revisarlas en el carrito.'
+    if tool == 'get_new_arrivals':
+        return 'No encontré novedades con stock de los últimos 30 días en esta tienda.' if not data else 'Hay novedades disponibles; puedes consultar sus variantes.'
+    if tool == 'get_catalog_overview':
+        store = data.get('tienda') or 'esta tienda'
+        return (f"En {store} hay {data['productos_activos']} productos activos, "
+                f"{data['productos_con_stock']} con stock y {data['novedades_con_stock_ultimos_30_dias']} novedades con stock de los últimos 30 días.")
     if tool in {
         "get_my_shopping_context",
         "discover_for_me",
@@ -125,7 +121,11 @@ def render_store_data(tool: str, data) -> str:
             if data.get("configured")
             else "La tienda todavía no configuró esa política. Consulta con atención al cliente."
         )
-    raise ValueError("Fuente de datos no soportada")
+    from app.services.ai_tools import TOOLS
+    if tool not in TOOLS or not TOOLS[tool].read_only:
+        raise ValueError('Fuente de datos no soportada')
+    from app.services.ui_presentations import render_tool_values
+    return render_tool_values(data)
 
 
 def has_commercial_claim(text: str) -> bool:

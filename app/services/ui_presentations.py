@@ -3,6 +3,19 @@
 from decimal import Decimal
 
 
+def render_tool_values(data, depth=0):
+    """Generic bounded view of server-owned values for newly registered tools."""
+    if data is None:
+        return 'Sin datos registrados.'
+    if isinstance(data, dict):
+        if not data:
+            return 'Sin datos registrados.'
+        return '\n'.join(f"{str(key).replace('_', ' ').capitalize()}: {render_tool_values(value, depth+1)}" for key, value in list(data.items())[:30])
+    if isinstance(data, (list, tuple)):
+        return '\n\n'.join(render_tool_values(value, depth+1) for value in data[:15]) or 'No hay resultados en esta consulta.'
+    return str(data)[:1500]
+
+
 def _text(value):
     return str(value if value is not None else "—")[:1000]
 
@@ -298,4 +311,9 @@ def tool_presentation(name: str, data) -> dict | None:
             else "La tienda todavía no configuró esta información. Consulta con atención al cliente.",
             "tone": "neutral" if data.get("configured") else "notice",
         }
+    from app.services.ai_tools import TOOLS
+    definition = TOOLS.get(name)
+    if definition and definition.read_only:
+        return {'type': 'information', 'title': definition.description.split('.')[0][:120],
+                'source_tool': name, 'body': render_tool_values(data), 'tone': 'neutral'}
     return None

@@ -220,7 +220,7 @@ async def test_native_personal_query_uses_profile_context_persists_explicit_size
             }
         ]
     }
-    complete = AsyncMock(return_value=tool)
+    complete = AsyncMock(side_effect=[tool, {'choices':[{'message':{'role':'assistant','content':None,'tool_calls':[{'id':'finish','type':'function','function':{'name':'respond_with_store_data','arguments':json.dumps({'source_tool':'discover_for_me'})}}]}}]}])
     monkeypatch.setattr(nvidia_agent, "complete", complete)
     data = {
         "products": [],

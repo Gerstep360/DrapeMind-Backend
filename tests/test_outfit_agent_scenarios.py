@@ -85,29 +85,13 @@ class OutfitAgentScenariosTests(unittest.TestCase):
         self.assertTrue(any(c["nombre"] == "Falda Midi Plisada Seda" for c in cards))
         self.assertTrue(any(c["nombre"] == "Sandalias con tacones en punta negra" for c in cards))
 
-    def test_scenario_2_analizar_perchero_empty_cart_returns_showroom_cards(self):
-        mock_candidates = [
-            {"id": 1, "nombre": "Camisa Oxford Atelier", "precio": 240.0, "categoria_id": 49, "imagenes": ["https://img.test/c1.jpg"]},
-            {"id": 2, "nombre": "Pantalón Chino Clásico", "precio": 290.0, "categoria_id": 62, "imagenes": ["https://img.test/p1.jpg"]},
-        ]
-        var1 = SimpleNamespace(id=11, producto_id=1, color="Blanco", talla="M", imagen="https://img.test/c1.jpg", stock_total=10, stock_reservado=0, activo=True)
-        var2 = SimpleNamespace(id=12, producto_id=2, color="Beige", talla="32", imagen="https://img.test/p1.jpg", stock_total=10, stock_reservado=0, activo=True)
-
-        scalars_mock = MagicMock()
-        scalars_mock.all.side_effect = [[var1], [var2]]
-        self.db.scalars.return_value = scalars_mock
-
-        with patch("app.services.ai_tools.cart_payload", return_value={"items": []}), \
-             patch("app.services.ai_tools.search_products", return_value=mock_candidates):
+    def test_scenario_2_empty_cart_read_does_not_run_hidden_search(self):
+        with patch("app.services.ai_tools.cart_payload", return_value={"items": []}), patch("app.services.ai_tools.search_products") as search:
             cart_res = _cart(self.context, EmptyArgs())
-
         self.assertEqual(cart_res["estado"], "VACIO")
-        self.assertGreaterEqual(len(cart_res["sugerencias"]), 1)
-
-        cards = _cards_from_tool(self.db, "get_my_cart", {}, cart_res)
-        self.assertGreaterEqual(len(cards), 1)
-        self.assertEqual(cards[0]["accion"], "AGREGAR")
-        self.assertIn("Sugerencia", cards[0]["motivo"])
+        self.assertEqual(cart_res["sugerencias"], [])
+        self.assertEqual(_cards_from_tool(self.db, "get_my_cart", {}, cart_res), [])
+        search.assert_not_called()
 
     def test_scenario_3_disenar_outfit_a_medida_returns_cards(self):
         mock_candidates = [

@@ -154,11 +154,11 @@ def test_price_zero_is_not_replaced_by_untrusted_fallback(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("presentation", ["text", "cards"])
-async def test_simple_query_finishes_in_one_inference_with_explicit_presentation(
+async def test_read_result_returns_to_model_before_explicit_presentation(
     monkeypatch, presentation
 ):
     completion = AsyncMock(
-        return_value=call("search_products", query="camisa", presentation=presentation)
+        side_effect=[call("search_products", query="camisa", presentation=presentation), call("respond_with_products", product_ids=[7], presentation=presentation)]
     )
     monkeypatch.setattr(nvidia_agent, "complete", completion)
     execute = MagicMock(return_value=[{"id": 7}])
@@ -175,7 +175,7 @@ async def test_simple_query_finishes_in_one_inference_with_explicit_presentation
     result = await nvidia_agent.run_nvidia_agent(
         MagicMock(), SimpleNamespace(id=1), "consulta", {}, AsyncMock()
     )
-    assert completion.await_count == 1
+    assert completion.await_count == 2
     assert "presentation" not in execute.call_args.args[1]
     assert bool(result["action_items"]) == (presentation == "cards")
     if presentation == "text":
