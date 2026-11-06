@@ -150,7 +150,7 @@ def prepare_env(app, config, wizard=False):
                        POSTGRES_PASSWORD=password, POSTGRES_DB='drapemind_db',
                        DATABASE_URL=f'postgresql+psycopg://drapemind_owner:{quote(password)}@127.0.0.1:5432/drapemind_db')
     if not old.get('NVIDIA_MODEL'):
-        changes.update(NVIDIA_MODEL='nvidia/nemotron-3-super-120b-a12b', NVIDIA_BASE_URL='https://integrate.api.nvidia.com/v1')
+        changes.update(NVIDIA_MODEL='nvidia/nemotron-3.5-bolt-e4b', NVIDIA_BASE_URL='https://integrate.api.nvidia.com/v1')
     for key in ('STRIPE_SAAS_WEBHOOK_SECRET','STRIPE_WEBHOOK_SECRET'):
         if old.get('STRIPE_LOCAL_WEBHOOK_SECRET') and old.get(key)==old['STRIPE_LOCAL_WEBHOOK_SECRET']:
             changes[key]=''

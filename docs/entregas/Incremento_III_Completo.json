@@ -865,7 +865,7 @@
     },
     {
       "archivo": "capitulo-V\\RESULTADOS.md",
-      "sha256": "5c65d3511440f26dc201c87dafae4171029bc672741eeb2745521add7d7ad823"
+      "sha256": "ce3a78497746272fcda08332f674199a755adb2f49a52761670694ace0799ad8"
     },
     {
       "archivo": "capitulo-V\\caso de pruebas\\CU-21.md",
@@ -1012,5 +1012,5 @@
       "sha256": "fbe067e4e56f03d96c328ad58a464d3956e53f998c90d71ef97af9d7896edd81"
     }
   ],
-  "sha256": "dfcc09d7f556997b27c526d34de0b54ada932bfb694928172bfad67d7d302da9"
+  "sha256": "8bddaf7616f0ba223974dacb072c023e767aef1a718d208d014cf54e420866e5"
 }

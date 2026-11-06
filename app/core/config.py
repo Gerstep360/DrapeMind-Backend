@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     CORS_ALLOW_CREDENTIALS: bool = True
     NVIDIA_BASE_URL: str = "https://integrate.api.nvidia.com/v1"
     NVIDIA_API_KEY: str = ""
-    NVIDIA_MODEL: str = "nvidia/nemotron-3-super-120b-a12b"
+    NVIDIA_MODEL: str = "nvidia/nemotron-3.5-bolt-e4b"
     NVIDIA_EXTRA_BODY: dict[str, Any] = Field(default_factory=lambda: {"chat_template_kwargs": {"enable_thinking": False}})
     AI_MAX_TOOL_ROUNDS: int = Field(default=3, ge=1, le=6)
     AI_MAX_TOOL_CALLS: int = Field(default=8, ge=1, le=20)

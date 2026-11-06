@@ -6,7 +6,7 @@ Angular y Flutter consumen FastAPI por HTTP y un WebSocket autenticado para el c
 
 En `backend/.env`: `NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1`, `NVIDIA_API_KEY` y `NVIDIA_MODEL`. El modelo debe estar habilitado para la cuenta y soportar streaming y herramientas. `python -m scripts.local_tasks check-ai` verifica ambos contratos con una petición real. No se descarga ni se inicia ningún proceso de inferencia en la computadora.
 
-Modelo predeterminado verificado: `nvidia/nemotron-3-super-120b-a12b`. `python -m scripts.diagnostics.check_grounded_chat` contrasta las respuestas con el catálogo local y comprueba la separación entre texto y tarjetas. `probe_nvidia_catalog --model ...` permite medir otro modelo en un proceso de prueba sin alterar `.env`.
+Modelo predeterminado verificado: `nvidia/nemotron-3.5-bolt-e4b`. `python -m scripts.diagnostics.check_grounded_chat` contrasta las respuestas con el catálogo local y comprueba la separación entre texto y tarjetas. `probe_nvidia_catalog --model ...` permite medir otro modelo en un proceso de prueba sin alterar `.env`.
 
 ## Flujo
 
