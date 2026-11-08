@@ -1,3 +1,7 @@
+"""CU-23: Procesar y confirmar pago electrónico.
+Controlador canónico de pagos del segundo parcial.
+"""
+
 import hashlib
 import hmac
 import json
@@ -13,14 +17,15 @@ from app.core.config import settings
 from app.db.session import get_db
 from app.models import Order, Payment, Role, User
 from app.schemas.api import PaymentCreate, PaymentOut, PaymentWebhook
-from app.services.store import confirm_payment, create_payment, staff_can_access_branch
 from app.services.realtime import event_hub
+from app.services.store import confirm_payment, create_payment, staff_can_access_branch
+
+logger = logging.getLogger(__name__)
 
 from app.segundo_parcial.cu23_pagos.cu23_stripe import router as stripe_router
 
 router = APIRouter()
 router.include_router(stripe_router)
-logger = logging.getLogger(__name__)
 
 
 def _can_read_payment(user: User, order: Order, db: Session) -> bool:
@@ -40,8 +45,8 @@ def _can_read_payment(user: User, order: Order, db: Session) -> bool:
     "",
     response_model=PaymentOut,
     status_code=201,
-    summary="Iniciar pago",
-    description="CU-25. El monto se toma del pedido; el cliente nunca decide el importe.",
+    summary="CU-23: Iniciar pago",
+    description="CU-23. El monto se toma del pedido; el cliente nunca decide el importe.",
 )
 def initiate(
     payload: PaymentCreate,
@@ -58,7 +63,11 @@ def initiate(
     )
     if not order:
         raise HTTPException(404, "Pedido no encontrado")
-    if current_user.rol == Role.CLIENTE:
+    if (
+        current_user.rol not in {Role.ADMIN, Role.ENCARGADO, Role.CAJERO, Role.VENDEDOR}
+        or payload.metodo != "EFECTIVO"
+        or order.canal != "TIENDA"
+    ):
         raise HTTPException(
             422,
             "Las compras se pagan con Stripe. Abre el pago seguro del pedido para continuar.",
@@ -69,7 +78,7 @@ def initiate(
 @router.get(
     "/order/{order_id}",
     response_model=list[PaymentOut],
-    summary="Consultar pagos de un pedido",
+    summary="CU-23: Consultar pagos de un pedido",
 )
 def payments_for_order(
     order_id: int,
@@ -88,66 +97,10 @@ def payments_for_order(
     )
 
 
-@router.get(
-    "/{payment_id}", response_model=PaymentOut, summary="Consultar estado de pago"
-)
-def get_payment(
-    payment_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> Payment:
-    payment = db.get(Payment, payment_id)
-    order = db.get(Order, payment.pedido_id) if payment else None
-    if not payment or not order or not _can_read_payment(current_user, order, db):
-        raise HTTPException(404, "Pago no encontrado")
-    return payment
-
-
-@router.post(
-    "/webhook",
-    response_model=PaymentOut,
-    include_in_schema=True,
-    summary="Webhook de confirmacion",
-    description="CU-26. Endpoint de pasarela; valida HMAC SHA-256 sobre el body crudo y es idempotente.",
-)
-async def webhook(
-    request: Request,
-    x_webhook_signature: str = Header(alias="X-Webhook-Signature"),
-    db: Session = Depends(get_db),
-) -> Payment:
-    body = await request.body()
-    expected = hmac.new(
-        settings.PAYMENT_WEBHOOK_SECRET.encode(), body, hashlib.sha256
-    ).hexdigest()
-    if not hmac.compare_digest(expected, x_webhook_signature):
-        raise HTTPException(401, "Firma de webhook invalida")
-    try:
-        payload = PaymentWebhook.model_validate(json.loads(body))
-    except (ValueError, json.JSONDecodeError) as exc:
-        raise HTTPException(422, "Payload de webhook invalido") from exc
-    candidate = db.scalar(
-        select(Payment).where(Payment.referencia_externa == payload.referencia_externa)
-    )
-    if candidate and candidate.proveedor == "STRIPE":
-        raise HTTPException(409, "Este pago requiere el webhook firmado de Stripe")
-    payment = confirm_payment(db, payload.referencia_externa, payload.estado)
-    order = db.get(Order, payment.pedido_id)
-    await event_hub.publish(
-        {
-            "type": "payment_updated",
-            "payment_id": payment.id,
-            "order_id": order.id,
-            "status": payment.estado,
-        },
-        order.usuario_id,
-    )
-    return payment
-
-
 @router.post(
     "/{payment_id}/mock-confirm",
     response_model=PaymentOut,
-    summary="Confirmar pago mock",
+    summary="CU-23: Confirmar pago mock",
 )
 def mock_confirm(
     payment_id: int,
@@ -155,6 +108,11 @@ def mock_confirm(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Payment:
+    if settings.PAYMENT_PROVIDER.lower() == "stripe":
+        raise HTTPException(
+            410,
+            "La confirmación simulada está deshabilitada. Consulta el pago seguro de Stripe.",
+        )
     query = (
         select(Payment)
         .join(Order, Order.id == Payment.pedido_id)
@@ -163,7 +121,7 @@ def mock_confirm(
     rol_str = str(getattr(current_user, "rol", ""))
     is_staff = rol_str in {"ADMIN", "VENDEDOR", "ENCARGADO", "CAJERO"} or getattr(
         current_user, "rol", None
-    ) in {"ADMIN", "VENDEDOR", "ENCARGADO", "CAJERO"}
+    ) in {Role.ADMIN, Role.VENDEDOR, Role.ENCARGADO, Role.CAJERO}
     if not is_staff:
         query = query.where(Order.usuario_id == current_user.id)
     payment = db.scalar(query)
@@ -179,14 +137,113 @@ def mock_confirm(
     if payment.estado == "APROBADO":
         return payment
     payment = confirm_payment(db, payment.referencia_externa, "APROBADO")
+    event_payload = {
+        "type": "payment_updated",
+        "payment_id": payment.id,
+        "order_id": payment.pedido_id,
+        "status": payment.estado,
+    }
+    background_tasks.add_task(event_hub.publish, event_payload, current_user.id)
+    from app.services.push_notifications import dispatch_notification
+
     background_tasks.add_task(
-        event_hub.publish,
-        {
-            "type": "payment_updated",
-            "payment_id": payment.id,
-            "order_id": payment.pedido_id,
-            "status": payment.estado,
-        },
+        dispatch_notification,
+        db,
         current_user.id,
+        "Pago Aprobado",
+        f"Tu pago para el pedido #{payment.pedido_id} ha sido confirmado exitosamente.",
+        "COMPRA",
+        {"screen": "/orders", "order_id": payment.pedido_id},
     )
     return payment
+
+
+@router.get(
+    "/{payment_id}",
+    response_model=PaymentOut,
+    summary="CU-23: Consultar estado de pago",
+)
+def get_payment(
+    payment_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Payment:
+    payment = db.get(Payment, payment_id)
+    if not payment:
+        raise HTTPException(404, "Pago no encontrado")
+    order = db.get(Order, payment.pedido_id)
+    if not order or not _can_read_payment(current_user, order, db):
+        raise HTTPException(404, "Pago no encontrado")
+    return payment
+
+
+@router.post("/webhook", summary="CU-23: Webhook HMAC de pasarela de pago")
+async def payment_webhook(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    x_signature: str | None = Header(default=None, alias="X-Signature"),
+    db: Session = Depends(get_db),
+) -> dict:
+    if settings.PAYMENT_PROVIDER.lower() == "stripe":
+        raise HTTPException(
+            410, "Utiliza el webhook firmado de Stripe para confirmar pagos."
+        )
+    raw_body = await request.body()
+    x_signature = x_signature or request.headers.get("x-webhook-signature")
+    if not x_signature:
+        raise HTTPException(401, "Falta la firma HMAC")
+    expected = hmac.new(
+        settings.PAYMENT_WEBHOOK_SECRET.encode(), raw_body, hashlib.sha256
+    ).hexdigest()
+    if not hmac.compare_digest(expected, x_signature):
+        raise HTTPException(401, "Firma HMAC inválida")
+    try:
+        data = PaymentWebhook.model_validate(json.loads(raw_body.decode()))
+    except ValueError as exc:
+        raise HTTPException(422, "Payload de webhook inválido") from exc
+    from app.core.tenancy import system_scope
+    from app.db.tenant_session import bind_tenant
+
+    with system_scope(db):
+        payment = db.scalar(
+            select(Payment)
+            .where(Payment.referencia_externa == data.referencia_externa)
+            .with_for_update()
+        )
+    if not payment:
+        raise HTTPException(404, "Transacción no encontrada")
+    bind_tenant(db, payment.tenant_id)
+    if payment.proveedor == "STRIPE":
+        raise HTTPException(409, "Este pago requiere el webhook firmado de Stripe")
+    if data.estado == "APROBADO":
+        payment = confirm_payment(db, payment.referencia_externa, "APROBADO")
+        order = db.get(Order, payment.pedido_id)
+        if order:
+            event = {
+                "type": "payment_approved",
+                "order_id": order.id,
+                "payment_id": payment.id,
+                "status": order.estado,
+            }
+            background_tasks.add_task(
+                event_hub.publish, event, order.usuario_id, tenant_id=payment.tenant_id
+            )
+            background_tasks.add_task(
+                event_hub.publish,
+                event,
+                None,
+                {"ADMIN", "VENDEDOR"},
+                tenant_id=payment.tenant_id,
+            )
+            from app.services.push_notifications import dispatch_notification
+
+            background_tasks.add_task(
+                dispatch_notification,
+                db,
+                order.usuario_id,
+                "Pago Aprobado",
+                f"Tu pago para el pedido #{payment.pedido_id} ha sido aprobado exitosamente.",
+                "COMPRA",
+                {"screen": "/orders", "order_id": payment.pedido_id},
+            )
+    return {"status": "ok", "payment_id": payment.id}

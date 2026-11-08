@@ -152,3 +152,45 @@ def test_cash_desk_card_is_pending_until_stripe_and_qr_is_not_accepted(
         order = db.get(Order, response.json()["pedido_id"])
         assert order.paid_at is None and order.estado == "PENDIENTE_PAGO"
         assert db.scalar(select(func.count(Payment.id))) == 0
+
+
+def test_legacy_payment_cannot_bypass_stripe_for_a_staff_purchase(
+    client, factory, stocked, monkeypatch
+):
+    from app.core.config import settings
+    from app.services.store import checkout_cart
+    from decimal import Decimal
+
+    with factory(tenant_id=1) as db:
+        order = checkout_cart(
+            db,
+            db.get(User, stocked[0]),
+            "RECOJO",
+            None,
+            Decimal(0),
+            None,
+            branch_id=stocked[2],
+        )
+        order.usuario_id = 1
+        db.commit()
+        order_id = order.id
+    for method in ("QR", "TARJETA", "EFECTIVO", "TRANSFERENCIA"):
+        response = client.post(
+            "/api/v1/payments",
+            headers=headers(),
+            json={"pedido_id": order_id, "metodo": method},
+        )
+        assert response.status_code == 422, response.text
+    monkeypatch.setattr(settings, "PAYMENT_PROVIDER", "stripe")
+    response = client.post("/api/v1/payments/123/mock-confirm", headers=headers())
+    assert response.status_code == 410
+    response = client.post(
+        "/api/v1/payments/webhook",
+        headers={**headers(), "X-Webhook-Signature": "disabled-legacy-endpoint"},
+        json={},
+    )
+    assert response.status_code == 410
+    with factory(tenant_id=1) as db:
+        assert db.get(Order, order_id).estado == "PENDIENTE_PAGO"
+        assert db.get(Order, order_id).paid_at is None
+        assert db.scalar(select(func.count(Payment.id))) == 0

@@ -11,7 +11,7 @@ from fastapi import APIRouter
 
 from app.segundo_parcial.cu22_carrito_checkout.cu22_carrito import router as cu09_router
 from app.segundo_parcial.cu22_carrito_checkout.cu22_checkout import router as cu10_router
-from app.modules.carrito_pedidos_y_pagos.cu11_procesar_y_confirmar_pago_electronico import router as cu11_router
+from app.segundo_parcial.cu23_pagos.cu23_pagos import router as cu11_router
 from app.segundo_parcial.cu24_pedidos.cu24_historial import router as cu12_router
 from app.segundo_parcial.compartido.caja_online import router as cu37_router
 from app.segundo_parcial.cu24_pedidos.cu24_entregas import router as cu39_router
