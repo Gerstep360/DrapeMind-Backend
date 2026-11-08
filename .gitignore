@@ -48,6 +48,7 @@ huggingface/
 # Static product uploads
 static/products/*
 !static/products/placeholder.svg
+app/static/products/*
 
 # Local SaaS backups and generated credentials
 backups/
@@ -66,3 +67,4 @@ deploy.json
 !docs/entregas/Consolidado_CU01_CU30.zip
 !docs/entregas/Roles_y_avisos_multitienda.zip
 !docs/entregas/Compras_y_pagos_diferidos.zip
+!docs/entregas/Segundo_parcial_CU01_CU30.zip

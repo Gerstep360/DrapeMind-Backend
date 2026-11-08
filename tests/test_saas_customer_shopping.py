@@ -1,16 +1,16 @@
 """Real middleware, persisted memberships and branch inventory transactions."""
-from datetime import datetime,timedelta,timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import uuid4
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import select,func
+from sqlalchemy import select, func
 from app.core.tenancy import system_scope
-from app.models import User,Role,UserStatus,ProductVariant,BranchStock,Cart,CartItem,Branch,Order,InventoryMovement,UserStyleProfile
-from app.models.saas import Tenant,CustomerAccount
+from app.models import User, Role, UserStatus, ProductVariant, BranchStock, Cart, CartItem, Branch, Order, InventoryMovement, UserStyleProfile
+from app.models.saas import Tenant, CustomerAccount
 from app.core.security import create_access_token
-from app.services.store import checkout_cart,cancel_unpaid_order
-from test_saas_isolation import factory,client,headers
+from app.services.store import checkout_cart, cancel_unpaid_order
+from test_saas_isolation import factory, client, headers
 
 def platform(client):
     response=client.post('/api/v1/auth/login',json={'email':'platform@example.com','password':'Test-platform-123!'})
@@ -129,7 +129,7 @@ def test_pickup_rejects_missing_or_other_company_branch(factory,stocked):
             db.rollback()
 
 def test_pos_keeps_anonymous_buyer_separate_from_attendant(factory,stocked):
-    from app.modules.carrito_pedidos_y_pagos.cu37_registrar_venta_presencial_pago_y_comprobante import registrar_venta_pos,PosSaleRequest
+    from app.segundo_parcial.compartido.caja_online import registrar_venta_pos, PosSaleRequest
     from app.services.merchant_identity import receipt_identity
     uid,vid,north=stocked
     with factory(tenant_id=1) as db:

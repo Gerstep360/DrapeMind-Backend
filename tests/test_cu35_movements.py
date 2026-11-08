@@ -5,9 +5,7 @@ from fastapi import HTTPException
 
 from app.models import Role
 from app.schemas.api import InventoryAdjustment
-from app.modules.sucursales_inventario_y_proveedores import (
-    cu35_registrar_movimientos_recepcion_y_ajustes_de_inventario as cu35,
-)
+from app.segundo_parcial.cu09_inventario import cu09_movimientos as cu35
 
 
 def test_reception_creates_entrada_movement(monkeypatch):

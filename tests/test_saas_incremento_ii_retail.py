@@ -1,10 +1,10 @@
 from decimal import Decimal
 from uuid import uuid4
 import pytest
-from sqlalchemy import select,func
-from test_saas_incremento_ii import factory,client,stock,headers,offline_request
-from app.models import User,Role,UserStatus,BranchStaff,Product,ProductVariant,BranchStock,Order,OrderItem,Payment,Reservation
-from app.incrementos.incremento_ii.models import SyncOperation,SyncAudit,GarmentExchange
+from sqlalchemy import select, func
+from test_saas_incremento_ii import factory, client, stock, headers, offline_request
+from app.models import User, Role, UserStatus, BranchStaff, Product, ProductVariant, BranchStock, Order, OrderItem, Payment, Reservation
+from app.segundo_parcial.compartido.offline_modelos import SyncOperation, SyncAudit, GarmentExchange
 
 
 @pytest.fixture
@@ -145,7 +145,7 @@ def test_closed_branch_cash_conflict_can_be_refunded_and_audited(client,clerk,fa
 
 
 def test_exchange_refund_preserves_net_revenue(client,clerk,factory):
-    from app.services.financials import net_payments,net_delivered_orders
+    from app.services.financials import net_payments, net_delivered_orders
     sale=sync(client,clerk,sale_body()).json()['resultado']['sale']
     with factory(tenant_id=1) as db:
         db.get(Product,1).precio=Decimal('80');db.commit()
@@ -193,7 +193,7 @@ def test_result_lookup_is_scoped_to_the_authenticated_owner(client,clerk):
 
 
 def test_expired_reservation_releases_branch_and_global_inventory(client,clerk,factory):
-    from datetime import datetime,timedelta,timezone
+    from datetime import datetime, timedelta, timezone
     result=client.post('/api/v1/offline/reservations',headers=headers(4),json=offline_request())
     assert result.status_code==201,result.text
     with factory(tenant_id=1) as db:

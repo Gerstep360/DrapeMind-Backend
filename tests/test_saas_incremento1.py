@@ -25,7 +25,7 @@ def test_i1_cu01_duplicate_slug_is_conflict(client):
 
 
 def test_i1_cu01_mid_transaction_failure_rolls_back_company(client,factory,monkeypatch):
-    from app.api.v1.endpoints import saas
+    from app.segundo_parcial.cu01_empresas import cu01_api as saas
     monkeypatch.setattr(saas,'hash_password',Mock(side_effect=RuntimeError('injected test failure')))
     assert client.post('/api/v1/saas/tenants',headers=platform_headers(),json=company_data()).status_code==500
     with factory() as db,system_scope(db):
@@ -34,7 +34,7 @@ def test_i1_cu01_mid_transaction_failure_rolls_back_company(client,factory,monke
 
 
 def test_i1_cu01_integrity_race_returns_conflict_and_rolls_back(client,factory,monkeypatch):
-    from app.api.v1.endpoints import saas
+    from app.segundo_parcial.cu01_empresas import cu01_api as saas
     monkeypatch.setattr(saas,'hash_password',Mock(side_effect=IntegrityError('fixture',{},Exception('unique conflict'))))
     assert client.post('/api/v1/saas/tenants',headers=platform_headers(),json=company_data()).status_code==409
     with factory() as db:

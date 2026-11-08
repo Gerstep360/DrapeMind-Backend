@@ -38,11 +38,7 @@ sys.path.insert(0, str(BACKEND_DIR))
 from sqlalchemy import delete, func, select, text
 from app.core.security import hash_password
 from app.db.session import SessionLocal
-from app.models.entities import (
-    Address, Branch, BranchStaff, BranchStock, Category, City, Gender, Order,
-    OrderItem, Payment, Product, ProductVariant, Promotion, Reservation, ReservationItem,
-    Role, Season, Supplier, SupplierProduct, User, UserStatus, UserStyleProfile,
-)
+from app.models.entities import Address, Branch, BranchStaff, BranchStock, Category, City, Gender, Order, OrderItem, Payment, Product, ProductVariant, Promotion, Reservation, ReservationItem, Role, Season, Supplier, SupplierProduct, User, UserStatus, UserStyleProfile
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
 SEED_PREFIX = "seed:poblacion:"

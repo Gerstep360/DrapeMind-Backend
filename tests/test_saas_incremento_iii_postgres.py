@@ -3,21 +3,12 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 from uuid import uuid4
 from decimal import Decimal
-from sqlalchemy import select,func,text
-from test_saas_incremento_ii_postgres import factory,client,pytestmark
+from sqlalchemy import select, func, text
+from test_saas_incremento_ii_postgres import factory, client, pytestmark
 from test_saas_customer_shopping import stocked
-from test_saas_incremento_iii import (
- professional,checkout,paid,
- test_checkout_reply_loss_recovers_same_order_and_never_reduces_stock_twice,
- test_receipt_pdf_requires_payment_owner_or_assigned_branch,
- test_customer_can_cancel_pending_checkout_and_stock_returns_once,
- test_report_plan_role_scope_and_input_validation,
- test_report_natural_language_is_grounded_saved_and_tenant_scoped,
- test_nvidia_unavailable_creates_no_fabricated_report,
- test_delivery_price_comes_from_server_not_client,
-)
+from test_saas_incremento_iii import professional, checkout, paid, test_checkout_reply_loss_recovers_same_order_and_never_reduces_stock_twice, test_receipt_pdf_requires_payment_owner_or_assigned_branch, test_customer_can_cancel_pending_checkout_and_stock_returns_once, test_report_plan_role_scope_and_input_validation, test_report_natural_language_is_grounded_saved_and_tenant_scoped, test_nvidia_unavailable_creates_no_fabricated_report, test_delivery_price_comes_from_server_not_client
 from app.services.store import checkout_cart
-from app.models import User,Order,ProductVariant
+from app.models import User, Order, ProductVariant
 
 def test_concurrent_checkout_uuid_has_one_order_and_one_stock_decrement(factory,stocked):
  uid,vid,branch=stocked;operation=str(uuid4());barrier=Barrier(2)

@@ -100,7 +100,7 @@ def test_nvidia_socket_routes_concurrent_replies_to_their_requests(auth_token_an
 def auth_token_and_user(monkeypatch):
     monkeypatch.setattr("app.db.session.SessionLocal", TestingSessionLocal)
     monkeypatch.setattr(
-        "app.modules.inteligencia_artificial_y_asistencia_de_moda.cu18_consultar_al_asistente_inteligente_altair.SessionLocal",
+        "app.segundo_parcial.cu29_altair.cu29_consultar_al_asistente_inteligente_altair.SessionLocal",
         TestingSessionLocal,
     )
 

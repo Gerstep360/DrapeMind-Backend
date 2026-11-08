@@ -8,23 +8,10 @@ from app.core.config import settings
 from app.schemas.genui import UIProposal
 from app.services.product_cards import _cards_from_tool
 from app.services.ai_tools import TOOLS, ToolContext, execute_tool, tool_catalog
-from app.services.chat_context import (
-    observe_cards,
-    prompt_state,
-    read_context,
-    serialize_observation,
-    update_context,
-)
+from app.services.chat_context import observe_cards, prompt_state, read_context, serialize_observation, update_context
 from app.services.llm_provider import complete
 from app.services.ai_errors import AIProviderError
-from app.services.grounded_reply import (
-    ProductReply,
-    QueryPresentation,
-    StoreDataReply,
-    has_commercial_claim,
-    render_products,
-    render_store_data,
-)
+from app.services.grounded_reply import ProductReply, QueryPresentation, StoreDataReply, has_commercial_claim, render_products, render_store_data
 from app.services.product_cards import _product_card
 from app.services.ui_presentations import tool_presentation
 from app.services.shopping_questions import ShoppingQuestion, question_form

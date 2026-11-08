@@ -41,13 +41,11 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
 from app.core.security import hash_password
-from app.models.entities import (
-    Address, Category, Gender, Product, ProductVariant, Role, User, UserStatus,
-)
+from app.models.entities import Address, Category, Gender, Product, ProductVariant, Role, User, UserStatus
 try:
     from scripts.db.seed_data import run_full_seed, seed_categories, seed_products, seed_users
 except ImportError:
-    from .seed_data import run_full_seed, seed_categories, seed_products, seed_users
+    from scripts.db.seed_data import run_full_seed, seed_categories, seed_products, seed_users
 
 
 

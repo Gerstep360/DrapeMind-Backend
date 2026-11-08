@@ -6,17 +6,7 @@ import unicodedata
 
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
-from app.models import (
-    Address,
-    Branch,
-    BranchStock,
-    Category,
-    City,
-    Favorite,
-    Product,
-    ProductVariant,
-    UserStyleProfile,
-)
+from app.models import Address, Branch, BranchStock, Category, City, Favorite, Product, ProductVariant, UserStyleProfile
 from app.services.store import cart_payload, normalize_gender
 
 ZERO = Decimal("0")

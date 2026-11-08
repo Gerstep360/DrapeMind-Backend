@@ -10,9 +10,7 @@ from app.db.session import get_db
 from app.models import Reservation, Role, User
 from app.schemas.api import OrderOut, QRValidationRequest, ReservationOut
 from app.services.realtime import event_hub
-from app.services.store import (
-    convert_reservation_to_order, expire_due_reservations, staff_can_access_branch,
-)
+from app.services.store import convert_reservation_to_order, expire_due_reservations, staff_can_access_branch
 
 router = APIRouter()
 

@@ -7,10 +7,10 @@ from fastapi import BackgroundTasks, HTTPException
 from app.main import app  # Initialize routers in the application's normal order.
 from app.models import Role
 from app.schemas.api import OrderStatusUpdate
-from app.modules.realidad_aumentada import cu17_utilizar_vestidor_virtual_mediante_realidad_aumentada as ar
-from app.modules.carrito_pedidos_y_pagos import cu12_consultar_pedidos_e_historial_de_compras as orders
-from app.modules.carrito_pedidos_y_pagos import cu39_gestionar_pedidos_ventas_y_entregas as admin_orders
-from app.modules.carrito_pedidos_y_pagos import cu37_registrar_venta_presencial_pago_y_comprobante as pos
+from app.segundo_parcial.cu30_vestidor import cu30_vestidor as ar
+from app.segundo_parcial.cu24_pedidos import cu24_historial as orders
+from app.segundo_parcial.cu24_pedidos import cu24_entregas as admin_orders
+from app.segundo_parcial.compartido import caja_online as pos
 
 
 class StoreRepairsTests(TestCase):
@@ -26,7 +26,7 @@ class StoreRepairsTests(TestCase):
 
     def test_recommendation_selection_uses_existing_stock_validation(self):
         from app.schemas.api import RecommendationApply
-        from app.modules.inteligencia_artificial_y_asistencia_de_moda import cu24_aplicar_recomendacion_de_ia_al_carrito as recommendations
+        from app.segundo_parcial.cu29_altair import cu29_aplicar_recomendacion_de_ia_al_carrito as recommendations
         db, user = MagicMock(), SimpleNamespace(id=17)
         with patch.object(recommendations, 'replace_cart_items_batch', return_value={'items': []}) as apply:
             result = recommendations.aplicar_recomendacion_carrito(

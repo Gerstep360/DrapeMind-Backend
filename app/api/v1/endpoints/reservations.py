@@ -9,17 +9,8 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, require_roles
 from app.db.session import get_db
 from app.models import Reservation, ReservationItem, Role, User
-from app.schemas.api import (
-    OrderOut, QRValidationRequest, ReservationCreate, ReservationDetail,
-    ReservationOut,
-)
-from app.services.store import (
-    cancel_reservation,
-    convert_reservation_to_order,
-    create_reservation_from_cart,
-    expire_due_reservations,
-    staff_can_access_branch,
-)
+from app.schemas.api import OrderOut, QRValidationRequest, ReservationCreate, ReservationDetail, ReservationOut
+from app.services.store import cancel_reservation, convert_reservation_to_order, create_reservation_from_cart, expire_due_reservations, staff_can_access_branch
 from app.services.realtime import event_hub
 
 router = APIRouter()

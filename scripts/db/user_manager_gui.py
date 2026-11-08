@@ -11,7 +11,7 @@ sys.path.insert(0, str(BACKEND_DIR))
 try:
     from scripts.db.db_manager_gui import DrapeMindDBManager, main
 except ImportError:
-    from .db_manager_gui import DrapeMindDBManager, main
+    from scripts.db.db_manager_gui import DrapeMindDBManager, main
 
 if __name__ == "__main__":
     main()

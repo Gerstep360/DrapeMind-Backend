@@ -5,16 +5,9 @@ from types import SimpleNamespace
 from fastapi import HTTPException
 
 from scripts.db.seed.seed_data import sample_balanced_products
-from app.modules.inteligencia_artificial_y_asistencia_de_moda.cu26_generar_reportes_empresariales_mediante_ia import (
-    _sintetizar_reporte_directivo_resiliente,
-    ReporteDinamicoIA,
-)
-from app.modules.inteligencia_artificial_y_asistencia_de_moda.cu25_registrar_producto_asistido_por_ia import (
-    _generar_ficha_estudio_fallback,
-    ProductAiAssistExtendedRequest,
-    ProductStudioAiContent,
-)
-from app.modules.carrito_pedidos_y_pagos.cu12_consultar_pedidos_e_historial_de_compras import download_receipt
+from app.segundo_parcial.cu25_reportes_voz.cu25_generar_reportes_empresariales_mediante_ia import _sintetizar_reporte_directivo_resiliente, ReporteDinamicoIA
+from app.segundo_parcial.cu29_altair.cu29_registrar_producto_asistido_por_ia import _generar_ficha_estudio_fallback, ProductAiAssistExtendedRequest, ProductStudioAiContent
+from app.segundo_parcial.cu24_pedidos.cu24_historial import download_receipt
 from app.models.entities import Role
 
 

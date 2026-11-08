@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     NVIDIA_BASE_URL: str = "https://integrate.api.nvidia.com/v1"
     NVIDIA_API_KEY: str = ""
     NVIDIA_MODEL: str = "nvidia/nemotron-3.5-bolt-e4b"
+    NVIDIA_ASR_SERVER: str = "grpc.nvcf.nvidia.com:443"
+    NVIDIA_ASR_FUNCTION_ID: str = "71203149-d3b7-4460-8231-1be2543a1fca"
+    NVIDIA_ASR_LANGUAGE: str = "multi"
     NVIDIA_EXTRA_BODY: dict[str, Any] = Field(default_factory=lambda: {"chat_template_kwargs": {"enable_thinking": False}})
     AI_MAX_TOOL_ROUNDS: int = Field(default=3, ge=1, le=6)
     AI_MAX_TOOL_CALLS: int = Field(default=8, ge=1, le=20)

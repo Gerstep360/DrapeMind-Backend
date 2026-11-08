@@ -7,10 +7,7 @@ from app.api.deps import require_roles
 from app.db.session import get_db
 from app.models import Branch, BranchStaff, BranchStock, City, InventoryMovement, Product, ProductVariant, Role, User
 from app.services.store import staff_can_access_branch
-from app.schemas.api import (
-    BranchInput, BranchOut, BranchStockInput, BranchStockOut, CityInput, CityOut,
-    StaffAssignmentInput,
-)
+from app.schemas.api import BranchInput, BranchOut, BranchStockInput, BranchStockOut, CityInput, CityOut, StaffAssignmentInput
 
 router = APIRouter()
 

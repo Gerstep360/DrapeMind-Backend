@@ -21,7 +21,7 @@ from app.services.store import confirm_payment, create_payment, staff_can_access
 
 logger = logging.getLogger(__name__)
 
-from app.api.v1.endpoints.stripe_payments import router as stripe_router
+from app.segundo_parcial.cu23_pagos.cu23_stripe import router as stripe_router
 
 router = APIRouter()
 router.include_router(stripe_router)

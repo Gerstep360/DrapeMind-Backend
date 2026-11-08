@@ -2,9 +2,9 @@
 from decimal import Decimal
 from types import SimpleNamespace
 import pytest
-from test_saas_isolation import factory,client,headers
+from test_saas_isolation import factory, client, headers
 from app.core.tenancy import system_scope
-from app.models import User,Role,UserStatus,BranchStaff,BranchStock,ProductVariant,InventoryMovement
+from app.models import User, Role, UserStatus, BranchStaff, BranchStock, ProductVariant, InventoryMovement
 from app.services.promotion_rules import basket_discount
 from sqlalchemy import select
 

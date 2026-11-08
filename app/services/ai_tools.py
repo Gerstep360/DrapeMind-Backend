@@ -9,25 +9,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import (
-    Branch,
-    BranchStock,
-    Favorite,
-    Order,
-    Payment,
-    Product,
-    ProductVariant,
-    Reservation,
-    User,
-    UserStyleProfile,
-)
-from app.services.store import (
-    cart_payload,
-    get_product_detail,
-    normalize_gender,
-    product_payload,
-    search_products,
-)
+from app.models import Branch, BranchStock, Favorite, Order, Payment, Product, ProductVariant, Reservation, User, UserStyleProfile
+from app.services.store import cart_payload, get_product_detail, normalize_gender, product_payload, search_products
 
 
 class EmptyArgs(BaseModel):
@@ -1684,18 +1667,7 @@ TOOLS['get_catalog_overview'] = ReadToolDefinition(
     EmptyArgs, _catalog_overview,
 )
 
-from app.services.personal_shopping import (
-    ShoppingArgs,
-    DiscoverArgs,
-    MoreForLessArgs,
-    BranchAdviceArgs,
-    CartSavingsArgs,
-    get_context,
-    discover,
-    plan_more,
-    branch_advice,
-    cart_savings,
-)
+from app.services.personal_shopping import ShoppingArgs, DiscoverArgs, MoreForLessArgs, BranchAdviceArgs, CartSavingsArgs, get_context, discover, plan_more, branch_advice, cart_savings
 
 for capability in [
     ReadToolDefinition(

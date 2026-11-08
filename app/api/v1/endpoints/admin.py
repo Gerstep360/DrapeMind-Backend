@@ -9,13 +9,8 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_roles
 from app.core.config import settings
 from app.db.session import get_db
-from app.models import (
-    BranchStaff, Category, InventoryMovement, Order, Product, ProductVariant, Reservation, Role, User, AIInteraction,
-)
-from app.schemas.api import (
-    AssistedProductRequest, CategoryInput, CategoryOut, InventoryAdjustment,
-    OrderOut, ProductInput, ProductOut, ReservationOut, VariantInput, VariantOut,
-)
+from app.models import BranchStaff, Category, InventoryMovement, Order, Product, ProductVariant, Reservation, Role, User, AIInteraction
+from app.schemas.api import AssistedProductRequest, CategoryInput, CategoryOut, InventoryAdjustment, OrderOut, ProductInput, ProductOut, ReservationOut, VariantInput, VariantOut
 from app.services.ai import call_nvidia
 from app.services.financials import net_delivered_orders
 from app.services.ai_errors import AIProviderError

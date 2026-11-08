@@ -17,19 +17,19 @@ class HistoryArgs(BaseModel):
 
 
 def indicators(context, args):
-    from app.incrementos.incremento_iv.router import dashboard
+    from app.segundo_parcial.cu27_dashboard.cu27_api import dashboard
 
     return dashboard(args.days, args.sucursal_id, context.user, context.db)
 
 
 def predictions(context, args):
-    from app.incrementos.incremento_iv.router import predictions as read
+    from app.segundo_parcial.cu28_machine_learning.cu28_api import predictions as read
 
     return read(args.sucursal_id, context.user, context.db)
 
 
 def saved_reports(context, args):
-    from app.incrementos.incremento_iii.router import report_history
+    from app.segundo_parcial.cu25_reportes_voz.cu25_api import report_history
 
     rows = report_history(args.limit, context.user, context.db)
     return [
@@ -45,8 +45,8 @@ def saved_reports(context, args):
 
 
 def suppliers(context, args):
-    from app.incrementos.incremento_ii.cu11_proveedores import suppliers as read
-    from app.incrementos.incremento_ii.schemas import SupplierOut
+    from app.segundo_parcial.cu11_proveedores.cu11_api import suppliers as read
+    from app.segundo_parcial.compartido.offline_contratos import SupplierOut
 
     return [
         SupplierOut.model_validate(row).model_dump(mode="json")
@@ -55,7 +55,7 @@ def suppliers(context, args):
 
 
 def supply_orders(context, args):
-    from app.incrementos.incremento_ii.cu11_proveedores import orders
+    from app.segundo_parcial.cu11_proveedores.cu11_api import orders
 
     return orders(context.user, context.db)[: args.limit]
 

@@ -10,7 +10,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 from app.main import app
 from app.services import stripe_payments as service
-from app.api.v1.endpoints.stripe_payments import StripeIntentRequest
+from app.segundo_parcial.cu23_pagos.cu23_stripe import StripeIntentRequest
 
 class StripePaymentTests(TestCase):
     def event(self):

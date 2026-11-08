@@ -11,18 +11,15 @@ Casos de uso:
 - CU-26: Generar reportes empresariales mediante IA
 """
 
-from app.modules.inteligencia_artificial_y_asistencia_de_moda.cu18_consultar_al_asistente_inteligente_altair import (
-    router as cu18_router,
-    ws_router as cu18_ws_router,
-)
-from app.modules.inteligencia_artificial_y_asistencia_de_moda.cu19_buscar_prendas_mediante_lenguaje_natural import router as cu19_router
-from app.modules.inteligencia_artificial_y_asistencia_de_moda.cu20_generar_outfit_mediante_ia import router as cu20_router
-from app.modules.inteligencia_artificial_y_asistencia_de_moda.cu21_completar_outfit_desde_una_prenda import router as cu21_router
-from app.modules.inteligencia_artificial_y_asistencia_de_moda.cu22_analizar_estilo_del_carrito import router as cu22_router
-from app.modules.inteligencia_artificial_y_asistencia_de_moda.cu23_optimizar_outfit_por_calidad_precio_y_ahorro import router as cu23_router
-from app.modules.inteligencia_artificial_y_asistencia_de_moda.cu24_aplicar_recomendacion_de_ia_al_carrito import router as cu24_router
-from app.modules.inteligencia_artificial_y_asistencia_de_moda.cu25_registrar_producto_asistido_por_ia import router as cu25_router
-from app.modules.inteligencia_artificial_y_asistencia_de_moda.cu26_generar_reportes_empresariales_mediante_ia import router as cu26_router
+from app.segundo_parcial.cu29_altair.cu29_consultar_al_asistente_inteligente_altair import router as cu18_router, ws_router as cu18_ws_router
+from app.segundo_parcial.cu29_altair.cu29_buscar_prendas_mediante_lenguaje_natural import router as cu19_router
+from app.segundo_parcial.cu29_altair.cu29_generar_outfit_mediante_ia import router as cu20_router
+from app.segundo_parcial.cu29_altair.cu29_completar_outfit_desde_una_prenda import router as cu21_router
+from app.segundo_parcial.cu29_altair.cu29_analizar_estilo_del_carrito import router as cu22_router
+from app.segundo_parcial.cu29_altair.cu29_optimizar_outfit_por_calidad_precio_y_ahorro import router as cu23_router
+from app.segundo_parcial.cu29_altair.cu29_aplicar_recomendacion_de_ia_al_carrito import router as cu24_router
+from app.segundo_parcial.cu29_altair.cu29_registrar_producto_asistido_por_ia import router as cu25_router
+from app.segundo_parcial.cu25_reportes_voz.cu25_generar_reportes_empresariales_mediante_ia import router as cu26_router
 
 ai_router = cu18_router
 ai_ws_router = cu18_ws_router

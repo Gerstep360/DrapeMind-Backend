@@ -7,11 +7,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models import (
-    Address, Branch, BranchStaff, BranchStock, Cart, CartItem, Gender, InventoryMovement,
-    Order, OrderItem, Payment, Product, ProductVariant, Promotion, Reservation,
-    ReservationItem, Role, User,
-)
+from app.models import Address, Branch, BranchStaff, BranchStock, Cart, CartItem, Gender, InventoryMovement, Order, OrderItem, Payment, Product, ProductVariant, Promotion, Reservation, ReservationItem, Role, User
 
 
 def variant_payload(variant: ProductVariant, product: Product) -> dict:
@@ -641,7 +637,7 @@ def checkout_cart(
     deferred_purchase=None,
 ) -> Order:
     if operation_id:
-        from app.incrementos.incremento_iii.models import CheckoutConfirmation
+        from app.segundo_parcial.compartido.comercio_modelos import CheckoutConfirmation
         db.info['checkout_replayed']=False
         db.scalar(select(User).where(User.id==user.id).with_for_update())
         prior=db.scalar(select(CheckoutConfirmation).where(CheckoutConfirmation.usuario_id==user.id,CheckoutConfirmation.operacion_id==operation_id))
@@ -661,7 +657,7 @@ def checkout_cart(
     if not items:
         raise HTTPException(409, "El carrito esta vacio")
     if requested_items is None:
-        from app.incrementos.incremento_iii.deferred_models import DeferredPurchase, PURCHASE_TERMINAL
+        from app.segundo_parcial.cu23_pagos.cu23_modelos import DeferredPurchase, PURCHASE_TERMINAL
         basket=sorted((item.variante_id,item.cantidad) for item in items)
         pending=db.scalars(select(DeferredPurchase).where(DeferredPurchase.usuario_id==user.id,DeferredPurchase.estado.not_in(PURCHASE_TERMINAL)))
         if any(sorted((line['variante_id'],line['cantidad']) for line in row.payload['items'])==basket for row in pending):
@@ -852,7 +848,7 @@ def create_payment(
         raise HTTPException(400, "Método de pago no soportado")
     if method != "EFECTIVO" and (settings.PAYMENT_PROVIDER not in {"mock", "bcp", "stripe"} or (settings.ENVIRONMENT == "production" and settings.PAYMENT_PROVIDER == "mock")):
         raise HTTPException(503, "El pago electrónico no está habilitado: falta integrar una pasarela real")
-    from app.incrementos.incremento_iii.deferred_models import DeferredPurchase
+    from app.segundo_parcial.cu23_pagos.cu23_modelos import DeferredPurchase
     if db.scalar(select(DeferredPurchase.id).where(DeferredPurchase.pedido_id == order.id)):
         raise HTTPException(409, 'Esta compra se concilia con Stripe desde Compras pendientes; no registres otro cobro.')
     if order.estado != "PENDIENTE_PAGO":
@@ -904,7 +900,7 @@ def cancel_unpaid_order(db: Session, order: Order, actor_id: int, *, provider_ch
     """Compensa el stock descontado en checkout si el pedido aun no fue pagado."""
     order = db.scalar(select(Order).where(Order.id == order.id).with_for_update().execution_options(populate_existing=True))
     if not provider_checked:
-        from app.incrementos.incremento_iii.deferred_models import DeferredPurchase
+        from app.segundo_parcial.cu23_pagos.cu23_modelos import DeferredPurchase
         if db.scalar(select(DeferredPurchase.id).where(DeferredPurchase.pedido_id == order.id)):
             raise HTTPException(409, 'Cancela esta compra desde Compras pendientes para verificar primero el estado en Stripe.')
     if order.estado != "PENDIENTE_PAGO":

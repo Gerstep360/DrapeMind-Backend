@@ -1,17 +1,17 @@
-from datetime import datetime,timezone,timedelta
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from uuid import uuid4
 from unittest.mock import AsyncMock
 import json
 import pytest
-from sqlalchemy import select,func
-from test_saas_isolation import factory,client,headers
+from sqlalchemy import select, func
+from test_saas_isolation import factory, client, headers
 from test_saas_customer_shopping import stocked
-from app.models import Order,Payment,ProductVariant,BranchStock,BranchStaff,User,Role
+from app.models import Order, Payment, ProductVariant, BranchStock, BranchStaff, User, Role
 from app.models.saas import SaaSPlan
-from app.services.store import create_payment,confirm_payment
-from app.incrementos.incremento_iii.models import CheckoutConfirmation,BusinessReport
-from app.incrementos.incremento_iii.pdf import document
+from app.services.store import create_payment, confirm_payment
+from app.segundo_parcial.compartido.comercio_modelos import CheckoutConfirmation, BusinessReport
+from app.segundo_parcial.compartido.pdf import document
 
 def checkout(client,stocked,operation=None,**extra):
     uid,vid,branch=stocked
@@ -82,7 +82,7 @@ def professional(factory):
 def test_report_natural_language_is_grounded_saved_and_tenant_scoped(client,factory,stocked,professional,monkeypatch):
     response,_=checkout(client,stocked);paid(factory,response.json()['id'])
     ai=AsyncMock(return_value=(json.dumps({'titulo':'Balance de la tienda','analisis':'Las métricas reflejan cobros confirmados y existencias actuales.','recomendaciones':['Revisar las tallas de mayor salida.']}),{}))
-    monkeypatch.setattr('app.incrementos.incremento_iii.router.call_nvidia',ai)
+    monkeypatch.setattr('app.segundo_parcial.cu25_reportes_voz.cu25_api.call_nvidia',ai)
     r=client.post('/api/v1/business-reports',headers=headers(),json={'consulta':'Revisa ventas de hoy e inventario','entrada':'VOZ'})
     assert r.status_code==201,r.text
     data=r.json();assert data['datos']['ingreso_neto_cobrado']=='300.00' and data['datos']['pedidos_pagados']==1
@@ -97,7 +97,7 @@ def test_report_natural_language_is_grounded_saved_and_tenant_scoped(client,fact
     assert client.get(f"/api/v1/business-reports/{data['id']}/pdf",headers=headers(2,2,'b')).status_code==404
 
 def test_nvidia_unavailable_creates_no_fabricated_report(client,factory,professional,monkeypatch):
-    monkeypatch.setattr('app.incrementos.incremento_iii.router.call_nvidia',AsyncMock(side_effect=RuntimeError('Unavailable')))
+    monkeypatch.setattr('app.segundo_parcial.cu25_reportes_voz.cu25_api.call_nvidia',AsyncMock(side_effect=RuntimeError('Unavailable')))
     r=client.post('/api/v1/business-reports',headers=headers(),json={'consulta':'Revisa inventario actual'})
     assert r.status_code==503
     with factory(tenant_id=1) as db:assert db.scalar(select(func.count(BusinessReport.id)))==0

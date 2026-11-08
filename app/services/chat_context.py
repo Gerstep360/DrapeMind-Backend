@@ -2,14 +2,7 @@
 
 import json
 from typing import Literal
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Field,
-    JsonValue,
-    ValidationError,
-    field_validator,
-)
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, field_validator
 
 MAX_ENTITIES = 8
 LLM_OMITTED_FIELDS = frozenset(

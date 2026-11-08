@@ -5,7 +5,7 @@ from fastapi import HTTPException
 
 from app.models import Role
 from app.schemas.api import BranchStockInput
-from app.modules.sucursales_inventario_y_proveedores import cu34_gestionar_inventario_por_sucursal as cu34
+from app.segundo_parcial.cu09_inventario import cu09_inventario as cu34
 
 
 def test_assigned_branches_for_admin():

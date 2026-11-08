@@ -12,15 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models import (
-    AIInteraction,
-    AIRecommendation,
-    AISession,
-    Product,
-    ProductVariant,
-    User,
-    UserStyleProfile,
-)
+from app.models import AIInteraction, AIRecommendation, AISession, Product, ProductVariant, User, UserStyleProfile
 from app.services.ai_errors import AIProviderError
 from app.services.ai_memory import build_session_summary, load_ai_memory
 from app.services.chat_context import observe_cards, read_context, update_context

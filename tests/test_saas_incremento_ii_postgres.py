@@ -16,32 +16,8 @@ from app.db.tenant_session import TenantSession
 from app.core.tenancy import system_scope
 from app.models import User, UserStatus, Role, Category, City, Product, Branch, Reservation, ProductVariant
 from app.models.saas import Tenant, SaaSPlan, TenantSubscription
-from test_saas_incremento_ii import (
-    client, headers, stock, offline_request,
-    test_cu12_bundle_is_owned_complete_and_without_private_costs,
-    test_cu12_plan_and_role_are_checked,
-    test_cu14_confirmation_is_atomic_and_idempotent,
-    test_cu14_stock_conflict_keeps_server_unchanged_and_can_retry,
-    test_cu14_rechecks_branch_ownership_and_rejects_injected_price,
-    test_cu14_multiple_lines_do_not_leave_partial_reservations,
-    test_cu14_uses_current_database_price_after_download,
-    test_cu11_supplier_portal_and_receiving_updates_inventory_once,
-    test_cu11_cancel_confirmed_restores_offer_without_entering_stock,
-)
-from test_saas_incremento_ii_retail import (
-    clerk, sale_body, sync,
-    test_cash_sale_idempotent_and_isolated,
-    test_price_conflict_is_audited_and_only_manager_can_accept_saved_price,
-    test_rejection_requires_refund_confirmation_and_remains_terminal,
-    test_attend_and_cash_pickup_consumes_reserved_units_once,
-    test_exchange_partial_return_credit_and_duplicate_protection,
-    test_closed_branch_cash_conflict_can_be_refunded_and_audited,
-    test_exchange_refund_preserves_net_revenue,
-    test_conflicted_reservation_cancel_is_visible_to_manager_and_terminal,
-    test_cash_multiple_lines_roll_back_without_partial_sale,
-    test_result_lookup_is_scoped_to_the_authenticated_owner,
-    test_expired_reservation_releases_branch_and_global_inventory,
-)
+from test_saas_incremento_ii import client, headers, stock, offline_request, test_cu12_bundle_is_owned_complete_and_without_private_costs, test_cu12_plan_and_role_are_checked, test_cu14_confirmation_is_atomic_and_idempotent, test_cu14_stock_conflict_keeps_server_unchanged_and_can_retry, test_cu14_rechecks_branch_ownership_and_rejects_injected_price, test_cu14_multiple_lines_do_not_leave_partial_reservations, test_cu14_uses_current_database_price_after_download, test_cu11_supplier_portal_and_receiving_updates_inventory_once, test_cu11_cancel_confirmed_restores_offer_without_entering_stock
+from test_saas_incremento_ii_retail import clerk, sale_body, sync, test_cash_sale_idempotent_and_isolated, test_price_conflict_is_audited_and_only_manager_can_accept_saved_price, test_rejection_requires_refund_confirmation_and_remains_terminal, test_attend_and_cash_pickup_consumes_reserved_units_once, test_exchange_partial_return_credit_and_duplicate_protection, test_closed_branch_cash_conflict_can_be_refunded_and_audited, test_exchange_refund_preserves_net_revenue, test_conflicted_reservation_cancel_is_visible_to_manager_and_terminal, test_cash_multiple_lines_roll_back_without_partial_sale, test_result_lookup_is_scoped_to_the_authenticated_owner, test_expired_reservation_releases_branch_and_global_inventory
 
 TEST_URL = os.environ.get('INCREMENTO_II_TEST_DATABASE_URL')
 pytestmark = pytest.mark.skipif(not TEST_URL, reason='PostgreSQL desechable no configurado')
@@ -53,7 +29,7 @@ def factory():
     assert url.database == 'incremento_ii_test', 'Only the disposable integration database is permitted'
     admin = create_engine(url)
     with admin.begin() as connection:
-        assert connection.scalar(text('SELECT version_num FROM alembic_version')) in {'20261028_02','20261104_01','20261108_01','20261108_02'}
+        assert connection.scalar(text('SELECT version_num FROM alembic_version')) in {'20261028_02','20261104_01','20261108_01','20261108_02','20261108_03'}
         tables = connection.scalars(text("SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename!='alembic_version'")).all()
         connection.exec_driver_sql('TRUNCATE '+','.join('"'+t+'"' for t in tables)+' RESTART IDENTITY CASCADE')
         connection.exec_driver_sql("DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='incremento_ii_runtime') THEN CREATE ROLE incremento_ii_runtime LOGIN NOSUPERUSER NOBYPASSRLS; END IF; END $$")
@@ -140,7 +116,7 @@ def test_cash_sale_simultaneous_retries_never_double_charge(client,clerk,factory
         results=list(pool.map(lambda _:send(),range(2)))
     assert all(r.status_code==200 and r.json()['estado']=='CONFIRMED' for r in results),[r.text for r in results]
     assert len({r.json()['resultado']['sale']['pedido_id'] for r in results})==1
-    from app.models import Order,Payment
+    from app.models import Order, Payment
     with factory(tenant_id=1) as db:
         assert db.get(ProductVariant,1).stock_total==8
         assert db.scalar(select(func.count(Order.id)))==1

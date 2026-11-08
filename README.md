@@ -1,5 +1,8 @@
 # DrapeMind API
 
+[Código y organización vigente del segundo parcial](docs/SEGUNDO_PARCIAL.md). Navegación de tienda, gestión por permisos, voz NVIDIA, Stripe y modelos de demanda persistentes.
+
+
 [Acceso automático por correo, enlaces de tienda y cuenta SaaS genérica](docs/ACCESO_UNIFICADO.md).
 
 FastAPI + SQLAlchemy + PostgreSQL; NVIDIA API es el único proveedor de IA.

@@ -15,10 +15,10 @@ from app.modules.catalogo_y_comercializacion.cu04_consultar_catalogo_de_prendas 
 from app.modules.catalogo_y_comercializacion.cu05_buscar_y_filtrar_prendas import router as cu05_router
 from app.modules.catalogo_y_comercializacion.cu06_consultar_detalle_talla_color_y_variante import router as cu06_router
 from app.modules.catalogo_y_comercializacion.cu08_gestionar_favoritos import router as cu08_router
-from app.modules.catalogo_y_comercializacion.cu29_gestionar_productos_de_ropa import router as cu29_router
-from app.modules.catalogo_y_comercializacion.cu30_gestionar_categorias_tallas_colores_y_variantes import router as cu30_router
-from app.modules.catalogo_y_comercializacion.cu31_gestionar_temporadas_y_colecciones import router as cu31_router
-from app.modules.catalogo_y_comercializacion.cu36_gestionar_promociones import router as cu36_router
+from app.segundo_parcial.cu08_productos.cu08_productos import router as cu29_router
+from app.segundo_parcial.cu08_productos.cu08_variantes import router as cu30_router
+from app.segundo_parcial.cu08_productos.cu08_colecciones import router as cu31_router
+from app.segundo_parcial.cu10_precios_promociones.cu10_promociones import router as cu36_router
 
 catalog_router = cu04_router
 catalog_router.include_router(cu06_router)

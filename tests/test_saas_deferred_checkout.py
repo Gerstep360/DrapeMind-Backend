@@ -1,13 +1,13 @@
-from datetime import datetime,timedelta,timezone
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 from decimal import Decimal
 from fastapi import HTTPException
-from sqlalchemy import select,func
+from sqlalchemy import select, func
 import pytest
-from test_saas_isolation import factory,client,headers
+from test_saas_isolation import factory, client, headers
 from test_saas_customer_shopping import stocked
-from app.models import User,Order,Payment,Product,ProductVariant,Cart,CartItem
-from app.incrementos.incremento_iii.deferred_models import SavedCard,DeferredPurchase
+from app.models import User, Order, Payment, Product, ProductVariant, Cart, CartItem
+from app.segundo_parcial.cu23_pagos.cu23_modelos import SavedCard, DeferredPurchase
 
 
 class StripeFixture:
@@ -39,7 +39,7 @@ class StripeFixture:
 def provider(monkeypatch,factory,stocked):
     from app.core.config import settings
     from app.services import stripe_payments
-    from app.incrementos.incremento_iii import deferred_checkout
+    from app.segundo_parcial.cu23_pagos import cu23_compras_diferidas as deferred_checkout
     monkeypatch.setattr(settings,'PAYMENT_PROVIDER','stripe');monkeypatch.setattr(settings,'STRIPE_SECRET_KEY','sk_test_fixture');monkeypatch.setattr(settings,'STRIPE_PUBLISHABLE_KEY','pk_test_fixture')
     gateway=StripeFixture();monkeypatch.setattr(stripe_payments,'_stripe_request',gateway);monkeypatch.setattr(deferred_checkout,'_stripe_request',gateway)
     uid,vid,branch=stocked
@@ -154,7 +154,7 @@ def test_another_identifier_cannot_duplicate_an_unfinished_purchase(client,stock
 
 
 def test_setup_checks_stripe_owner_status_and_returns_only_masked_card(client,factory,stocked,provider,monkeypatch):
-    from app.incrementos.incremento_iii import deferred_checkout as service
+    from app.segundo_parcial.cu23_pagos import cu23_compras_diferidas as service
     uid=stocked[0];good=True
     def setup_call(method,path,**kwargs):
         if path=='setup_intents':return {'id':'seti_saved','client_secret':'setup_fixture'}
@@ -178,7 +178,7 @@ def test_setup_checks_stripe_owner_status_and_returns_only_masked_card(client,fa
 @pytest.mark.parametrize('outcome',['retry','expire'])
 def test_worker_reconciles_persisted_purchase_without_client(client,factory,stocked,provider,monkeypatch,outcome):
     from app.db import session
-    from app.incrementos.incremento_iii.deferred_worker import tick
+    from app.segundo_parcial.cu23_pagos.cu23_worker import tick
     monkeypatch.setattr(session,'SessionLocal',factory)
     provider.unavailable=outcome=='retry'
     provider.mode='auth' if outcome=='expire' else 'success'

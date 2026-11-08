@@ -9,9 +9,7 @@ from app.api.deps import get_current_user
 from app.db.session import get_db
 from app.services.customer_identity import remember_personal_data
 from app.models import Address, User, UserStyleProfile
-from app.schemas.api import (
-    AddressInput, AddressOut, StyleProfileInput, StyleProfileOut, UserOut, UserUpdate,
-)
+from app.schemas.api import AddressInput, AddressOut, StyleProfileInput, StyleProfileOut, UserOut, UserUpdate
 
 
 router = APIRouter()

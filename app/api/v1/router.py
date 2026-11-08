@@ -1,34 +1,23 @@
 from fastapi import APIRouter
-from app.incrementos.incremento_i.router import router as incremento_i_router
-from app.incrementos.incremento_ii.router import router as incremento_ii_router
-from app.incrementos.incremento_iii.router import router as incremento_iii_router
-from app.incrementos.incremento_iv.router import router as incremento_iv_router
 from app.api.v1.endpoints.mcp import router as mcp_router
-from app.api.v1.endpoints.team import router as team_router
-from app.incrementos.incremento_iii.deferred_checkout import router as deferred_router
+from app.segundo_parcial.cu06_usuarios_roles.cu06_roles_permisos import router as team_router
+from app.segundo_parcial.cu23_pagos.cu23_compras_diferidas import router as deferred_router
 
 from app.modules.acceso_y_gestion_de_usuarios import admin_users_router, auth_router, users_router
 from app.modules.analitica_y_control import analytics_router
-from app.modules.carrito_pedidos_y_pagos import (
-    admin_orders_router, cart_router, orders_router, payments_router,
-)
+from app.modules.carrito_pedidos_y_pagos import admin_orders_router, cart_router, orders_router, payments_router
 from app.modules.catalogo_y_comercializacion import admin_catalog_router, catalog_router
 from app.modules.inteligencia_artificial_y_asistencia_de_moda import ai_router, ai_ws_router
 from app.modules.realidad_aumentada import ar_router
-from app.modules.reservas_y_atencion_en_tienda import (
-    admin_reservations_router, reservations_router,
-)
+from app.modules.reservas_y_atencion_en_tienda import admin_reservations_router, reservations_router
 from app.api.v1.endpoints.admin import ai_runtime_router
 from app.api.v1.endpoints.notifications import router as notifications_router
-from app.modules.sucursales_inventario_y_proveedores import (
-    admin_branches_inventory_router, branches_router,
-)
+from app.modules.sucursales_inventario_y_proveedores import admin_branches_inventory_router, branches_router
+
+from app.segundo_parcial.router import router as segundo_parcial_router
 
 api_router = APIRouter()
-api_router.include_router(incremento_i_router)
-api_router.include_router(incremento_ii_router)
-api_router.include_router(incremento_iii_router)
-api_router.include_router(incremento_iv_router)
+api_router.include_router(segundo_parcial_router)
 api_router.include_router(mcp_router)
 api_router.include_router(team_router)
 api_router.include_router(deferred_router)

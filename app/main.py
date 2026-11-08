@@ -29,7 +29,7 @@ async def lifespan(application: FastAPI):
             if superuser or bypass:
                 raise RuntimeError('Configura RUNTIME_DATABASE_URL con un rol NOSUPERUSER NOBYPASSRLS. Ejecuta scripts.saas_setup runtime-role.')
     logger.info("AI provider=NVIDIA")
-    from app.incrementos.incremento_iii.deferred_worker import run
+    from app.segundo_parcial.cu23_pagos.cu23_worker import run
     worker=asyncio.create_task(run())
     try:
         yield

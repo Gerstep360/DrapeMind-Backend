@@ -8,7 +8,7 @@ from test_saas_isolation import factory, client, headers
 from app.core.tenancy import system_scope
 from app.models import User, Role, UserStatus, ProductVariant, BranchStock, Reservation, InventoryMovement
 from app.models.saas import SaaSPlan
-from app.incrementos.incremento_ii.models import OfflineReservationReceipt, SupplyOrder
+from app.segundo_parcial.compartido.offline_modelos import OfflineReservationReceipt, SupplyOrder
 
 
 @pytest.fixture

@@ -4,7 +4,7 @@ Casos de uso:
 """
 from fastapi import APIRouter
 
-from app.modules.realidad_aumentada.cu17_utilizar_vestidor_virtual_mediante_realidad_aumentada import router as cu17_router
+from app.segundo_parcial.cu30_vestidor.cu30_vestidor import router as cu17_router
 
 ar_router = cu17_router
 

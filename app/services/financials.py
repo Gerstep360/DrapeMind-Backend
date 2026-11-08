@@ -1,8 +1,8 @@
 """Ingresos netos: un crédito por cambio no representa efectivo ingresado otra vez."""
 from decimal import Decimal
-from sqlalchemy import select,func,case,and_
-from app.models import Payment,Order
-from app.incrementos.incremento_ii.models import GarmentExchange
+from sqlalchemy import select, func, case, and_
+from app.models import Payment, Order
+from app.segundo_parcial.compartido.offline_modelos import GarmentExchange
 
 
 def net_payments(db,*filters):

@@ -135,7 +135,7 @@ def database_smoke():
             for command in ([sys.executable,'-m','scripts.saas_setup','backup'],[sys.executable,'-m','alembic','upgrade','head']):
                 subprocess.run(command,cwd=ROOT,check=True,stdout=output,stderr=subprocess.STDOUT)
             deployment.grant_runtime();deployment.ensure_admin(app)
-            from sqlalchemy import create_engine,text
+            from sqlalchemy import create_engine, text
             with create_engine(runtime_url).connect() as connection:
                 assert connection.execute(text('SELECT rolsuper,rolbypassrls FROM pg_roles WHERE rolname=current_user')).one()==(False,False)
                 assert connection.scalar(text('SELECT COUNT(*) FROM pg_tables WHERE schemaname=\'public\''))>30

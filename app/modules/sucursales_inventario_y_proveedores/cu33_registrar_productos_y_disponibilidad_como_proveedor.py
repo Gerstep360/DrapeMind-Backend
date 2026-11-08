@@ -9,13 +9,7 @@ from app.api.deps import get_current_user, require_role
 from app.core.security import hash_password
 from app.db.session import get_db
 from app.models import Role, Supplier, SupplierProduct, User, UserStatus
-from app.schemas.api import (
-    Message,
-    SupplierAccountCreate,
-    SupplierOut,
-    SupplierProductInput,
-    SupplierProductOut,
-)
+from app.schemas.api import Message, SupplierAccountCreate, SupplierOut, SupplierProductInput, SupplierProductOut
 
 router = APIRouter()
 

@@ -7,8 +7,8 @@ from xml.etree import ElementTree as ET
 from test_saas_isolation import factory, client, headers
 from test_saas_customer_shopping import stocked
 from test_saas_incremento_iii import professional
-from app.incrementos.incremento_iv.forecast import forecast
-from app.incrementos.incremento_iv.spreadsheet import workbook
+from app.segundo_parcial.cu28_machine_learning.cu28_forecast import forecast
+from app.segundo_parcial.cu26_exportar_reportes.cu26_excel import workbook
 
 
 def test_export_text_never_becomes_formula_and_xml_is_valid():
@@ -76,7 +76,7 @@ def test_forecast_aggregates_real_paid_order_dates(client, factory):
 
 
 def test_saved_report_excel_is_scoped_and_requires_plan(client, factory, professional, monkeypatch):
-    monkeypatch.setattr('app.incrementos.incremento_iii.router.call_nvidia', AsyncMock(return_value=(json.dumps({'titulo': 'Reporte', 'analisis': 'No hay cobros.', 'recomendaciones': ['Revisar catálogo']}), {})))
+    monkeypatch.setattr('app.segundo_parcial.cu25_reportes_voz.cu25_api.call_nvidia', AsyncMock(return_value=(json.dumps({'titulo': 'Reporte', 'analisis': 'No hay cobros.', 'recomendaciones': ['Revisar catálogo']}), {})))
     result = client.post('/api/v1/business-reports', headers=headers(), json={'consulta': 'Revisa las ventas de hoy'})
     assert result.status_code == 201, result.text
     url = f"/api/v1/business-reports/{result.json()['id']}/xlsx"
@@ -108,7 +108,7 @@ def test_body_asset_never_substitutes_catalog_photo_or_other_tenant(client, fact
 def test_body_asset_upload_requires_admin_transparency_and_keeps_photos(client, factory, stocked, tmp_path, monkeypatch):
     from PIL import Image
     from app.models import Product, ProductVariant
-    monkeypatch.setattr('app.modules.catalogo_y_comercializacion.cu29_gestionar_productos_de_ropa.STATIC_PRODUCTS_DIR', tmp_path)
+    monkeypatch.setattr('app.segundo_parcial.cu08_productos.cu08_productos.STATIC_PRODUCTS_DIR', tmp_path)
     uid, vid, _ = stocked
     with factory(tenant_id=1) as db:
         pid = db.get(ProductVariant, vid).producto_id

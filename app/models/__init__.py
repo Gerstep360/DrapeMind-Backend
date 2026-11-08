@@ -1,10 +1,4 @@
-from app.models.entities import (
-    AIInteraction, AIRecommendation, AISession, Address, Branch, BranchStaff,
-    BranchStock, Cart, CartItem, Category, City, Favorite, Gender, InventoryMovement,
-    Order, OrderItem, Payment, Product, ProductVariant, Promotion, Reservation,
-    ReservationItem, Role, Season, Supplier, SupplierProduct, User, UserDevice,
-    Notification, UserStatus, UserStyleProfile,
-)
+from app.models.entities import AIInteraction, AIRecommendation, AISession, Address, Branch, BranchStaff, BranchStock, Cart, CartItem, Category, City, Favorite, Gender, InventoryMovement, Order, OrderItem, Payment, Product, ProductVariant, Promotion, Reservation, ReservationItem, Role, Season, Supplier, SupplierProduct, User, UserDevice, Notification, UserStatus, UserStyleProfile
 
 __all__ = [
     "User", "Role", "UserStatus", "Gender", "Address", "City", "Branch", "BranchStaff",
@@ -24,10 +18,11 @@ Category.__table__.append_constraint(UniqueConstraint("tenant_id", "slug", name=
 ProductVariant.__table__.append_constraint(UniqueConstraint("tenant_id", "sku", name="uq_variantes_tenant_sku"))
 ProductVariant.__table__.append_constraint(UniqueConstraint("tenant_id", "codigo_barras", name="uq_variantes_tenant_barcode"))
 from app.db.base import Base
-from app.incrementos.incremento_ii.models import SupplyOrder, SupplyOrderItem, OfflineReservationReceipt, SyncOperation, SyncAudit, GarmentExchange, ExchangeReturn
-from app.incrementos.incremento_iii.models import CheckoutConfirmation,BusinessReport
+from app.segundo_parcial.compartido.offline_modelos import SupplyOrder, SupplyOrderItem, OfflineReservationReceipt, SyncOperation, SyncAudit, GarmentExchange, ExchangeReturn
+from app.segundo_parcial.compartido.comercio_modelos import CheckoutConfirmation, BusinessReport
 from app.models.access import TenantRole, UserAccess
-from app.incrementos.incremento_iii.deferred_models import SavedCard, DeferredPurchase
+from app.segundo_parcial.cu23_pagos.cu23_modelos import SavedCard, DeferredPurchase
+from app.segundo_parcial.cu28_machine_learning.cu28_modelos import DemandModel
 tenant_metadata_constraints(Base.metadata)
 
 Promotion.__table__.append_constraint(UniqueConstraint("tenant_id", "codigo", name="uq_promociones_tenant_codigo"))

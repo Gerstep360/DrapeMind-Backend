@@ -6,15 +6,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user
 from app.db.session import get_db
 from app.models import User
-from app.schemas.api import (
-    AIRequest,
-    AIResponse,
-    CartAnalysisRequest,
-    CartOut,
-    NaturalSearchRequest,
-    OutfitRequest,
-    RecommendationApply,
-)
+from app.schemas.api import AIRequest, AIResponse, CartAnalysisRequest, CartOut, NaturalSearchRequest, OutfitRequest, RecommendationApply
 from app.services.ai import apply_recommendation, run_ai_action
 
 router = APIRouter()
