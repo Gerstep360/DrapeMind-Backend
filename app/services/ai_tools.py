@@ -1658,7 +1658,8 @@ def tool_catalog(user=None) -> list[dict]:
         tool = TOOLS[name]
         if not tool.read_only:
             continue
-        if user is not None and tool.allowed_roles and getattr(user, 'rol', None) not in tool.allowed_roles:
+        from app.services.access_control import tool_allowed
+        if user is not None and not tool_allowed(tool, user):
             continue
         schema = tool.schema()
         params = schema['parameters']
@@ -1744,7 +1745,8 @@ def execute_tool(name: str, arguments: dict, context: ToolContext) -> Any:
         return {
             "error": "Esta operación requiere confirmación en la interfaz; no se ejecutó ningún cambio."
         }
-    if tool.allowed_roles and getattr(context.user, 'rol', None) not in tool.allowed_roles:
+    from app.services.access_control import tool_allowed
+    if not tool_allowed(tool, context.user, context.db):
         return {'error': 'No tienes permisos para esta herramienta.'}
     if not isinstance(arguments, dict) or set(arguments) - tool.args_model.model_fields.keys():
         return {'error': 'Argumentos desconocidos en la herramienta.'}

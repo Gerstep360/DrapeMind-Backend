@@ -1,0 +1,16 @@
+"""Same access and multi-store push contracts against migrated PostgreSQL RLS."""
+import os
+import pytest
+from test_saas_incremento_ii_postgres import factory
+from test_saas_isolation import client
+from test_saas_company_access_push import (
+    staff,
+    test_admin_creates_reusable_role_and_denies_are_enforced_with_existing_jwt,
+    test_profiles_are_tenant_private_and_cannot_escalate_customer_or_remove_admin,
+    test_inactive_role_revokes_overrides_and_legacy_role_change_resets_profile,
+    test_device_same_identity_all_memberships_and_logout,
+    test_push_origin_is_server_owned_and_foreign_recipient_rejected,
+    test_browser_subscription_rejects_ssrf,
+)
+
+pytestmark = pytest.mark.skipif(not os.environ.get('INCREMENTO_II_TEST_DATABASE_URL'), reason='PostgreSQL desechable no configurado')

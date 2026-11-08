@@ -1,5 +1,7 @@
 # Entregas académicas
 
+[Actualización de roles, permisos y avisos multitienda](Roles_y_avisos_multitienda.zip). Contiene 31 diagramas afectados en PlantUML, SVG y PNG: CU-06, dominio, modelos de datos y arquitectura, junto con las evidencias de interfaz. Actualiza las figuras correspondientes de las entregas anteriores y del consolidado.
+
 [Incremento I — Capítulo IV: arquitectura e integración](Incremento_I_Capitulo_IV.zip).
 
 El paquete contiene nueve diagramas, cada uno en PlantUML, SVG y PNG, con índice, estilo compartido y verificación de generación. Los títulos y nombres están fuera de las imágenes. Las piezas offline que aún no existen en el código se identifican como previstas.

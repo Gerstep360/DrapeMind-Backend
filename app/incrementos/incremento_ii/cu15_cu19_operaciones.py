@@ -31,6 +31,9 @@ def operation_payload(op):
 
 
 def role_for_kind(user,kind):
+    required = 'offline.use' if kind == 'RESERVATION' else 'reservations.manage' if kind == 'PICKUP' else 'sales.manage'
+    if required not in user.permisos:
+        fail('PERMISSION_REQUIRED','Tu administrador no habilitó esta operación para tu cuenta',403)
     if kind!='RESERVATION' and user.rol not in CASH_ROLES:
         fail('ROLE_FORBIDDEN','Solo el personal de caja autorizado puede registrar una venta',403)
 

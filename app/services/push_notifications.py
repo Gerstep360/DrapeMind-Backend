@@ -19,6 +19,7 @@ logger = logging.getLogger("drapemind.push")
 # Cache global para el token OAuth2 de Google FCM HTTP v1
 _cached_oauth_token: str | None = None
 _cached_oauth_expiry: float = 0.0
+_cached_project_id: str | None = None
 
 
 def _find_firebase_service_account_path() -> str | None:
@@ -97,14 +98,14 @@ async def _get_google_oauth2_token() -> tuple[str | None, str]:
     Retorna (access_token, project_id).
     Cachea el token para reutilizarlo durante su periodo de validez (~50 min).
     """
-    global _cached_oauth_token, _cached_oauth_expiry
+    global _cached_oauth_token, _cached_oauth_expiry, _cached_project_id
 
     project_id = _get_project_id()
 
     # Si hay token en cache con al menos 60 segundos de margen, reutilizar
     now = time.time()
     if _cached_oauth_token and now < (_cached_oauth_expiry - 60):
-        return _cached_oauth_token, project_id
+        return _cached_oauth_token, _cached_project_id or project_id
 
     sa_path = _find_firebase_service_account_path()
     if not sa_path:
@@ -131,6 +132,7 @@ async def _get_google_oauth2_token() -> tuple[str | None, str]:
                 )
                 if credentials.project_id:
                     project_id = credentials.project_id
+                _cached_project_id = project_id
                 return _cached_oauth_token, project_id
         except ImportError:
             pass
@@ -193,12 +195,13 @@ async def _get_google_oauth2_token() -> tuple[str | None, str]:
                 expires_in = data.get("expires_in", 3600)
                 _cached_oauth_token = token
                 _cached_oauth_expiry = now + expires_in
+                _cached_project_id = project_id
                 return token, project_id
             else:
                 logger.warning(
                     "[FCM OAuth2] Error solicitando access_token: HTTP %d: %s",
                     resp.status_code,
-                    resp.text,
+                    'Revisa la cuenta de servicio de Firebase.',
                 )
     except Exception as ex:
         logger.warning("[FCM OAuth2] Error cargando credenciales de cuenta de servicio: %s", ex)
@@ -218,6 +221,7 @@ async def send_fcm_message(
     Soporta envio a multiples tokens concurrentemente con prioridad alta y canal Android.
     Maneja invalidacion automatica cuando Google reporta tokens obsoletos o dados de baja.
     """
+    tokens = list(dict.fromkeys(tokens))
     if not tokens:
         return {"sent": 0, "failed": 0, "invalid_tokens": []}
 
@@ -226,7 +230,7 @@ async def send_fcm_message(
 
     if not access_token:
         logger.info(
-            "[FCM Push v1] Simulado para %d dispositivos vinculados (titulo='%s', silent=%s). "
+            "[FCM Push v1] No enviado: faltan credenciales para %d dispositivos (titulo='%s', silent=%s). "
             "Para activar notificaciones push en segundo plano en Android, descargue la clave privada "
             "desde Firebase Console (Configuracion del proyecto > Cuentas de servicio > Generar nueva clave privada) "
             "y guardela como 'firebase_service_account.json' en el backend.",
@@ -237,7 +241,7 @@ async def send_fcm_message(
         return {
             "sent": 0,
             "failed": len(tokens),
-            "simulated": True,
+            "configured": False,
             "invalid_tokens": [],
             "reason": "NO_SERVICE_ACCOUNT_FILE",
         }
@@ -291,10 +295,10 @@ async def send_fcm_message(
                 elif response.status_code in (400, 404):
                     res_body = response.text
                     # Google devuelve UNREGISTERED o INVALID_ARGUMENT para tokens dados de baja
-                    if "UNREGISTERED" in res_body or "NOT_FOUND" in res_body or response.status_code == 404:
+                    if 'UNREGISTERED' in res_body:
                         invalid_tokens.append(token)
                     failed += 1
-                    logger.warning("[FCM Push v1] Token invalido o no registrado: %s (%s)", token[:16], res_body)
+                    logger.warning("[FCM Push v1] Google rechazó una entrega (HTTP %d)", response.status_code)
                 elif response.status_code == 403 and "PERMISSION_DENIED" in response.text:
                     failed += 1
                     logger.warning(
@@ -306,13 +310,12 @@ async def send_fcm_message(
                 else:
                     failed += 1
                     logger.warning(
-                        "[FCM Push v1] Error enviando a token %s (HTTP %d): %s",
-                        token[:16],
+                        "[FCM Push v1] Error de entrega (HTTP %d): %s",
                         response.status_code,
-                        response.text,
+                        'Consulta la configuración de Firebase.',
                     )
             except Exception as ex:
-                logger.warning("[FCM Push v1] Excepcion de red con token %s: %s", token[:16], ex)
+                logger.warning("[FCM Push v1] Error de red: %s", type(ex).__name__)
                 failed += 1
 
     return {"sent": sent, "failed": failed, "invalid_tokens": invalid_tokens}
@@ -336,26 +339,42 @@ async def dispatch_notification(
     4. Envia push background a traves de Google Firebase Cloud Messaging HTTP v1.
     5. Invalida automaticamente tokens que hayan sido reportados como dados de baja.
     """
-    payload_data = payload or {}
-    notification: Notification | None = None
-
+    from fastapi import HTTPException
+    from app.models import User, UserStatus
+    from app.models.saas import Tenant
+    from starlette.concurrency import run_in_threadpool
+    tenant_id = db.info.get('tenant_id')
+    tenant = db.get(Tenant, tenant_id) if tenant_id else None
+    if tenant is None or not tenant.active:
+        raise HTTPException(403, 'La notificación requiere una tienda autorizada')
+    if user_id is not None and db.get(User, user_id) is None:
+        raise HTTPException(404, 'Destinatario no encontrado en esta tienda')
+    if user_id is not None:
+        recipient = db.get(User, user_id)
+        from app.models.saas import CustomerAccount
+        identity = db.get(CustomerAccount, recipient.customer_account_id) if recipient.customer_account_id else None
+        if recipient.estado != UserStatus.ACTIVO or (identity is not None and not identity.active):
+            db.info['last_push_result'] = {'sent': 0, 'failed': 0, 'devices': 0}
+            return None
+    if user_id is None and not silent:
+        # Each recipient owns their read state. No shared global read flag.
+        recipients = list(db.scalars(select(User.id).where(User.estado == UserStatus.ACTIVO)))
+        totals = {'sent': 0, 'failed': 0}
+        for recipient in recipients:
+            await dispatch_notification(db, recipient, titulo, mensaje, tipo, payload, silent, exclude_token)
+            for key in totals:
+                totals[key] += db.info.get('last_push_result', {}).get(key, 0)
+        db.info['last_push_result'] = totals
+        return None
+    payload_data = {**(payload or {}), 'tenant_id': tenant.id, 'tenant_slug': tenant.slug,
+                    'tenant_name': tenant.name}
+    notification = None
     if not silent:
-        try:
-            notification = Notification(
-                usuario_id=user_id,
-                titulo=titulo,
-                mensaje=mensaje,
-                tipo=tipo,
-                data_payload=payload_data,
-                leido=False,
-            )
-            db.add(notification)
-            db.commit()
-            db.refresh(notification)
-        except Exception as _db_err:
-            db.rollback()
-            logger.warning("No se pudo persistir la notificacion en BD: %s", _db_err)
-            notification = None
+        notification = Notification(usuario_id=user_id, titulo=titulo, mensaje=mensaje,
+            tipo=tipo, data_payload=payload_data, leido=False)
+        db.add(notification)
+        db.commit()
+        db.refresh(notification)
 
     # 1. Enviar evento en tiempo real a traves de WebSockets para Web y Mobile activo
     ws_event = {
@@ -378,25 +397,36 @@ async def dispatch_notification(
         stmt = stmt.where(UserDevice.token != exclude_token)
 
     devices = db.scalars(stmt).all()
-    tokens = [dev.token for dev in devices if dev.token]
-
-    if tokens:
-        data_to_send = {
-            "notification_id": str(notification.id) if notification else "",
-            "type": tipo,
-            "title": titulo,
-            "body": mensaje,
-            **{str(k): str(v) for k, v in payload_data.items()},
-        }
-        res = await send_fcm_message(tokens, titulo, mensaje, data_to_send, silent=silent)
-
-        # Invalidacion automatica de tokens expirados o desinstalados
-        if res.get("invalid_tokens"):
-            for inv_token in res["invalid_tokens"]:
-                for dev in devices:
-                    if dev.token == inv_token:
-                        dev.activo = False
-            db.commit()
+    tokens = list(dict.fromkeys(dev.token for dev in devices if dev.token and not dev.web_subscription))
+    data_to_send = {**payload_data, 'notification_id': str(notification.id) if notification else str(payload_data.get('notification_id', '')),
+                    'type': tipo, 'title': titulo, 'body': mensaje}
+    push_title = f'{tenant.name} · {titulo}'
+    res = await send_fcm_message(tokens, push_title, mensaje, data_to_send, silent=silent)
+    totals = {'sent': res.get('sent', 0), 'failed': res.get('failed', 0),
+              'configured': res.get('configured', True), 'devices': len(devices)}
+    invalid = set(res.get('invalid_tokens', []))
+    seen = set()
+    if not silent:
+        from app.services.browser_push import send
+        for device in devices:
+            if not device.web_subscription or device.token in seen:
+                continue
+            seen.add(device.token)
+            try:
+                outcome = await run_in_threadpool(send, device.web_subscription, push_title, mensaje, data_to_send)
+            except Exception as exc:
+                logger.warning('Web push no entregado: %s', type(exc).__name__)
+                outcome = {'sent': 0, 'failed': 1}
+            totals['sent'] += outcome['sent']
+            totals['failed'] += outcome['failed']
+            if outcome.get('invalid'):
+                invalid.add(device.token)
+    for device in devices:
+        if device.token in invalid:
+            device.activo = False
+    if invalid:
+        db.commit()
+    db.info['last_push_result'] = totals
 
     return notification
 

@@ -78,6 +78,18 @@ class User(TenantOwned, TimestampMixin, Base):
     def is_universal_customer(self) -> bool:
         return self.customer_account_id is not None
 
+    @property
+    def permisos(self) -> list[str]:
+        from sqlalchemy.orm import object_session
+        from app.services.access_control import effective_access
+        return effective_access(object_session(self), self)['permissions']
+
+    @property
+    def rol_empresa(self) -> dict | None:
+        from sqlalchemy.orm import object_session
+        from app.services.access_control import effective_access
+        return effective_access(object_session(self), self)['role']
+
 
 class Address(TenantOwned, TimestampMixin, Base):
     __tablename__ = "direcciones"
@@ -444,7 +456,8 @@ class UserDevice(TenantOwned, TimestampMixin, Base):
     __tablename__ = "dispositivos_usuario"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id", ondelete="CASCADE"), index=True)
-    token: Mapped[str] = mapped_column(String(500), unique=True, index=True)
+    token: Mapped[str] = mapped_column(String(500), index=True)
+    web_subscription: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     dispositivo_id: Mapped[str | None] = mapped_column(String(120))
     plataforma: Mapped[str] = mapped_column(String(30), default="android")
     modelo: Mapped[str | None] = mapped_column(String(100))

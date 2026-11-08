@@ -51,6 +51,8 @@ class LoginTenant(BaseModel):
 
 
 class UserOut(ORMModel):
+    rol_empresa: dict[str, Any] | None = None
+    permisos: list[str] = Field(default_factory=list)
     tenant_id: int | None = None
     is_platform_admin: bool = False
     is_universal_customer: bool = False

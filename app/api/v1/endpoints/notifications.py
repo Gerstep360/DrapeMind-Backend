@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Any
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Header, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
@@ -19,6 +19,33 @@ class DeviceRegisterRequest(BaseModel):
     dispositivo_id: str | None = Field(None, max_length=120, description="Identificador fisico del dispositivo")
     plataforma: str = Field("android", max_length=30, description="android, ios o web")
     modelo: str | None = Field(None, max_length=100, description="Modelo del terminal, ej: Pixel 7")
+
+
+class BrowserRegisterRequest(BaseModel):
+    subscription: dict[str, Any]
+    dispositivo_id: str = Field(min_length=8, max_length=120)
+
+
+@router.get('/notifications/push-config')
+def push_config(user: User = Depends(get_current_user)):
+    from app.services.browser_push import public_key
+    return {'public_key': public_key()}
+
+
+@router.post('/devices/web-register')
+def register_browser(payload: BrowserRegisterRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    import hashlib
+    from types import SimpleNamespace
+    from app.services.browser_push import validate_subscription
+    from app.services.device_memberships import register
+    try:
+        subscription = validate_subscription(payload.subscription)
+    except (ValueError, TypeError, AttributeError):
+        raise HTTPException(422, 'La suscripción de notificaciones del navegador no es válida')
+    token = 'webpush_' + hashlib.sha256(subscription['endpoint'].encode()).hexdigest()
+    count = register(db, user, SimpleNamespace(token=token, dispositivo_id=payload.dispositivo_id,
+        plataforma='web', modelo='Navegador', web_subscription=subscription))
+    return {'token': token, 'subscribed_stores': count}
 
 
 class DeviceUnregisterRequest(BaseModel):
@@ -64,28 +91,8 @@ def register_device(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    existing = db.scalar(select(UserDevice).where(UserDevice.token == payload.token))
-    if existing:
-        existing.usuario_id = current_user.id
-        if payload.dispositivo_id:
-            existing.dispositivo_id = payload.dispositivo_id
-        existing.plataforma = payload.plataforma
-        if payload.modelo:
-            existing.modelo = payload.modelo
-        existing.activo = True
-        existing.ultimo_uso = func.now()
-    else:
-        new_dev = UserDevice(
-            usuario_id=current_user.id,
-            token=payload.token,
-            dispositivo_id=payload.dispositivo_id,
-            plataforma=payload.plataforma,
-            modelo=payload.modelo,
-            activo=True,
-        )
-        db.add(new_dev)
-
-    db.commit()
+    from app.services.device_memberships import register
+    memberships = register(db, current_user, payload)
 
     active_count = db.scalar(
         select(func.count(UserDevice.id)).where(
@@ -98,6 +105,7 @@ def register_device(
         "status": "success",
         "message": "Dispositivo registrado exitosamente",
         "active_devices_for_user": active_count,
+        "subscribed_stores": memberships,
     }
 
 
@@ -112,15 +120,8 @@ def unregister_device(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    dev = db.scalar(
-        select(UserDevice).where(
-            UserDevice.token == payload.token,
-            UserDevice.usuario_id == current_user.id,
-        )
-    )
-    if dev:
-        dev.activo = False
-        db.commit()
+    from app.services.device_memberships import unregister
+    unregister(db, current_user, payload.token)
 
     return {"status": "success", "message": "Dispositivo desregistrado correctamente"}
 
@@ -173,7 +174,7 @@ def list_notifications(
 )
 async def mark_as_read(
     notification_id: int,
-    originating_token: str | None = Query(None, description="Token del terminal que leyo la notificacion"),
+    originating_token: str | None = Header(None, alias='X-Device-Token'),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Notification:
@@ -206,7 +207,7 @@ async def mark_as_read(
 )
 def mark_all_as_read(
     background_tasks: BackgroundTasks,
-    originating_token: str | None = Query(None),
+    originating_token: str | None = Header(None, alias='X-Device-Token'),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
@@ -248,10 +249,33 @@ async def send_test_notification(
         payload={"screen": payload.screen},
     )
     return {
-        "status": "sent",
+        "status": "stored",
         "notification_id": notif.id if notif else None,
-        "message": "Notificacion despachada a todos los dispositivos vinculados.",
+        "message": "Aviso guardado. Consulta el resultado de entrega a dispositivos.",
+        "delivery": db.info.get('last_push_result', {}),
     }
+
+
+class StoreNotice(BaseModel):
+    titulo: str = Field(min_length=2, max_length=150)
+    mensaje: str = Field(min_length=2, max_length=1500)
+    usuario_id: int = Field(gt=0)
+    screen: str = '/catalog'
+
+
+@router.post('/notifications/send', status_code=201)
+async def send_store_notice(payload: StoreNotice, admin: User = Depends(require_roles(Role.ADMIN)), db: Session = Depends(get_db)):
+    target = db.get(User, payload.usuario_id)
+    if not target or target.estado.value != 'ACTIVO':
+        raise HTTPException(404, 'El destinatario no está activo en tu tienda')
+    if payload.screen not in ('/catalog', '/orders', '/reservations', '/chat', '/notifications'):
+        raise HTTPException(422, 'Selecciona un destino válido dentro de la tienda')
+    notice = await dispatch_notification(db, target.id, payload.titulo, payload.mensaje,
+        'GENERAL', {'screen': payload.screen})
+    if notice is None:
+        raise HTTPException(409, 'La cuenta del destinatario no está disponible para recibir avisos')
+    return {'id': notice.id, 'delivery': db.info.get('last_push_result', {}),
+            'message': 'Aviso guardado en la bandeja de la tienda.'}
 
 
 class BroadcastPayload(BaseModel):

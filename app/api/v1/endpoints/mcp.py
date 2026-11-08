@@ -122,7 +122,8 @@ async def mcp(
         arguments = params.get("arguments", {})
         if not definition or not definition.read_only:
             return error(identity, -32602, "Herramienta no disponible")
-        if definition.allowed_roles and user.rol not in definition.allowed_roles:
+        from app.services.access_control import tool_allowed
+        if not tool_allowed(definition, user, db):
             return error(identity, -32602, "Herramienta no disponible")
         if (
             not isinstance(arguments, dict)

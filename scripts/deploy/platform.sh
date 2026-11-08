@@ -101,6 +101,10 @@ service() {
     while [[ "$parent" != / ]]; do setfacl -m u:drapemind:--x "$parent"; parent=$(dirname "$parent"); done
     setfacl -R -m u:drapemind:rX "$BACKEND_DIR"
     setfacl -m u:drapemind:r-- "$BACKEND_DIR/.env"
+    # Stable VAPID signing key: private, writable runtime storage outside Git.
+    mkdir -p "$BACKEND_DIR/.runtime"
+    chown drapemind:drapemind "$BACKEND_DIR/.runtime"
+    chmod 700 "$BACKEND_DIR/.runtime"
     mkdir -p "$BACKEND_DIR/logs" "$BACKEND_DIR/app/static/products"
     setfacl -R -m u:drapemind:rwX "$BACKEND_DIR/logs" "$BACKEND_DIR/app/static"
     setfacl -d -m u:drapemind:rwX "$BACKEND_DIR/logs" "$BACKEND_DIR/app/static" "$BACKEND_DIR/app/static/products"

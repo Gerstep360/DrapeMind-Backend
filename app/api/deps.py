@@ -1,6 +1,6 @@
 from collections.abc import Callable
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
@@ -13,7 +13,8 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_PREFIX}/auth/to
 
 
 def get_current_user(
-    token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)
+    token: str = Depends(oauth2_scheme), db: Session = Depends(get_db),
+    request: Request = None,
 ) -> User:
     credentials_error = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -41,15 +42,26 @@ def get_current_user(
         identity=db.get(CustomerAccount,user.customer_account_id)
         if not identity or not identity.active or user.rol!=Role.CLIENTE:
             raise HTTPException(403,'La cuenta personal no está disponible')
+    if request is not None and not user.is_platform_admin:
+        from app.services.access_control import effective_access, permission_for
+        access = effective_access(db, user)
+        permission = permission_for(request.url.path, request.method, user)
+        if access['configured'] and permission and permission not in access['permissions']:
+            raise HTTPException(403, {'code': 'PERMISSION_REQUIRED', 'permission': permission, 'message': 'Tu administrador no habilitó esta tarea para tu cuenta.'})
+        request.state.company_access = access
+        request.state.required_permission = permission
     return user
 
 
 def require_roles(*roles: Role) -> Callable:
-    def dependency(current_user: User = Depends(get_current_user)) -> User:
+    def dependency(current_user: User = Depends(get_current_user), request: Request = None) -> User:
         if current_user.is_platform_admin or current_user.tenant_id is None:
             raise HTTPException(403, 'Esta operación requiere un administrador de la empresa')
         if current_user.rol not in roles:
-            raise HTTPException(status_code=403, detail="No tiene permisos para esta operacion")
+            access = getattr(request.state, 'company_access', {}) if request else {}
+            permission = getattr(request.state, 'required_permission', None) if request else None
+            if not (access.get('configured') and permission and permission != 'team.manage' and permission in access.get('permissions', [])):
+                raise HTTPException(status_code=403, detail="No tiene permisos para esta operacion")
         return current_user
 
     return dependency

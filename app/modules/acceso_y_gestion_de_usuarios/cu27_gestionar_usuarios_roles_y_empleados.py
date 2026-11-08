@@ -164,6 +164,12 @@ def actualizar_usuario_administrativo(
     _ensure_active_admin(db,user,next_role,next_status)
 
     if payload.rol is not None:
+        if payload.rol != user.rol:
+            from app.models.access import UserAccess
+            access = db.scalar(select(UserAccess).where(UserAccess.usuario_id == user.id))
+            if access:
+                db.delete(access)
+            db.info.pop('effective_access', None)
         user.rol = payload.rol
     if payload.estado is not None:
         user.estado = payload.estado
