@@ -27,6 +27,7 @@ from app.db.base import Base
 from app.incrementos.incremento_ii.models import SupplyOrder, SupplyOrderItem, OfflineReservationReceipt, SyncOperation, SyncAudit, GarmentExchange, ExchangeReturn
 from app.incrementos.incremento_iii.models import CheckoutConfirmation,BusinessReport
 from app.models.access import TenantRole, UserAccess
+from app.incrementos.incremento_iii.deferred_models import SavedCard, DeferredPurchase
 tenant_metadata_constraints(Base.metadata)
 
 Promotion.__table__.append_constraint(UniqueConstraint("tenant_id", "codigo", name="uq_promociones_tenant_codigo"))

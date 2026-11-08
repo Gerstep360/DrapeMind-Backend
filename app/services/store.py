@@ -636,6 +636,9 @@ def checkout_cart(
     channel: str = 'WEB',
     operation_id: str | None = None,
     payload_hash: str | None = None,
+    requested_items: list[tuple[int, int]] | None = None,
+    expected_total: Decimal | None = None,
+    deferred_purchase=None,
 ) -> Order:
     if operation_id:
         from app.incrementos.incremento_iii.models import CheckoutConfirmation
@@ -647,13 +650,22 @@ def checkout_cart(
                 raise HTTPException(409,'Esta confirmación ya se utilizó con otros datos. Revisa el pedido existente.')
             db.info['checkout_replayed']=True
             return db.get(Order,prior.pedido_id)
-    cart = get_active_cart(db, user.id, create=False)
+    cart = get_active_cart(db, user.id, create=False) if requested_items is None else None
     if cart:
         cart=db.scalar(select(Cart).where(Cart.id==cart.id).with_for_update().execution_options(populate_existing=True))
         if cart.estado!='ACTIVO': raise HTTPException(409,'Este carrito ya fue confirmado')
-    items = db.scalars(select(CartItem).where(CartItem.carrito_id == cart.id if cart else -1)).all()
+    items = db.scalars(select(CartItem).where(CartItem.carrito_id == (cart.id if cart else -1))).all()
+    if requested_items is not None:
+        from types import SimpleNamespace
+        items = [SimpleNamespace(variante_id=vid, cantidad=quantity, precio_referencia=Decimal('0')) for vid, quantity in requested_items]
     if not items:
         raise HTTPException(409, "El carrito esta vacio")
+    if requested_items is None:
+        from app.incrementos.incremento_iii.deferred_models import DeferredPurchase, PURCHASE_TERMINAL
+        basket=sorted((item.variante_id,item.cantidad) for item in items)
+        pending=db.scalars(select(DeferredPurchase).where(DeferredPurchase.usuario_id==user.id,DeferredPurchase.estado.not_in(PURCHASE_TERMINAL)))
+        if any(sorted((line['variante_id'],line['cantidad']) for line in row.payload['items'])==basket for row in pending):
+            raise HTTPException(409,'Estas prendas ya tienen una compra pendiente. Comprueba su pago o cancélala antes de iniciar otra.')
     if delivery_type=='RECOJO' and not branch_id:
         raise HTTPException(422,'Elige una sucursal para recoger tu compra')
     # Lock variants in a stable order. All prices are refreshed from the catalog.
@@ -725,6 +737,8 @@ def checkout_cart(
 
     shipping=settings.DELIVERY_FEE_BOB if delivery_type=='DELIVERY' else Decimal('0.00')
     total_amount = max(Decimal("0.00"), subtotal - descuento + shipping)
+    if expected_total is not None and total_amount != expected_total:
+        raise HTTPException(409, 'El precio, descuento o envío cambió. No se realizó ningún cobro; revisa el importe antes de autorizar otra compra.')
     final_obs = f"{observation} {promo_tag}".strip() if promo_tag else observation
 
     order = Order(
@@ -752,9 +766,14 @@ def checkout_cart(
             cantidad=item.cantidad, precio_unitario=item.precio_referencia,
             descuento=0, subtotal=item.precio_referencia * item.cantidad,
         ))
-    cart.estado = "CONVERTIDO"
+    if cart:
+        cart.estado = "CONVERTIDO"
     if operation_id:
         db.add(CheckoutConfirmation(usuario_id=user.id,operacion_id=operation_id,payload_hash=payload_hash,pedido_id=order.id))
+    if deferred_purchase is not None:
+        deferred_purchase.pedido_id=order.id
+        deferred_purchase.estado='PROCESANDO_PAGO'
+        deferred_purchase.siguiente_intento=datetime.now(timezone.utc)+timedelta(seconds=60)
     db.commit()
     db.refresh(order)
     return order
@@ -833,6 +852,9 @@ def create_payment(
         raise HTTPException(400, "Método de pago no soportado")
     if method != "EFECTIVO" and (settings.PAYMENT_PROVIDER not in {"mock", "bcp", "stripe"} or (settings.ENVIRONMENT == "production" and settings.PAYMENT_PROVIDER == "mock")):
         raise HTTPException(503, "El pago electrónico no está habilitado: falta integrar una pasarela real")
+    from app.incrementos.incremento_iii.deferred_models import DeferredPurchase
+    if db.scalar(select(DeferredPurchase.id).where(DeferredPurchase.pedido_id == order.id)):
+        raise HTTPException(409, 'Esta compra se concilia con Stripe desde Compras pendientes; no registres otro cobro.')
     if order.estado != "PENDIENTE_PAGO":
         raise HTTPException(409, "El pedido no esta pendiente de pago")
     if idempotency_key:
@@ -859,12 +881,12 @@ def create_payment(
 
 
 def confirm_payment(db: Session, reference: str, new_status: str) -> Payment:
-    payment = db.scalar(select(Payment).where(Payment.referencia_externa == reference).with_for_update())
+    payment = db.scalar(select(Payment).where(Payment.referencia_externa == reference).with_for_update().execution_options(populate_existing=True))
     if not payment:
         raise HTTPException(404, "Pago no encontrado")
     if payment.estado in {"APROBADO", "RECHAZADO"}:
         return payment
-    order = db.scalar(select(Order).where(Order.id == payment.pedido_id).with_for_update())
+    order = db.scalar(select(Order).where(Order.id == payment.pedido_id).with_for_update().execution_options(populate_existing=True))
     if new_status == "APROBADO":
         if not order or order.estado != "PENDIENTE_PAGO":
             raise HTTPException(409, "El pedido no admite un nuevo pago; requiere conciliación")
@@ -878,8 +900,13 @@ def confirm_payment(db: Session, reference: str, new_status: str) -> Payment:
     return payment
 
 
-def cancel_unpaid_order(db: Session, order: Order, actor_id: int) -> Order:
+def cancel_unpaid_order(db: Session, order: Order, actor_id: int, *, provider_checked: bool = False) -> Order:
     """Compensa el stock descontado en checkout si el pedido aun no fue pagado."""
+    order = db.scalar(select(Order).where(Order.id == order.id).with_for_update().execution_options(populate_existing=True))
+    if not provider_checked:
+        from app.incrementos.incremento_iii.deferred_models import DeferredPurchase
+        if db.scalar(select(DeferredPurchase.id).where(DeferredPurchase.pedido_id == order.id)):
+            raise HTTPException(409, 'Cancela esta compra desde Compras pendientes para verificar primero el estado en Stripe.')
     if order.estado != "PENDIENTE_PAGO":
         raise HTTPException(409, "Solo se puede cancelar aqui un pedido pendiente de pago")
     items = db.scalars(select(OrderItem).where(OrderItem.pedido_id == order.id)).all()

@@ -63,6 +63,7 @@ class User(TenantOwned, TimestampMixin, Base):
     tenant_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey('saas_tenants.id', ondelete='RESTRICT'), nullable=True, index=True)
     is_platform_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     customer_account_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey('customer_accounts.id'), index=True)
+    stripe_customer_id: Mapped[str | None] = mapped_column(String(100), unique=True)
     __tablename__ = "usuarios"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     nombre: Mapped[str] = mapped_column(String(120))

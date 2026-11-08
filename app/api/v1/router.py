@@ -5,6 +5,7 @@ from app.incrementos.incremento_iii.router import router as incremento_iii_route
 from app.incrementos.incremento_iv.router import router as incremento_iv_router
 from app.api.v1.endpoints.mcp import router as mcp_router
 from app.api.v1.endpoints.team import router as team_router
+from app.incrementos.incremento_iii.deferred_checkout import router as deferred_router
 
 from app.modules.acceso_y_gestion_de_usuarios import admin_users_router, auth_router, users_router
 from app.modules.analitica_y_control import analytics_router
@@ -30,6 +31,7 @@ api_router.include_router(incremento_iii_router)
 api_router.include_router(incremento_iv_router)
 api_router.include_router(mcp_router)
 api_router.include_router(team_router)
+api_router.include_router(deferred_router)
 
 # Notificaciones y Dispositivos Multi-Terminal (1:N)
 api_router.include_router(notifications_router, tags=["Notificaciones y Dispositivos Push"])

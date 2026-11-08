@@ -1,5 +1,7 @@
 # Entregas académicas
 
+[Compras y pagos diferidos](Compras_y_pagos_diferidos.zip). Actualiza CU-22 y CU-23 del Incremento III, consulta y sincronización de CU-16/CU-17 del Incremento II y el consolidado. Incluye 39 diagramas en PlantUML, SVG y PNG, modelos de persistencia y PostgreSQL, fichas de requisitos, verificaciones y capturas. Conserva la separación de las ventas de contado de CU-15. La solicitud puede guardarse sin Internet; Stripe registra tarjetas nuevas y procesa cobros cuando existe conexión.
+
 [Actualización de roles, permisos y avisos multitienda](Roles_y_avisos_multitienda.zip). Contiene 31 diagramas afectados en PlantUML, SVG y PNG: CU-06, dominio, modelos de datos y arquitectura, junto con las evidencias de interfaz. Actualiza las figuras correspondientes de las entregas anteriores y del consolidado.
 
 [Incremento I — Capítulo IV: arquitectura e integración](Incremento_I_Capitulo_IV.zip).

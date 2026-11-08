@@ -1,4 +1,6 @@
 import logging
+import asyncio
+from contextlib import suppress
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -27,7 +29,13 @@ async def lifespan(application: FastAPI):
             if superuser or bypass:
                 raise RuntimeError('Configura RUNTIME_DATABASE_URL con un rol NOSUPERUSER NOBYPASSRLS. Ejecuta scripts.saas_setup runtime-role.')
     logger.info("AI provider=NVIDIA")
-    yield
+    from app.incrementos.incremento_iii.deferred_worker import run
+    worker=asyncio.create_task(run())
+    try:
+        yield
+    finally:
+        worker.cancel()
+        with suppress(asyncio.CancelledError):await worker
 
 tags_metadata = [
     {"name": "Autenticacion", "description": "Registro, login JWT y usuario actual."},

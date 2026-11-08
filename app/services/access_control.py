@@ -33,6 +33,10 @@ DEFAULTS = {
 
 def permission_for(path, method, user=None):
     path = path.removeprefix('/api/v1')
+    if path.startswith('/payments/deferred'):
+        starts_purchase = path == '/payments/deferred' and method == 'POST'
+        needs_offline = starts_purchase or path.endswith(('/context', '/method'))
+        return 'offline.use' if needs_offline else None
     if user is not None and user.rol != Role.CLIENTE:
         if path.startswith('/orders'):
             return 'orders.manage'
