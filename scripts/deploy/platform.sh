@@ -298,6 +298,7 @@ case "$action" in
  --help|-h) :;;
  --check|-c) check;;
  --logs|--ai-logs) exec journalctl -u drapemind-backend -f;;
+ --notify|--notification|-n) (cd "$BACKEND_DIR"; "$PY" scripts/send_custom_notification.py "$@");;
  *)
     lock_deploy
     case "$action" in
@@ -317,7 +318,6 @@ case "$action" in
       --uninstall|--remove) bash "$DEPLOY_DIR/uninstall_drapemind.sh";;
       --admin) cfg admin;;
       --seed) for argument in "$@"; do [[ "$argument" != --reset && "$argument" != --reset=* ]] || { ui_text '31' 'El reset global está deshabilitado en SaaS.'; exit 2; }; done; (cd "$BACKEND_DIR"; "$PY" -m scripts.db.seed_data "$@");;
-      --notify|--notification|-n) (cd "$BACKEND_DIR"; "$PY" scripts/send_custom_notification.py "$@");;
       *) printf 'Opción no reconocida. Consulta --help.\n' >&2; exit 2;;
     esac;;
 esac

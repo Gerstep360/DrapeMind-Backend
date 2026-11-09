@@ -6,7 +6,7 @@ __all__ = [
     "CartItem", "Reservation", "ReservationItem", "Order",
     "OrderItem", "Payment", "InventoryMovement", "AISession", "AIInteraction",
     "AIRecommendation", "UserStyleProfile", "Supplier", "Promotion", "Season",
-    "SupplierProduct", "UserDevice", "Notification",
+    "SupplierProduct", "UserDevice", "Notification", "ProductReview",
 ]
 
 
@@ -23,6 +23,8 @@ from app.segundo_parcial.compartido.comercio_modelos import CheckoutConfirmation
 from app.models.access import TenantRole, UserAccess
 from app.segundo_parcial.cu23_pagos.cu23_modelos import SavedCard, DeferredPurchase
 from app.segundo_parcial.cu28_machine_learning.cu28_modelos import DemandModel
+from app.segundo_parcial.cu30_resenas.cu30_modelos import ProductReview
+
 tenant_metadata_constraints(Base.metadata)
 
 Promotion.__table__.append_constraint(UniqueConstraint("tenant_id", "codigo", name="uq_promociones_tenant_codigo"))

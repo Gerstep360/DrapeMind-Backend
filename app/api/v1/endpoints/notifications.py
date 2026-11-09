@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Header, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -13,8 +13,8 @@ from app.services.realtime import event_hub
 
 router = APIRouter()
 
-
 class DeviceRegisterRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
     token: str = Field(..., min_length=10, max_length=500, description="FCM registration token")
     dispositivo_id: str | None = Field(None, max_length=120, description="Identificador fisico del dispositivo")
     plataforma: str = Field("android", max_length=30, description="android, ios o web")
@@ -84,7 +84,7 @@ class TestNotificationRequest(BaseModel):
     "/devices/register",
     status_code=status.HTTP_200_OK,
     summary="Registrar dispositivo para push",
-    description="Vincula el token FCM del dispositivo al usuario actual. Permite multiples dispositivos por cuenta (1:N).",
+    description="Vincula automáticamente el dispositivo a las tiendas de la identidad autenticada.",
 )
 def register_device(
     payload: DeviceRegisterRequest,
@@ -94,12 +94,8 @@ def register_device(
     from app.services.device_memberships import register
     memberships = register(db, current_user, payload)
 
-    active_count = db.scalar(
-        select(func.count(UserDevice.id)).where(
-            UserDevice.usuario_id == current_user.id,
-            UserDevice.activo == True,  # noqa: E712
-        )
-    ) or 1
+    active_count = db.scalar(select(func.count(UserDevice.id)).where(
+        UserDevice.usuario_id==current_user.id,UserDevice.activo.is_(True))) or 1
 
     return {
         "status": "success",
@@ -113,7 +109,7 @@ def register_device(
     "/devices/unregister",
     status_code=status.HTTP_200_OK,
     summary="Desregistrar dispositivo",
-    description="Invalida el token al cerrar sesion en este equipo, conservando las sesiones de los otros dispositivos.",
+    description="Invalida el token al cerrar sesion en este equipo.",
 )
 def unregister_device(
     payload: DeviceUnregisterRequest,
@@ -257,9 +253,10 @@ async def send_test_notification(
 
 
 class StoreNotice(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    usuario_id: int = Field(gt=0)
     titulo: str = Field(min_length=2, max_length=150)
     mensaje: str = Field(min_length=2, max_length=1500)
-    usuario_id: int = Field(gt=0)
     screen: str = '/catalog'
 
 

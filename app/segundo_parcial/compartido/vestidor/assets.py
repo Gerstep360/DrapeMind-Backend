@@ -14,7 +14,7 @@ from app.segundo_parcial.compartido.indicadores import (
     select,
 )
 
-router = APIRouter(prefix="", tags=["CU-30 · vestidor"])
+router = APIRouter(prefix="", tags=["Vestidor compartido"])
 
 
 @router.post("/ar/products/{product_id}/body-asset")

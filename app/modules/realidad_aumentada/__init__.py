@@ -4,7 +4,7 @@ Casos de uso:
 """
 from fastapi import APIRouter
 
-from app.segundo_parcial.cu30_vestidor.cu30_vestidor import router as cu17_router
+from app.segundo_parcial.compartido.vestidor.configuracion import router as cu17_router
 
 ar_router = cu17_router
 

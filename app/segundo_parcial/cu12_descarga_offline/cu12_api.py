@@ -89,7 +89,10 @@ def download(
                 "material": p.material,
                 "genero_objetivo": p.genero_objetivo.value,
                 "precio": str(p.precio),
-                "imagenes": p.imagenes or [],
+                "calidad_nivel": p.calidad_nivel,
+                "tags_ai": p.tags_ai or [],
+                "created_at": p.created_at.isoformat(),
+                "imagenes": [image if isinstance(image,str) else image.get('url') for image in (p.imagenes or []) if isinstance(image,str) or (isinstance(image,dict) and image.get('url'))],
             }
             for p in products
         ],

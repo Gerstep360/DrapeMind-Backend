@@ -7,7 +7,7 @@ from fastapi import BackgroundTasks, HTTPException
 from app.main import app  # Initialize routers in the application's normal order.
 from app.models import Role
 from app.schemas.api import OrderStatusUpdate
-from app.segundo_parcial.cu30_vestidor import cu30_vestidor as ar
+from app.segundo_parcial.compartido.vestidor import configuracion as ar
 from app.segundo_parcial.cu24_pedidos import cu24_historial as orders
 from app.segundo_parcial.cu24_pedidos import cu24_entregas as admin_orders
 from app.segundo_parcial.compartido import caja_online as pos

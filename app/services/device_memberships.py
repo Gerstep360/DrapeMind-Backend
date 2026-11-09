@@ -18,6 +18,9 @@ def _owners(db, user):
 
 
 def register(db, user, payload):
+    if user is None or not user.tenant_id or user.is_platform_admin:
+        from fastapi import HTTPException
+        raise HTTPException(401, 'Inicia sesión en una tienda para recibir sus avisos')
     _lock(db, payload.token)
     with system_scope(db):
         owners = _owners(db, user)

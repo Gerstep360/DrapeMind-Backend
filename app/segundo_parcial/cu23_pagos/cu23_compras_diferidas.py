@@ -315,7 +315,7 @@ def context(user: User = Depends(customer), db: Session = Depends(get_db)):
             for b in db.scalars(select(Branch).where(Branch.activo.is_(True)))
         ],
         "addresses": [
-            {"id": a.id, "alias": a.alias, "ciudad": a.ciudad}
+            {"id": a.id, "alias": a.alias, "ciudad": a.ciudad, "departamento":a.departamento, "zona":a.zona, "direccion":a.direccion, "telefono_contacto":a.telefono_contacto, "es_principal":a.es_principal}
             for a in db.scalars(select(Address).where(Address.usuario_id == user.id))
         ],
     }

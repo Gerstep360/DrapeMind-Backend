@@ -370,8 +370,15 @@ async def dispatch_notification(
                     'tenant_name': tenant.name}
     notification = None
     if not silent:
-        notification = Notification(usuario_id=user_id, titulo=titulo, mensaje=mensaje,
-            tipo=tipo, data_payload=payload_data, leido=False)
+        notification = Notification(
+            tenant_id=tenant.id,
+            usuario_id=user_id,
+            titulo=titulo,
+            mensaje=mensaje,
+            tipo=tipo,
+            data_payload=payload_data,
+            leido=False,
+        )
         db.add(notification)
         db.commit()
         db.refresh(notification)
@@ -398,8 +405,15 @@ async def dispatch_notification(
 
     devices = db.scalars(stmt).all()
     tokens = list(dict.fromkeys(dev.token for dev in devices if dev.token and not dev.web_subscription))
-    data_to_send = {**payload_data, 'notification_id': str(notification.id) if notification else str(payload_data.get('notification_id', '')),
-                    'type': tipo, 'title': titulo, 'body': mensaje}
+    data_to_send = {
+        **payload_data,
+        'tenant_id': str(tenant.id),
+        'tenant_name': tenant.name,
+        'notification_id': str(notification.id) if notification else str(payload_data.get('notification_id', '')),
+        'type': tipo,
+        'title': titulo,
+        'body': mensaje,
+    }
     push_title = f'{tenant.name} · {titulo}'
     res = await send_fcm_message(tokens, push_title, mensaje, data_to_send, silent=silent)
     totals = {'sent': res.get('sent', 0), 'failed': res.get('failed', 0),

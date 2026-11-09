@@ -37,10 +37,12 @@ La operación habitual es con conexión: catálogo, Altair, carrito, pagos y ped
 | CU-27 | Consultar dashboard de indicadores comerciales | [cu27_dashboard](cu27_dashboard/) |
 | CU-28 | Consultar predicciones y patrones de Machine Learning | [cu28_machine_learning](cu28_machine_learning/) |
 | CU-29 | Consultar Altair y obtener recomendaciones de prendas | [cu29_altair](cu29_altair/) |
-| CU-30 | Utilizar vestidor virtual mediante realidad aumentada | [cu30_vestidor](cu30_vestidor/) |
+| CU-30 | Gestionar reseñas y calificaciones de prendas | [cu30_resenas](cu30_resenas/) |
 
 CU-21 comparte datos y descarga del comprobante con CU-24; CU-26 exporta los reportes generados en CU-25; CU-28 usa indicadores de CU-27. Las operaciones definidas exclusivamente para web o Flutter mantienen su plataforma; no se crean archivos vacíos para aparentar una implementación adicional.
 
 La documentación académica canónica está en `segundo parcial/Documentacion`, organizada por CU-01 a CU-30 y modelos generales. Los diagramas reflejan HTTP, permisos, tenant, persistencia y servicios reales. El backend valida todos los límites y autorizaciones aunque el cliente tenga un botón visible.
 
 La caja presencial en línea reutilizada del primer parcial está en `compartido/caja_online`; no se confunde con CU-15, que registra ventas de contado sin conexión. CU-23 recibe confirmaciones reales de Stripe. La voz usa audio temporal revisable antes de enviar la consulta. CU-28 persiste modelos de demanda por tenant y alcance.
+
+CU-30 reúne las opiniones de prendas dentro del detalle del catálogo. El vestidor de realidad aumentada se conserva como funcionalidad adicional compartida. Las compras descargadas usan la tienda, carrito, checkout y pedidos habituales; la sincronización y el registro de notificaciones se realizan automáticamente con la sesión autorizada.

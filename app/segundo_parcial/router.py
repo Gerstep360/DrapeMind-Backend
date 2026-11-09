@@ -63,6 +63,11 @@ router.include_router(r16)
 from app.segundo_parcial.cu28_machine_learning.cu28_api import router as r17
 
 router.include_router(r17)
-from app.segundo_parcial.cu30_vestidor.cu30_api import router as r18
+from app.segundo_parcial.cu30_resenas.cu30_api import router as r18
 
 router.include_router(r18)
+
+from app.segundo_parcial.compartido.vestidor.assets import router as fitting_assets_router
+router.include_router(fitting_assets_router)
+from app.segundo_parcial.cu22_carrito_checkout.cu22_borrador import router as cart_draft_router
+router.include_router(cart_draft_router)

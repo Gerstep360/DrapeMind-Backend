@@ -19,7 +19,7 @@ def legacy_company_scope(request,monkeypatch):
     from app.core.config import settings
     monkeypatch.setattr(settings,'SECRET_KEY','test-only-signing-key-not-used-by-the-running-application')
     with tenant_scope(1):
-        if not request.node.fspath.basename.startswith('test_saas'):
+        if not request.node.fspath.basename.startswith('test_saas') and not request.node.get_closest_marker('saas_http'):
             # Existing endpoint unit tests override get_db, not SessionLocal. Their
             # purpose is business behavior; the SaaS HTTP suite tests the real resolver.
             from app.core import saas_middleware

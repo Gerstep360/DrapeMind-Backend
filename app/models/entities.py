@@ -478,6 +478,3 @@ class Notification(TenantOwned, TimestampMixin, Base):
     leido: Mapped[bool] = mapped_column(Boolean, default=False)
     leido_en: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     dispositivo_origen_id: Mapped[str | None] = mapped_column(String(120))
-
-
-

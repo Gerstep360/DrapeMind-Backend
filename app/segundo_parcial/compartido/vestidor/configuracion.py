@@ -11,7 +11,7 @@ from app.schemas.api import ARConfig
 router = APIRouter()
 
 
-@router.get("/capabilities", summary="CU-30: Capacidades del probador virtual")
+@router.get("/capabilities", summary="Vestidor: Capacidades del probador virtual")
 def capabilities() -> dict:
     return {
         "mode": "2d-overlay",
@@ -33,9 +33,9 @@ def capabilities() -> dict:
 @router.get(
     "/products/{product_id}/try-on-config",
     response_model=ARConfig,
-    summary="CU-30: Configuración de probador AR",
+    summary="Vestidor: Configuración de probador AR",
     description=(
-        "CU-30. La cámara, segmentación y render se ejecutan en Flutter. El backend valida el producto, "
+        "Vestidor. La cámara, segmentación y render se ejecutan en Flutter. El backend valida el producto, "
         "calcula las matrices dimensionales por talla y devuelve los parámetros de holgura y física textil."
     ),
 )

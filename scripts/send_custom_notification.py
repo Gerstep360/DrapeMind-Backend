@@ -19,41 +19,54 @@ from sqlalchemy import func, select
 from app.db.session import SessionLocal
 from app.models.entities import User, UserDevice
 from app.services.push_notifications import dispatch_notification, _find_firebase_service_account_path
+from app.core.tenancy import system_scope
 
 
 def get_users_summary(db):
     """Consulta la lista de usuarios junto con el conteo de dispositivos activos."""
-    stmt = (
-        select(
-            User.id,
-            User.nombre,
-            User.email,
-            User.rol,
-            func.count(UserDevice.id).filter(UserDevice.activo == True).label("devices_count"),  # noqa: E712
+    with system_scope(db):
+        stmt = (
+            select(
+                User.id,
+                User.nombre,
+                User.email,
+                User.rol,
+                User.tenant_id,
+                func.count(UserDevice.id).filter(UserDevice.activo == True).label("devices_count"),  # noqa: E712
+            )
+            .outerjoin(UserDevice, User.id == UserDevice.usuario_id)
+            .group_by(User.id, User.nombre, User.email, User.rol, User.tenant_id)
+            .order_by(User.id)
         )
-        .outerjoin(UserDevice, User.id == UserDevice.usuario_id)
-        .group_by(User.id, User.nombre, User.email, User.rol)
-        .order_by(User.id)
-    )
-    return db.execute(stmt).all()
+        return db.execute(stmt).all()
 
 
-async def send_to_user(db, user_id, title, message, screen, notification_type):
+async def send_to_user(user_id, title, message, screen, notification_type, tenant_id=None):
+    if not tenant_id:
+        with SessionLocal() as lookup_db:
+            with system_scope(lookup_db):
+                u = lookup_db.get(User, user_id)
+                if not u or not u.tenant_id:
+                    raise ValueError('El destinatario debe pertenecer a una tienda')
+                tenant_id = u.tenant_id
+
     payload = {
         "screen": screen,
         "enlace": screen,
         "url": screen,
         "action": "NAVIGATE",
     }
-    notif = await dispatch_notification(
-        db=db,
-        user_id=user_id,
-        titulo=title,
-        mensaje=message,
-        tipo=notification_type,
-        payload=payload,
-    )
-    return notif
+    with SessionLocal(tenant_id=tenant_id) as db:
+        with system_scope(db):
+            notif = await dispatch_notification(
+                db=db,
+                user_id=user_id,
+                titulo=title,
+                mensaje=message,
+                tipo=notification_type,
+                payload=payload,
+            )
+            return notif
 
 
 async def main_async(args):
@@ -142,11 +155,15 @@ async def main_async(args):
         if target_user_id == 0:
             count = 0
             for u in users:
-                await send_to_user(db, u.id, title, message, screen, notif_type)
+                await send_to_user(u.id, title, message, screen, notif_type, tenant_id=u.tenant_id)
                 count += 1
             print(f"\n[EXITO] Notificacion despachada a {count} usuarios simultaneamente.")
         else:
-            await send_to_user(db, target_user_id, title, message, screen, notif_type)
+            u_match = next((u for u in users if u.id == target_user_id), None)
+            if not u_match or not u_match.tenant_id:
+                raise ValueError('Selecciona un destinatario que pertenezca a una tienda')
+            tid = u_match.tenant_id
+            await send_to_user(target_user_id, title, message, screen, notif_type, tenant_id=tid)
             print(f"\n[EXITO] Notificacion enviada correctamente al usuario ID {target_user_id}.")
 
         print("[CANALES ACTIVADOS]")
@@ -164,6 +181,8 @@ async def main_async(args):
 
 def main():
     parser = argparse.ArgumentParser(description="Despachador de notificaciones personalizadas DrapeMind")
+    parser.add_argument("--notify", action="store_true", help="Bandera de despacho invocado desde config.sh")
+    parser.add_argument("--notification", action="store_true", help="Alias de bandera notify")
     parser.add_argument("--user-id", type=int, default=None, help="ID del usuario destinatario (0 para todos)")
     parser.add_argument("--title", type=str, default=None, help="Titulo de la notificacion")
     parser.add_argument("--message", type=str, default=None, help="Contenido del mensaje")
