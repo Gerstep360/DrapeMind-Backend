@@ -147,6 +147,27 @@ def confirm_sandbox_payment(db: Session, payment_id: int, user_id: int) -> Payme
 
 def process_event(db: Session, event: dict) -> Payment | None:
     event_type = event.get("type")
+    if event_type in {"refund.created", "refund.updated", "refund.failed"}:
+        from app.core.tenancy import system_scope
+        from app.db.tenant_session import bind_tenant
+        obj = event["data"]["object"]
+        with system_scope(db):
+            payment = db.scalar(select(Payment).where(Payment.proveedor == "STRIPE", Payment.referencia_externa == obj.get("id"), Payment.idempotency_key.like("exchange-refund-%")))
+        if payment is None: return None
+        bind_tenant(db, payment.tenant_id)
+        # Read current truth instead of applying possibly out-of-order event states.
+        refund = _stripe_request("GET", f"refunds/{payment.referencia_externa}")
+        if (refund.get("amount") != minor_units(payment.monto) or refund.get("currency") != "bob"
+            or refund.get("metadata", {}).get("drapemind_operation") != payment.idempotency_key):
+            raise HTTPException(409, "El evento no coincide con el reembolso registrado")
+        states = {"succeeded":"REEMBOLSADO", "pending":"REEMBOLSO_PENDIENTE", "requires_action":"REEMBOLSO_PENDIENTE", "failed":"REEMBOLSO_FALLIDO", "canceled":"REEMBOLSO_FALLIDO"}
+        if refund.get("status") not in states: raise HTTPException(409, "Estado de reembolso desconocido")
+        payment.estado = states[refund["status"]]
+        if payment.estado == "REEMBOLSADO":
+            from datetime import datetime, timezone
+            payment.paid_at = datetime.now(timezone.utc)
+        db.commit()
+        return payment
     if event_type not in {"payment_intent.succeeded", "payment_intent.canceled"}:
         # A failed card attempt is retryable on the same PaymentIntent, not terminal.
         return None
@@ -172,31 +193,50 @@ def process_event(db: Session, event: dict) -> Payment | None:
     return confirm_payment(db, payment.referencia_externa, "RECHAZADO")
 
 
-def create_stripe_refund(db: Session, payment_intent_id: str, amount_bob: Decimal, reason: str = "requested_by_customer") -> dict:
-    """Procesa un reembolso a la tarjeta del cliente mediante la API de Stripe."""
+def refresh_stripe_refund(db: Session, payment: Payment) -> None:
+    """Read-only provider reconciliation also works if a webhook was delayed."""
+    if (payment.referencia_externa or '').startswith('re_sandbox_'):
+        return
+    refund = _stripe_request('GET', f'refunds/{payment.referencia_externa}')
+    if (refund.get('id') != payment.referencia_externa or refund.get('amount') != minor_units(payment.monto)
+        or refund.get('currency') != 'bob' or refund.get('metadata', {}).get('drapemind_operation') != payment.idempotency_key):
+        raise HTTPException(409, 'El resultado no coincide con el reembolso registrado')
+    states = {'succeeded':'REEMBOLSADO','pending':'REEMBOLSO_PENDIENTE','requires_action':'REEMBOLSO_PENDIENTE','failed':'REEMBOLSO_FALLIDO','canceled':'REEMBOLSO_FALLIDO'}
+    if refund.get('status') not in states: raise HTTPException(409, 'Estado de reembolso desconocido')
+    payment.estado=states[refund['status']]
+    if payment.estado=='REEMBOLSADO':
+        from datetime import datetime, timezone
+        payment.paid_at=datetime.now(timezone.utc)
+    db.commit()
+
+
+def create_stripe_refund(db: Session, payment_intent_id: str, amount_bob: Decimal,
+                         reason: str = "requested_by_customer", *, operation_key: str) -> dict:
+    """Reconcile provider history before retrying, including beyond its 24h key retention."""
+    from urllib.parse import urlencode
     cents = minor_units(amount_bob)
-    secret_key = (getattr(settings, "STRIPE_SECRET_KEY", "") or "").strip()
-    is_real_stripe_key = (secret_key.startswith("sk_") or secret_key.startswith("rk_")) and not payment_intent_id.startswith("pi_sandbox_")
-
-    if is_real_stripe_key:
-        try:
-            refund = _stripe_request("POST", "refunds", data={
-                "payment_intent": payment_intent_id,
-                "amount": str(cents),
-                "reason": reason,
-            })
-            return refund
-        except Exception as exc:
-            logger.warning(f"Error procesando reembolso en Stripe para {payment_intent_id}: {exc}")
-            raise HTTPException(502, f"Stripe no pudo procesar el reembolso a la tarjeta: {exc}") from exc
-
-    # Modo sandbox / demostración
-    sandbox_refund_id = f"re_sandbox_{uuid4().hex[:12]}"
-    return {
-        "id": sandbox_refund_id,
-        "status": "succeeded",
-        "amount": cents,
-        "currency": "bob",
-        "payment_intent": payment_intent_id,
-    }
-
+    secret_key = (settings.STRIPE_SECRET_KEY or "").strip()
+    if secret_key.startswith(("sk_", "rk_")) and not payment_intent_id.startswith("pi_sandbox_"):
+        cursor = None
+        while True:
+            query = {"payment_intent":payment_intent_id, "limit":100}
+            if cursor: query["starting_after"] = cursor
+            page = _stripe_request("GET", "refunds?" + urlencode(query))
+            for refund in page.get("data", []):
+                if refund.get("metadata", {}).get("drapemind_operation") == operation_key:
+                    if refund.get("amount") != cents or refund.get("currency") != "bob":
+                        raise HTTPException(409, "El reembolso registrado requiere conciliación con la tienda")
+                    return refund
+            if not page.get("has_more"): break
+            rows = page.get("data", [])
+            if not rows or rows[-1].get("id") == cursor:
+                raise HTTPException(502, "No se pudo comprobar el reembolso anterior. Reintenta la misma operación.")
+            cursor = rows[-1]["id"]
+        return _stripe_request("POST", "refunds", key=operation_key, data={
+            "payment_intent":payment_intent_id, "amount":str(cents), "reason":reason,
+            "metadata[drapemind_operation]":operation_key,
+        })
+    if settings.PAYMENT_PROVIDER != "mock" or settings.ENVIRONMENT == "production":
+        raise HTTPException(503, "Stripe no está configurado para devolver este pago. No se ha registrado un reembolso en efectivo.")
+    return {"id":"re_sandbox_" + hashlib.sha256(operation_key.encode()).hexdigest()[:20],
+            "status":"succeeded", "amount":cents, "currency":"bob", "payment_intent":payment_intent_id}

@@ -45,7 +45,7 @@ order_status_enum = Enum("PENDIENTE_PAGO", "PAGADO", "PREPARANDO", "LISTO", "ENV
 order_channel_enum = Enum("MOBILE", "WEB", "TIENDA", name="canal_pedido")
 delivery_type_enum = Enum("DELIVERY", "RECOJO", "TIENDA", name="tipo_entrega")
 payment_method_enum = Enum("QR", "TARJETA", "EFECTIVO", "TRANSFERENCIA", "CREDITO_CAMBIO", name="metodo_pago")
-payment_status_enum = Enum("PENDIENTE", "PROCESANDO", "APROBADO", "RECHAZADO", "REEMBOLSADO", name="estado_pago")
+payment_status_enum = Enum("PENDIENTE", "PROCESANDO", "APROBADO", "RECHAZADO", "REEMBOLSADO", "REEMBOLSO_PENDIENTE", "REEMBOLSO_FALLIDO", name="estado_pago")
 movement_type_enum = Enum("ENTRADA", "VENTA", "RESERVA", "LIBERACION_RESERVA", "DEVOLUCION", "AJUSTE", name="tipo_movimiento_inventario")
 ai_session_status_enum = Enum("ACTIVA", "CERRADA", "EXPIRADA", name="estado_ai_sesion")
 ai_interaction_type_enum = Enum("CHAT", "PRODUCT_SEARCH", "GENERATE_OUTFIT", "COMPLETE_OUTFIT", "STYLE_CHECK", "VALUE_CHECK", name="tipo_ai_interaccion")

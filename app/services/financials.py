@@ -8,7 +8,7 @@ from app.segundo_parcial.compartido.offline_modelos import GarmentExchange
 def net_payments(db,*filters):
     amount=case(
         (and_(Payment.estado=='APROBADO',Payment.metodo!='CREDITO_CAMBIO'),Payment.monto),
-        (and_(Payment.estado=='REEMBOLSADO',Payment.proveedor=='CAMBIO_DEVOLUCION'),-Payment.monto),
+        (and_(Payment.estado=='REEMBOLSADO',Payment.proveedor.in_(['CAMBIO_DEVOLUCION','STRIPE'])),-Payment.monto),
         else_=0)
     return db.scalar(select(func.coalesce(func.sum(amount),0)).where(*filters)) or Decimal('0')
 

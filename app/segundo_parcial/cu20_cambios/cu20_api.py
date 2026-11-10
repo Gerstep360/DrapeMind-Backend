@@ -21,7 +21,7 @@ from app.models import (
     User,
 )
 from app.services.saas import require_active_subscription
-from app.services.stripe_payments import create_stripe_refund
+from app.services.stripe_payments import create_stripe_refund, refresh_stripe_refund
 from app.segundo_parcial.compartido.offline_modelos import (
     GarmentExchange,
     ExchangeReturn,
@@ -60,7 +60,7 @@ def exchange_payload(db, exchange):
         .where(
             Payment.pedido_id == exchange.pedido_origen_id,
             Payment.proveedor == "STRIPE",
-            Payment.estado == "REEMBOLSADO",
+            Payment.idempotency_key == f"exchange-refund-{exchange.tenant_id}-{exchange.operacion_id}",
         )
         .order_by(Payment.id.desc())
     )
@@ -208,6 +208,9 @@ def exchange_result(
         if source_order and source_order.usuario_id != user.id:
             fail("ORDER_FORBIDDEN", "No tienes acceso a este comprobante de cambio", 403)
     branch_access(db, user, previous.sucursal_id, require_active=False)
+    refund = db.scalar(select(Payment).where(Payment.idempotency_key == f"exchange-refund-{previous.tenant_id}-{previous.operacion_id}", Payment.proveedor == "STRIPE"))
+    if refund and refund.estado == "REEMBOLSO_PENDIENTE":
+        refresh_stripe_refund(db, refund)
     return exchange_payload(db, previous)
 
 
@@ -220,6 +223,10 @@ def apply_exchange(payload, preview, user, db):
     )
     if previous:
         branch_access(db, user, previous.sucursal_id, require_active=False)
+        if user.rol == Role.CLIENTE:
+            source_order = db.get(Order, previous.pedido_origen_id)
+            if not source_order or source_order.usuario_id != user.id:
+                fail("ORDER_FORBIDDEN", "No tienes acceso a este comprobante de cambio", 403)
         if previous.payload_hash != fingerprint:
             fail("OPERATION_REUSED", "Ese cambio ya se registró con otros datos")
         return exchange_payload(db, previous)
@@ -238,6 +245,8 @@ def apply_exchange(payload, preview, user, db):
             403,
         )
     branch_access(db, user, source.sucursal_id, require_active=False)
+    if user.rol == Role.CLIENTE and payload.sucursal_id != source.sucursal_id:
+        fail("BRANCH_MISMATCH", "Gestiona el cambio en la sucursal de tu compra", 422)
     previous = db.scalar(
         select(GarmentExchange).where(
             GarmentExchange.operacion_id == str(payload.operacion_id)
@@ -247,7 +256,7 @@ def apply_exchange(payload, preview, user, db):
         if previous.payload_hash != fingerprint:
             fail("OPERATION_REUSED", "Ese cambio ya se registró con otros datos")
         return exchange_payload(db, previous)
-    if source.estado not in ("PAGADO", "ENTREGADO") or source.paid_at is None:
+    if source.estado not in ("PAGADO", "ENTREGADO", "DEVUELTO") or source.paid_at is None:
         fail(
             "ORDER_UNPAID",
             f"El pedido #{source.id} se encuentra en estado '{source.estado}'. Solo puedes cambiar o devolver prendas de compras pagadas o entregadas.",
@@ -360,6 +369,10 @@ def apply_exchange(payload, preview, user, db):
             "diferencia": str(difference),
             "stripe_refund_eligible": bool(original_stripe and original_stripe.referencia_externa),
         }
+    original_stripe_payment = db.scalar(select(Payment).where(Payment.pedido_id == source.id, Payment.proveedor == "STRIPE", Payment.estado == "APROBADO"))
+    if user.rol == Role.CLIENTE and difference != 0:
+        if not is_stripe or (difference < 0 and not (original_stripe_payment and original_stripe_payment.referencia_externa)):
+            fail("CASH_STAFF_REQUIRED", "Para gestionar efectivo, presenta las prendas en la sucursal. Los reembolsos a tarjeta se tramitan desde aquí.", 422)
     if not is_stripe:
         if payload.efectivo_recibido - payload.efectivo_devuelto != difference:
             fail(
@@ -490,39 +503,15 @@ def apply_exchange(payload, preview, user, db):
             )
         )
         if original_stripe_payment and original_stripe_payment.referencia_externa:
-            try:
-                refund_res = create_stripe_refund(
-                    db=db,
-                    payment_intent_id=original_stripe_payment.referencia_externa,
-                    amount_bob=refund_amount,
-                    reason="requested_by_customer",
-                )
-                refund_id = refund_res.get("id") or f"re_stripe_{exchange.id}"
-                db.add(
-                    Payment(
-                        pedido_id=source.id,
-                        metodo="TARJETA",
-                        proveedor="STRIPE",
-                        monto=refund_amount,
-                        moneda="BOB",
-                        estado="REEMBOLSADO",
-                        referencia_externa=refund_id,
-                        paid_at=now,
-                    )
-                )
-            except Exception:
-                db.add(
-                    Payment(
-                        pedido_id=source.id,
-                        metodo="EFECTIVO",
-                        proveedor="CAMBIO_DEVOLUCION",
-                        monto=refund_amount,
-                        moneda="BOB",
-                        estado="REEMBOLSADO",
-                        referencia_externa=f"CAMBIO-{exchange.id}-DEVOLUCION",
-                        paid_at=now,
-                    )
-                )
+            refund_key = f"exchange-refund-{source.tenant_id}-{payload.operacion_id}"
+            refund_res = create_stripe_refund(db=db, payment_intent_id=original_stripe_payment.referencia_externa,
+                amount_bob=refund_amount, reason="requested_by_customer", operation_key=refund_key)
+            status = refund_res.get("status")
+            if not refund_res.get("id") or status not in ("succeeded", "pending", "requires_action"):
+                fail("REFUND_NOT_CONFIRMED", "Stripe no confirmó el reembolso. No se registró una devolución en efectivo. Contacta con la tienda.", 502)
+            db.add(Payment(pedido_id=source.id, metodo="TARJETA", proveedor="STRIPE", monto=refund_amount,
+                moneda="BOB", estado="REEMBOLSADO" if status == "succeeded" else "REEMBOLSO_PENDIENTE",
+                referencia_externa=refund_res["id"], idempotency_key=refund_key, paid_at=now if status == "succeeded" else None))
         else:
             db.add(
                 Payment(
@@ -539,7 +528,7 @@ def apply_exchange(payload, preview, user, db):
     # Si se devolvieron todas las unidades del comprobante de origen o es devolución directa
     total_original_units = sum(i.cantidad for i in originals.values())
     total_returned_units = sum(returned.get(i.id, 0) for i in originals.values()) + sum(row.cantidad for row in payload.devoluciones)
-    if total_returned_units >= total_original_units or not payload.prendas_nuevas:
+    if total_returned_units >= total_original_units:
         source.estado = "DEVUELTO"
         if payload.prendas_nuevas:
             source.observacion = (source.observacion or "") + f" [Cambio de prendas #{exchange.id}]"

@@ -182,7 +182,10 @@ def test_direct_return_without_new_garment_full_refund(client,clerk,factory):
         assert len(refunds)==1 and refunds[0].monto==Decimal('100') and refunds[0].metodo=='EFECTIVO'
 
 
-def test_exchange_stripe_difference_and_refund(client, clerk, factory):
+def test_exchange_stripe_difference_and_refund(client, clerk, factory, monkeypatch):
+    from app.core.config import settings
+    monkeypatch.setattr(settings, 'PAYMENT_PROVIDER', 'mock')
+    monkeypatch.setattr(settings, 'ENVIRONMENT', 'test')
     sale = sync(client, clerk, sale_body()).json()['resultado']['sale']
     with factory(tenant_id=1) as db:
         db.add(Product(id=4, categoria_id=1, nombre='Vestido Gala', precio=Decimal('220'), imagenes=[], activo=True)); db.flush()

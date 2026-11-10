@@ -127,7 +127,8 @@ class GarmentExchange(TenantOwned, Base):
     operacion_id: Mapped[str] = mapped_column(String(36))
     payload_hash: Mapped[str] = mapped_column(String(64))
     pedido_origen_id: Mapped[int] = mapped_column(ForeignKey("pedidos.id"))
-    pedido_nuevo_id: Mapped[int] = mapped_column(ForeignKey("pedidos.id"), unique=True)
+    # Direct returns refer to the original order; several partial returns are valid.
+    pedido_nuevo_id: Mapped[int] = mapped_column(ForeignKey("pedidos.id"))
     sucursal_id: Mapped[int] = mapped_column(ForeignKey("sucursales.id"))
     actor_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"))
     motivo: Mapped[str] = mapped_column(String(300))

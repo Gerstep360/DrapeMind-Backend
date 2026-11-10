@@ -7,7 +7,8 @@ branch_labels = None
 depends_on = None
 
 def upgrade():
-    op.execute("ALTER TYPE estado_pedido ADD VALUE IF NOT EXISTS 'DEVUELTO'")
+    with op.get_context().autocommit_block():
+        op.execute("ALTER TYPE estado_pedido ADD VALUE IF NOT EXISTS 'DEVUELTO'")
 
 def downgrade():
     pass
