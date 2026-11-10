@@ -541,7 +541,12 @@ def apply_exchange(payload, preview, user, db):
     total_returned_units = sum(returned.get(i.id, 0) for i in originals.values()) + sum(row.cantidad for row in payload.devoluciones)
     if total_returned_units >= total_original_units or not payload.prendas_nuevas:
         source.estado = "DEVUELTO"
-        source.observacion = (source.observacion or "") + f" [Devolución en cambio #{exchange.id}]"
+        if payload.prendas_nuevas:
+            source.observacion = (source.observacion or "") + f" [Cambio de prendas #{exchange.id}]"
+        else:
+            source.observacion = (source.observacion or "") + f" [Devolución en cambio #{exchange.id}]"
+    else:
+        source.observacion = (source.observacion or "") + f" [Cambio parcial #{exchange.id}]"
 
     db.commit()
     return exchange_payload(db, exchange)
