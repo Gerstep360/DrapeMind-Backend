@@ -53,7 +53,7 @@ def merchandise_factor(order):
 
 
 def exchange_payload(db, exchange):
-    new_order = db.get(Order, exchange.pedido_nuevo_id)
+    target = db.get(Order, exchange.pedido_nuevo_id) or db.get(Order, exchange.pedido_origen_id)
     return {
         "id": exchange.id,
         "operacion_id": exchange.operacion_id,
@@ -68,7 +68,7 @@ def exchange_payload(db, exchange):
         "motivo": exchange.motivo,
         "actor_id": exchange.actor_id,
         "created_at": exchange.created_at,
-        "sale": ticket(new_order),
+        "sale": ticket(target),
     }
 
 
@@ -342,34 +342,37 @@ def apply_exchange(payload, preview, user, db):
             422,
         )
     now = datetime.now(timezone.utc)
-    order = Order(
-        codigo_publico=uuid4(),
-        usuario_id=source.usuario_id,
-        atendido_por_id=user.id,
-        comprador_registrado=source.comprador_registrado,
-        sucursal_id=payload.sucursal_id,
-        estado="ENTREGADO",
-        canal="TIENDA",
-        tipo_entrega="TIENDA",
-        subtotal=total,
-        descuento=0,
-        costo_envio=0,
-        total=total,
-        paid_at=now,
-        completed_at=now,
-        observacion=(
-            f"Devolución de prendas del pedido {source.id}"
-            if not payload.prendas_nuevas
-            else f"Cambio de prendas del pedido {source.id}"
-        ),
-    )
-    db.add(order)
-    db.flush()
+    if payload.prendas_nuevas:
+        order = Order(
+            codigo_publico=uuid4(),
+            usuario_id=source.usuario_id,
+            atendido_por_id=user.id,
+            comprador_registrado=source.comprador_registrado,
+            sucursal_id=payload.sucursal_id,
+            estado="ENTREGADO",
+            canal="TIENDA",
+            tipo_entrega="TIENDA",
+            subtotal=total,
+            descuento=0,
+            costo_envio=0,
+            total=total,
+            paid_at=now,
+            completed_at=now,
+            observacion=f"Cambio de prendas del pedido #{source.id}",
+        )
+        db.add(order)
+        db.flush()
+        target_order_id = order.id
+    else:
+        # Devolución directa: se actualiza el pedido de origen, no se genera una venta dummy con Bs 0.00
+        order = source
+        target_order_id = source.id
+
     exchange = GarmentExchange(
         operacion_id=str(payload.operacion_id),
         payload_hash=fingerprint,
         pedido_origen_id=source.id,
-        pedido_nuevo_id=order.id,
+        pedido_nuevo_id=target_order_id,
         sucursal_id=payload.sucursal_id,
         actor_id=user.id,
         motivo=payload.motivo,
@@ -410,7 +413,7 @@ def apply_exchange(payload, preview, user, db):
         movement(db, v, s, -row.cantidad, user.id, "CAMBIO", exchange.id)
         order_line(db, order, v, p, row.cantidad, p.precio)
     applied = min(credit, total)
-    if applied:
+    if applied and payload.prendas_nuevas:
         db.add(
             Payment(
                 pedido_id=order.id,
@@ -423,7 +426,7 @@ def apply_exchange(payload, preview, user, db):
                 paid_at=now,
             )
         )
-    if difference > 0:
+    if difference > 0 and payload.prendas_nuevas:
         db.add(
             Payment(
                 pedido_id=order.id,
@@ -449,10 +452,10 @@ def apply_exchange(payload, preview, user, db):
                 paid_at=now,
             )
         )
-    # Si se devolvieron todas las unidades del comprobante de origen, actualizar estado a DEVUELTO
+    # Si se devolvieron todas las unidades del comprobante de origen o es devolución directa
     total_original_units = sum(i.cantidad for i in originals.values())
     total_returned_units = sum(returned.get(i.id, 0) for i in originals.values()) + sum(row.cantidad for row in payload.devoluciones)
-    if total_returned_units >= total_original_units:
+    if total_returned_units >= total_original_units or not payload.prendas_nuevas:
         source.estado = "DEVUELTO"
         source.observacion = (source.observacion or "") + f" [Devolución en cambio #{exchange.id}]"
 

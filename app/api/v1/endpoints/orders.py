@@ -33,7 +33,8 @@ def receipt(order_id: int, current_user: User = Depends(get_current_user), db: S
         lines.append(f"Descuento: -Bs {order.descuento:.2f}")
     if order.costo_envio > Decimal("0.00"):
         lines.append(f"Envío: Bs {order.costo_envio:.2f}")
-    lines += [f"Total: Bs {order.total:.2f}", f"Estado: {order.estado}",
+    estado_label = "DEVOLUCIÓN Y REEMBOLSO" if order.estado == "DEVUELTO" else ("CAMBIO DE PRENDA" if "cambio" in (order.observacion or "").lower() else order.estado)
+    lines += [f"Total: Bs {order.total:.2f}", f"Estado: {estado_label}",
               "Pago: " + ", ".join(p.metodo for p in payments)]
     return PlainTextResponse("\n".join(lines), headers={"Content-Disposition": f'attachment; filename="comprobante-{order_id}.txt"'})
 
@@ -67,8 +68,8 @@ def list_orders(
     current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ) -> list[Order]:
     if current_user.rol in (Role.ADMIN, Role.VENDEDOR):
-        return list(db.scalars(select(Order).order_by(Order.created_at.desc())))
-    return list(db.scalars(select(Order).where(Order.usuario_id == current_user.id).order_by(Order.created_at.desc())))
+        return list(db.scalars(select(Order).where(Order.total > 0).order_by(Order.created_at.desc())))
+    return list(db.scalars(select(Order).where(Order.usuario_id == current_user.id, Order.total > 0).order_by(Order.created_at.desc())))
 
 
 @router.get("/{order_id}", response_model=OrderOut, summary="Consultar estado del pedido")
