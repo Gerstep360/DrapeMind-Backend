@@ -21,6 +21,7 @@ from app.models import (
     User,
 )
 from app.services.saas import require_active_subscription
+from app.services.stripe_payments import create_stripe_refund
 from app.segundo_parcial.compartido.offline_modelos import (
     GarmentExchange,
     ExchangeReturn,
@@ -54,6 +55,15 @@ def merchandise_factor(order):
 
 def exchange_payload(db, exchange):
     target = db.get(Order, exchange.pedido_nuevo_id) or db.get(Order, exchange.pedido_origen_id)
+    stripe_refund = db.scalar(
+        select(Payment)
+        .where(
+            Payment.pedido_id == exchange.pedido_origen_id,
+            Payment.proveedor == "STRIPE",
+            Payment.estado == "REEMBOLSADO",
+        )
+        .order_by(Payment.id.desc())
+    )
     return {
         "id": exchange.id,
         "operacion_id": exchange.operacion_id,
@@ -69,6 +79,12 @@ def exchange_payload(db, exchange):
         "actor_id": exchange.actor_id,
         "created_at": exchange.created_at,
         "sale": ticket(target),
+        "stripe_refund": {
+            "id": stripe_refund.referencia_externa,
+            "monto": str(stripe_refund.monto),
+            "estado": stripe_refund.estado,
+        } if stripe_refund else None,
+        "stripe_payment_needed": target.estado == "PENDIENTE_PAGO" and float(exchange.diferencia) > 0,
     }
 
 
@@ -329,35 +345,47 @@ def apply_exchange(payload, preview, user, db):
             "El importe supera el límite admitido por un comprobante",
             422,
         )
+    is_stripe = getattr(payload, "metodo_pago", "EFECTIVO") == "STRIPE"
     if preview:
+        original_stripe = db.scalar(
+            select(Payment).where(
+                Payment.pedido_id == source.id,
+                Payment.proveedor == "STRIPE",
+                Payment.estado == "APROBADO",
+            )
+        )
         return {
             "credito": str(credit),
             "total_nuevo": str(total),
             "diferencia": str(difference),
+            "stripe_refund_eligible": bool(original_stripe and original_stripe.referencia_externa),
         }
-    if payload.efectivo_recibido - payload.efectivo_devuelto != difference:
-        fail(
-            "CASH_DIFFERENCE",
-            "Revisa el efectivo recibido y devuelto: deben coincidir con la diferencia del cambio",
-            422,
-        )
+    if not is_stripe:
+        if payload.efectivo_recibido - payload.efectivo_devuelto != difference:
+            fail(
+                "CASH_DIFFERENCE",
+                "Revisa el efectivo recibido y devuelto: deben coincidir con la diferencia del cambio",
+                422,
+            )
     now = datetime.now(timezone.utc)
     if payload.prendas_nuevas:
+        new_order_state = "PENDIENTE_PAGO" if (is_stripe and difference > 0) else "ENTREGADO"
+        order_total = difference if (is_stripe and difference > 0) else total
         order = Order(
             codigo_publico=uuid4(),
             usuario_id=source.usuario_id,
             atendido_por_id=user.id,
             comprador_registrado=source.comprador_registrado,
             sucursal_id=payload.sucursal_id,
-            estado="ENTREGADO",
-            canal="TIENDA",
+            estado=new_order_state,
+            canal=source.canal or "WEB",
             tipo_entrega="TIENDA",
             subtotal=total,
-            descuento=0,
+            descuento=credit if (is_stripe and difference > 0) else 0,
             costo_envio=0,
-            total=total,
-            paid_at=now,
-            completed_at=now,
+            total=order_total,
+            paid_at=now if new_order_state != "PENDIENTE_PAGO" else None,
+            completed_at=now if new_order_state != "PENDIENTE_PAGO" else None,
             observacion=f"Cambio de prendas del pedido #{source.id}",
         )
         db.add(order)
@@ -379,8 +407,8 @@ def apply_exchange(payload, preview, user, db):
         credito=credit,
         total_nuevo=total,
         diferencia=difference,
-        efectivo_recibido=payload.efectivo_recibido,
-        efectivo_devuelto=payload.efectivo_devuelto,
+        efectivo_recibido=Decimal("0.00") if is_stripe else payload.efectivo_recibido,
+        efectivo_devuelto=Decimal("0.00") if is_stripe else payload.efectivo_devuelto,
     )
     db.add(exchange)
     db.flush()
@@ -427,31 +455,87 @@ def apply_exchange(payload, preview, user, db):
             )
         )
     if difference > 0 and payload.prendas_nuevas:
-        db.add(
-            Payment(
-                pedido_id=order.id,
-                metodo="EFECTIVO",
-                proveedor="CAMBIO_PRENDAS",
-                monto=difference,
-                moneda="BOB",
-                estado="APROBADO",
-                referencia_externa=f"CAMBIO-{exchange.id}-EFECTIVO",
-                paid_at=now,
+        if is_stripe:
+            db.add(
+                Payment(
+                    pedido_id=order.id,
+                    metodo="TARJETA",
+                    proveedor="STRIPE",
+                    monto=difference,
+                    moneda="BOB",
+                    estado="PENDIENTE",
+                    idempotency_key=f"stripe-order-{order.id}",
+                )
             )
-        )
+        else:
+            db.add(
+                Payment(
+                    pedido_id=order.id,
+                    metodo="EFECTIVO",
+                    proveedor="CAMBIO_PRENDAS",
+                    monto=difference,
+                    moneda="BOB",
+                    estado="APROBADO",
+                    referencia_externa=f"CAMBIO-{exchange.id}-EFECTIVO",
+                    paid_at=now,
+                )
+            )
     if difference < 0:
-        db.add(
-            Payment(
-                pedido_id=source.id,
-                metodo="EFECTIVO",
-                proveedor="CAMBIO_DEVOLUCION",
-                monto=-difference,
-                moneda="BOB",
-                estado="REEMBOLSADO",
-                referencia_externa=f"CAMBIO-{exchange.id}-DEVOLUCION",
-                paid_at=now,
+        refund_amount = -difference
+        original_stripe_payment = db.scalar(
+            select(Payment).where(
+                Payment.pedido_id == source.id,
+                Payment.proveedor == "STRIPE",
+                Payment.estado == "APROBADO",
             )
         )
+        if original_stripe_payment and original_stripe_payment.referencia_externa:
+            try:
+                refund_res = create_stripe_refund(
+                    db=db,
+                    payment_intent_id=original_stripe_payment.referencia_externa,
+                    amount_bob=refund_amount,
+                    reason="requested_by_customer",
+                )
+                refund_id = refund_res.get("id") or f"re_stripe_{exchange.id}"
+                db.add(
+                    Payment(
+                        pedido_id=source.id,
+                        metodo="TARJETA",
+                        proveedor="STRIPE",
+                        monto=refund_amount,
+                        moneda="BOB",
+                        estado="REEMBOLSADO",
+                        referencia_externa=refund_id,
+                        paid_at=now,
+                    )
+                )
+            except Exception:
+                db.add(
+                    Payment(
+                        pedido_id=source.id,
+                        metodo="EFECTIVO",
+                        proveedor="CAMBIO_DEVOLUCION",
+                        monto=refund_amount,
+                        moneda="BOB",
+                        estado="REEMBOLSADO",
+                        referencia_externa=f"CAMBIO-{exchange.id}-DEVOLUCION",
+                        paid_at=now,
+                    )
+                )
+        else:
+            db.add(
+                Payment(
+                    pedido_id=source.id,
+                    metodo="EFECTIVO",
+                    proveedor="CAMBIO_DEVOLUCION",
+                    monto=refund_amount,
+                    moneda="BOB",
+                    estado="REEMBOLSADO",
+                    referencia_externa=f"CAMBIO-{exchange.id}-DEVOLUCION",
+                    paid_at=now,
+                )
+            )
     # Si se devolvieron todas las unidades del comprobante de origen o es devolución directa
     total_original_units = sum(i.cantidad for i in originals.values())
     total_returned_units = sum(returned.get(i.id, 0) for i in originals.values()) + sum(row.cantidad for row in payload.devoluciones)

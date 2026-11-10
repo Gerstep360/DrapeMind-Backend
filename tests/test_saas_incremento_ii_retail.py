@@ -182,6 +182,60 @@ def test_direct_return_without_new_garment_full_refund(client,clerk,factory):
         assert len(refunds)==1 and refunds[0].monto==Decimal('100') and refunds[0].metodo=='EFECTIVO'
 
 
+def test_exchange_stripe_difference_and_refund(client, clerk, factory):
+    sale = sync(client, clerk, sale_body()).json()['resultado']['sale']
+    with factory(tenant_id=1) as db:
+        db.add(Product(id=4, categoria_id=1, nombre='Vestido Gala', precio=Decimal('220'), imagenes=[], activo=True)); db.flush()
+        db.add(ProductVariant(id=4, producto_id=4, sku='VEST', talla='M', color='Negro', stock_total=5, stock_reservado=0)); db.flush()
+        db.add(BranchStock(sucursal_id=1, variante_id=4, stock_total=5, stock_reservado=0, activo=True)); db.flush()
+        # Simular pago original con Stripe
+        db.add(Payment(
+            pedido_id=sale['pedido_id'], metodo='TARJETA', proveedor='STRIPE', monto=Decimal('200'),
+            moneda='BOB', estado='APROBADO', referencia_externa='pi_sandbox_test_123',
+        ))
+        db.commit()
+
+    original = client.get('/api/v1/retail/orders/find', headers=clerk, params={'code': sale['pedido_id']}).json()
+
+    # 1. Cambio con diferencia a pagar mediante Stripe
+    payload_stripe = {
+        'operacion_id': str(uuid4()), 'pedido_origen_id': sale['pedido_id'], 'sucursal_id': 1,
+        'motivo': 'Cambio por vestido de mayor valor',
+        'devoluciones': [{'item_pedido_id': original['items'][0]['id'], 'cantidad': 1}],
+        'prendas_nuevas': [{'variante_id': 4, 'cantidad': 1}],
+        'metodo_pago': 'STRIPE',
+    }
+    preview = client.post('/api/v1/retail/exchanges?preview=true', headers=clerk, json=payload_stripe)
+    assert preview.status_code == 200
+    assert Decimal(preview.json()['diferencia']) == 120
+    assert preview.json()['stripe_refund_eligible'] is True
+
+    res = client.post('/api/v1/retail/exchanges', headers=clerk, json=payload_stripe)
+    assert res.status_code == 200, res.text
+    assert res.json()['stripe_payment_needed'] is True
+    with factory(tenant_id=1) as db:
+        new_order = db.get(Order, res.json()['pedido_nuevo_id'])
+        assert new_order.estado == 'PENDIENTE_PAGO'
+        assert new_order.total == Decimal('120')
+        p_stripe = db.scalar(select(Payment).where(Payment.pedido_id == new_order.id, Payment.proveedor == 'STRIPE'))
+        assert p_stripe and p_stripe.monto == Decimal('120') and p_stripe.estado == 'PENDIENTE'
+
+    # 2. Devolución de la segunda unidad con reembolso directo en Stripe
+    payload_refund = {
+        'operacion_id': str(uuid4()), 'pedido_origen_id': sale['pedido_id'], 'sucursal_id': 1,
+        'motivo': 'Devolución directa con reembolso Stripe',
+        'devoluciones': [{'item_pedido_id': original['items'][0]['id'], 'cantidad': 1}],
+        'prendas_nuevas': [],
+        'metodo_pago': 'STRIPE',
+    }
+    res_refund = client.post('/api/v1/retail/exchanges', headers=clerk, json=payload_refund)
+    assert res_refund.status_code == 200, res_refund.text
+    assert res_refund.json()['stripe_refund'] is not None
+    assert res_refund.json()['stripe_refund']['id'].startswith('re_')
+    assert Decimal(res_refund.json()['stripe_refund']['monto']) == 100
+
+
+
 def test_conflicted_reservation_cancel_is_visible_to_manager_and_terminal(client,clerk,factory):
     body=offline_request();body['items'][0]['cantidad']=11
     result=sync(client,headers(4),body,'RESERVATION')

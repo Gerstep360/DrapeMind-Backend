@@ -129,8 +129,9 @@ class ExchangeCreate(Input):
     prendas_nuevas: list[ReservationLine] = Field(
         default_factory=list, min_length=0, max_length=50
     )
-    efectivo_recibido: Decimal = Field(ge=0, max_digits=12, decimal_places=2)
-    efectivo_devuelto: Decimal = Field(ge=0, max_digits=12, decimal_places=2)
+    efectivo_recibido: Decimal = Field(ge=0, max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    efectivo_devuelto: Decimal = Field(ge=0, max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    metodo_pago: Literal["EFECTIVO", "STRIPE"] = "EFECTIVO"
 
     @model_validator(mode="after")
     def unique_lines(self):

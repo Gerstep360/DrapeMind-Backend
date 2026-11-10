@@ -170,3 +170,33 @@ def process_event(db: Session, event: dict) -> Payment | None:
             raise HTTPException(409, "El importe no ha sido recibido íntegramente")
         return confirm_payment(db, payment.referencia_externa, "APROBADO")
     return confirm_payment(db, payment.referencia_externa, "RECHAZADO")
+
+
+def create_stripe_refund(db: Session, payment_intent_id: str, amount_bob: Decimal, reason: str = "requested_by_customer") -> dict:
+    """Procesa un reembolso a la tarjeta del cliente mediante la API de Stripe."""
+    cents = minor_units(amount_bob)
+    secret_key = (getattr(settings, "STRIPE_SECRET_KEY", "") or "").strip()
+    is_real_stripe_key = (secret_key.startswith("sk_") or secret_key.startswith("rk_")) and not payment_intent_id.startswith("pi_sandbox_")
+
+    if is_real_stripe_key:
+        try:
+            refund = _stripe_request("POST", "refunds", data={
+                "payment_intent": payment_intent_id,
+                "amount": str(cents),
+                "reason": reason,
+            })
+            return refund
+        except Exception as exc:
+            logger.warning(f"Error procesando reembolso en Stripe para {payment_intent_id}: {exc}")
+            raise HTTPException(502, f"Stripe no pudo procesar el reembolso a la tarjeta: {exc}") from exc
+
+    # Modo sandbox / demostración
+    sandbox_refund_id = f"re_sandbox_{uuid4().hex[:12]}"
+    return {
+        "id": sandbox_refund_id,
+        "status": "succeeded",
+        "amount": cents,
+        "currency": "bob",
+        "payment_intent": payment_intent_id,
+    }
+
