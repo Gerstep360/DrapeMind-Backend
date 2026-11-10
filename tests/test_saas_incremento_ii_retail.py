@@ -225,3 +225,27 @@ def test_expired_reservation_releases_branch_and_global_inventory(client,clerk,f
     with factory(tenant_id=1) as db:
         assert db.get(ProductVariant,1).stock_reservado==0
         assert db.scalar(select(BranchStock).where(BranchStock.sucursal_id==1,BranchStock.variante_id==1)).stock_reservado==0
+
+
+def test_client_can_find_own_order_and_perform_exchange(client, clerk, factory):
+    with factory(tenant_id=1) as db:
+        db.add(User(id=7, tenant_id=1, nombre='Otro Cliente', email='other@example.com', password_hash='fixture', rol=Role.CLIENTE, estado=UserStatus.ACTIVO))
+        db.commit()
+
+    rid = client.post('/api/v1/offline/reservations', headers=headers(4), json=offline_request()).json()['reservation']['id']
+    client.post(f'/api/v1/retail/reservations/{rid}/prepare', headers=clerk, json={'estado': 'LISTA'})
+    sale = sync(client, clerk, sale_body(reserva_id=rid), 'PICKUP').json()['resultado']['sale']
+    order_id = sale['pedido_id']
+
+    # Cliente puede consultar su propio pedido
+    find_res = client.get(f'/api/v1/retail/orders/find?code={order_id}', headers=headers(4))
+    assert find_res.status_code == 200, find_res.text
+    data = find_res.json()
+    assert data['pedido_id'] == order_id
+    assert len(data['items']) == 1
+
+    # Otro cliente diferente recibe 403 con mensaje específico
+    find_other = client.get(f'/api/v1/retail/orders/find?code={order_id}', headers=headers(7))
+    assert find_other.status_code == 403, find_other.text
+    assert 'no pertenece a tu cuenta' in find_other.json()['detail']['message']
+

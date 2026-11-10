@@ -73,9 +73,9 @@ def permission_for(path, method, user=None):
     if path.startswith('/ai/reports'):
         return 'reports.ai'
     if path.startswith('/retail/exchanges'):
-        return 'exchanges.manage'
+        return None if (user is not None and user.rol == Role.CLIENTE) else 'exchanges.manage'
     if path.startswith('/retail/orders/find'):
-        return 'exchanges.manage'
+        return None if (user is not None and user.rol == Role.CLIENTE) else 'exchanges.manage'
     if path.startswith('/retail/reservations') or path.startswith('/admin/reservations'):
         return 'reservations.manage'
     if path.startswith(('/retail/conflicts', '/retail/operations')):

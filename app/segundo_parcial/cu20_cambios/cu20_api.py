@@ -39,6 +39,9 @@ from app.segundo_parcial.cu15_ventas_contado.cu15_ventas_service import (
 
 router = APIRouter(prefix="/retail", tags=["Incremento II · CU-20 Cambios de prendas"])
 staff = require_roles(Role.ADMIN, Role.ENCARGADO, Role.CAJERO)
+authorized_exchange_user = require_roles(
+    Role.ADMIN, Role.ENCARGADO, Role.CAJERO, Role.CLIENTE, Role.VENDEDOR
+)
 
 
 def merchandise_factor(order):
@@ -72,7 +75,7 @@ def exchange_payload(db, exchange):
 @router.get("/orders/find")
 def find_order(
     code: str = Query(min_length=1, max_length=40),
-    user: User = Depends(staff),
+    user: User = Depends(authorized_exchange_user),
     db: Session = Depends(get_db),
 ):
     value = code.strip()
@@ -91,8 +94,20 @@ def find_order(
         )
     orders = list(db.scalars(select(Order).where(condition).limit(2)))
     if len(orders) != 1:
-        fail("NOT_FOUND", "No se encontró un comprobante único con ese código", 404)
+        fail("NOT_FOUND", f"No se encontró ningún comprobante o compra con el código '{value}'", 404)
     order = orders[0]
+    if user.rol == Role.CLIENTE and order.usuario_id != user.id:
+        fail(
+            "ORDER_FORBIDDEN",
+            f"El comprobante #{order.id} no pertenece a tu cuenta ({user.email}). Solo puedes gestionar cambios o devoluciones de tus propias compras.",
+            403,
+        )
+    if order.estado not in ("PAGADO", "ENTREGADO", "DEVUELTO"):
+        fail(
+            "ORDER_STATE_INVALID",
+            f"El pedido #{order.id} se encuentra en estado '{order.estado}'. Solo se pueden cambiar o devolver compras pagadas o entregadas.",
+            422,
+        )
     branch_access(db, user, order.sucursal_id)
     returned = dict(
         db.execute(
@@ -146,7 +161,7 @@ def exchanges(
 def create_exchange(
     payload: ExchangeCreate,
     preview: bool = False,
-    user: User = Depends(staff),
+    user: User = Depends(authorized_exchange_user),
     db: Session = Depends(get_db),
 ):
     try:
@@ -161,7 +176,7 @@ def create_exchange(
 
 @router.get("/exchanges/operations/{operation_id}")
 def exchange_result(
-    operation_id: UUID, user: User = Depends(staff), db: Session = Depends(get_db)
+    operation_id: UUID, user: User = Depends(authorized_exchange_user), db: Session = Depends(get_db)
 ):
     previous = db.scalar(
         select(GarmentExchange).where(GarmentExchange.operacion_id == str(operation_id))
@@ -172,6 +187,10 @@ def exchange_result(
             "No se encontró un cambio confirmado con este identificador",
             404,
         )
+    if user.rol == Role.CLIENTE:
+        source_order = db.get(Order, previous.pedido_origen_id)
+        if source_order and source_order.usuario_id != user.id:
+            fail("ORDER_FORBIDDEN", "No tienes acceso a este comprobante de cambio", 403)
     branch_access(db, user, previous.sucursal_id, require_active=False)
     return exchange_payload(db, previous)
 
@@ -196,6 +215,12 @@ def apply_exchange(payload, preview, user, db):
     )
     if not source:
         fail("NOT_FOUND", "Comprobante de origen no encontrado", 404)
+    if user.rol == Role.CLIENTE and source.usuario_id != user.id:
+        fail(
+            "ORDER_FORBIDDEN",
+            f"El comprobante #{source.id} no pertenece a tu cuenta. Solo puedes solicitar cambios o devoluciones de tus propias compras.",
+            403,
+        )
     branch_access(db, user, source.sucursal_id, require_active=False)
     previous = db.scalar(
         select(GarmentExchange).where(
@@ -206,10 +231,11 @@ def apply_exchange(payload, preview, user, db):
         if previous.payload_hash != fingerprint:
             fail("OPERATION_REUSED", "Ese cambio ya se registró con otros datos")
         return exchange_payload(db, previous)
-    if source.estado != "ENTREGADO" or source.paid_at is None:
+    if source.estado not in ("PAGADO", "ENTREGADO") or source.paid_at is None:
         fail(
             "ORDER_UNPAID",
-            "Solo puedes cambiar prendas de una venta pagada y entregada",
+            f"El pedido #{source.id} se encuentra en estado '{source.estado}'. Solo puedes cambiar o devolver prendas de compras pagadas o entregadas.",
+            422,
         )
     originals = {
         i.id: i
@@ -423,5 +449,12 @@ def apply_exchange(payload, preview, user, db):
                 paid_at=now,
             )
         )
+    # Si se devolvieron todas las unidades del comprobante de origen, actualizar estado a DEVUELTO
+    total_original_units = sum(i.cantidad for i in originals.values())
+    total_returned_units = sum(returned.get(i.id, 0) for i in originals.values()) + sum(row.cantidad for row in payload.devoluciones)
+    if total_returned_units >= total_original_units:
+        source.estado = "DEVUELTO"
+        source.observacion = (source.observacion or "") + f" [Devolución en cambio #{exchange.id}]"
+
     db.commit()
     return exchange_payload(db, exchange)
