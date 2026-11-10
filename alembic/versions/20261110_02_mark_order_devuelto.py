@@ -7,6 +7,7 @@ branch_labels = None
 depends_on = None
 
 def upgrade():
+    op.execute("SET LOCAL app.saas_system = 'true';")
     op.execute("""
         UPDATE pedidos
         SET estado = 'DEVUELTO',
@@ -21,6 +22,7 @@ def upgrade():
     """)
 
 def downgrade():
+    op.execute("SET LOCAL app.saas_system = 'true';")
     op.execute("""
         UPDATE pedidos
         SET estado = 'PAGADO'
