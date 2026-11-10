@@ -7,8 +7,10 @@ branch_labels = None
 depends_on = None
 
 def upgrade():
-    # 1. Agregar el valor DEVUELTO al tipo enum en PostgreSQL
+    # 1. Agregar el valor DEVUELTO al tipo enum en PostgreSQL y hacer commit para permitir su uso inmediato
+    op.execute("COMMIT")
     op.execute("ALTER TYPE estado_pedido ADD VALUE IF NOT EXISTS 'DEVUELTO'")
+    op.execute("BEGIN")
 
     # 2. Activar pedido #7210 como devolución para validación inmediata en vista cliente
     op.execute("""
