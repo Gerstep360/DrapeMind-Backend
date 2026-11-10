@@ -33,3 +33,6 @@ scikit-learn>=1.6,<2
 
 # CU-25/CU-29: reconocimiento de voz NVIDIA Riva
 nvidia-riva-client>=2.19,<3
+
+# CU-26: informes empresariales con diseño y paginación
+reportlab>=4.4,<6

@@ -6,9 +6,9 @@ from app.segundo_parcial.compartido.reportes import (
     admin,
     BusinessReport,
     pdf_response,
-    document,
     require_active_subscription,
 )
+from .cu26_documento import report_document
 
 router = APIRouter(tags=["CU-26 · Exportar reportes"])
 
@@ -22,21 +22,4 @@ def report_pdf(
     if not row:
         raise HTTPException(404, "Reporte no encontrado")
     report = row.resultado
-    data = report["datos"]
-    lines = [
-        data["empresa"],
-        f"Periodo: {data['desde']} a {data['hasta']} | {data['sucursal']}",
-        f"Consulta: {row.consulta}",
-        "",
-        f"Pedidos pagados: {data['pedidos_pagados']}",
-        f"Ingreso neto cobrado: Bs {data['ingreso_neto_cobrado']}",
-        f"Unidades disponibles ahora: {data['inventario_actual']['unidades_disponibles']}",
-        "",
-        data["alcance"],
-        "",
-        report["analisis"],
-        "",
-        "Recomendaciones:",
-        *report["recomendaciones"],
-    ]
-    return pdf_response(document(report["titulo"], lines), f"reporte-{row.id}.pdf")
+    return pdf_response(report_document(report,row.consulta,row.id), f"reporte-{row.id}.pdf")
