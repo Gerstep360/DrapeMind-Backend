@@ -370,7 +370,7 @@ class OrderOut(ORMModel):
 
 
 class OrderStatusUpdate(BaseModel):
-    estado: Literal["PAGADO", "PREPARANDO", "LISTO", "ENVIADO", "ENTREGADO", "CANCELADO"]
+    estado: Literal["PAGADO", "PREPARANDO", "LISTO", "ENVIADO", "ENTREGADO", "DEVUELTO", "CANCELADO"]
 
 
 class PaymentCreate(BaseModel):
