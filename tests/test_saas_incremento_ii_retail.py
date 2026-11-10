@@ -162,6 +162,26 @@ def test_exchange_refund_preserves_net_revenue(client,clerk,factory):
         assert db.get(ProductVariant,1).stock_total==8
 
 
+def test_direct_return_without_new_garment_full_refund(client,clerk,factory):
+    from app.services.financials import net_payments, net_delivered_orders
+    sale=sync(client,clerk,sale_body()).json()['resultado']['sale']
+    original=client.get('/api/v1/retail/orders/find',headers=clerk,params={'code':sale['pedido_id']}).json()
+    payload={'operacion_id':str(uuid4()),'pedido_origen_id':sale['pedido_id'],'sucursal_id':1,
+        'motivo':'Cliente solicita devolución directa y reembolso de efectivo',
+        'devoluciones':[{'item_pedido_id':original['items'][0]['id'],'cantidad':1}],
+        'prendas_nuevas':[],'efectivo_recibido':'0','efectivo_devuelto':'100'}
+    preview=client.post('/api/v1/retail/exchanges?preview=true',headers=clerk,json=payload)
+    assert preview.status_code==200 and Decimal(preview.json()['diferencia'])==-100
+    assert Decimal(preview.json()['credito'])==100 and Decimal(preview.json()['total_nuevo'])==0
+    result=client.post('/api/v1/retail/exchanges',headers=clerk,json=payload)
+    assert result.status_code==200,result.text
+    assert Decimal(result.json()['diferencia'])==-100 and Decimal(result.json()['efectivo_devuelto'])==100
+    with factory(tenant_id=1) as db:
+        assert db.get(ProductVariant,1).stock_total==9
+        refunds=list(db.scalars(select(Payment).where(Payment.pedido_id==sale['pedido_id'],Payment.estado=='REEMBOLSADO')))
+        assert len(refunds)==1 and refunds[0].monto==Decimal('100') and refunds[0].metodo=='EFECTIVO'
+
+
 def test_conflicted_reservation_cancel_is_visible_to_manager_and_terminal(client,clerk,factory):
     body=offline_request();body['items'][0]['cantidad']=11
     result=sync(client,headers(4),body,'RESERVATION')

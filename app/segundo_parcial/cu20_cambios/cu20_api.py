@@ -331,7 +331,11 @@ def apply_exchange(payload, preview, user, db):
         total=total,
         paid_at=now,
         completed_at=now,
-        observacion=f"Cambio de prendas del pedido {source.id}",
+        observacion=(
+            f"Devolución de prendas del pedido {source.id}"
+            if not payload.prendas_nuevas
+            else f"Cambio de prendas del pedido {source.id}"
+        ),
     )
     db.add(order)
     db.flush()

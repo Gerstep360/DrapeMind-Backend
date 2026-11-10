@@ -126,7 +126,9 @@ class ExchangeCreate(Input):
     sucursal_id: int = Field(gt=0)
     motivo: str = Field(min_length=5, max_length=300)
     devoluciones: list[ReturnedLine] = Field(min_length=1, max_length=50)
-    prendas_nuevas: list[ReservationLine] = Field(min_length=1, max_length=50)
+    prendas_nuevas: list[ReservationLine] = Field(
+        default_factory=list, min_length=0, max_length=50
+    )
     efectivo_recibido: Decimal = Field(ge=0, max_digits=12, decimal_places=2)
     efectivo_devuelto: Decimal = Field(ge=0, max_digits=12, decimal_places=2)
 
