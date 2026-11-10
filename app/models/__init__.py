@@ -11,6 +11,7 @@ __all__ = [
 
 
 from app.models.saas import Tenant, SaaSPlan, TenantSubscription, BillingEvent, CheckoutAttempt, tenant_metadata_constraints
+from app.segundo_parcial.cu03_suscripciones.cu03_facturas_modelo import SaaSInvoice
 from sqlalchemy import UniqueConstraint
 User.__table__.append_constraint(UniqueConstraint("tenant_id", "email", name="uq_usuarios_tenant_email"))
 Branch.__table__.append_constraint(UniqueConstraint("tenant_id", "codigo", name="uq_sucursales_tenant_codigo"))
@@ -35,3 +36,5 @@ from app.models.saas import SaaSPrice
 from sqlalchemy import Index, CheckConstraint
 Index("uq_platform_email",User.email,unique=True,postgresql_where=User.tenant_id.is_(None),sqlite_where=User.tenant_id.is_(None))
 User.__table__.append_constraint(CheckConstraint("tenant_id IS NOT NULL OR is_platform_admin",name="ck_user_has_company"))
+
+Promotion.__table__.append_constraint(CheckConstraint('cantidad_minima >= 1 AND cantidad_minima <= 1000', name='ck_promotion_quantity'))

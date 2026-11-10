@@ -700,36 +700,19 @@ def checkout_cart(
         }
     subtotal = sum((item.precio_referencia * item.cantidad for item in items), Decimal("0.00"))
 
-    # Aplicación y validación de código de promoción
+    # A selected promotion is revalidated against the persisted basket under lock.
     descuento = Decimal("0.00")
     promo_tag = ""
     if promotion_code:
-        code_clean = promotion_code.strip().upper()
-        promo = db.query(Promotion).filter(Promotion.codigo == code_clean, Promotion.activo.is_(True)).with_for_update().first()
-        if promo:
-            now = datetime.now(timezone.utc)
-            valida = True
-            if promo.fecha_inicio and (promo.fecha_inicio.replace(tzinfo=timezone.utc) if promo.fecha_inicio.tzinfo is None else promo.fecha_inicio) > now:
-                valida = False
-            if promo.fecha_fin and (promo.fecha_fin.replace(tzinfo=timezone.utc) if promo.fecha_fin.tzinfo is None else promo.fecha_fin) < now:
-                valida = False
-            if promo.limite_usos and promo.usos_actuales >= promo.limite_usos:
-                valida = False
-            if promo.monto_minimo_compra > Decimal("0.00") and subtotal < promo.monto_minimo_compra:
-                valida = False
-            if valida and promo.producto_id:
-                cart_prod_ids = [
-                    db.scalar(select(ProductVariant.producto_id).where(ProductVariant.id == it.variante_id))
-                    for it in items
-                ]
-                if promo.producto_id not in cart_prod_ids:
-                    valida = False
-            if valida:
-                from app.services.promotion_rules import basket_discount
-                lines=[(db.get(ProductVariant,it.variante_id).producto_id,it.cantidad,it.precio_referencia) for it in items]
-                descuento = basket_discount(promo,lines)
-                promo.usos_actuales += 1
-                promo_tag = f"[Cupón: {promo.codigo}]"
+        from app.services.promotion_rules import basket_discount, promotion_issue
+        promo=db.query(Promotion).filter(Promotion.codigo==promotion_code.strip().upper()).with_for_update().first()
+        lines=[(db.get(ProductVariant,it.variante_id).producto_id,it.cantidad,it.precio_referencia) for it in items]
+        issue=promotion_issue(promo,lines) if promo else 'La promoción ya no está disponible.'
+        if issue: raise HTTPException(409,issue+' Revisa el carrito antes de pagar.')
+        descuento=basket_discount(promo,lines)
+        if descuento>0:
+            promo.usos_actuales+=1
+            promo_tag=f"[Promoción: {promo.codigo}]"
 
     shipping=settings.DELIVERY_FEE_BOB if delivery_type=='DELIVERY' else Decimal('0.00')
     total_amount = max(Decimal("0.00"), subtotal - descuento + shipping)

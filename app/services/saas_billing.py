@@ -168,6 +168,9 @@ def synchronize(db, remote):
         db.add(subscription)
     status = remote.get('status')
     invoice = remote.get('latest_invoice')
+    if isinstance(invoice,dict) and str(invoice.get('id','')).startswith('in_'):
+        from app.segundo_parcial.cu03_suscripciones.cu03_facturas_service import store_invoice
+        store_invoice(db,invoice,tenant)
     paid = isinstance(invoice,dict) and (invoice.get('paid') is True or invoice.get('status') == 'paid')
     # A pending plan invoice must not grant an upgrade or revoke an already paid period.
     if status == 'active' and not paid:
@@ -205,6 +208,10 @@ def process_billing_event(db,event):
     remote = _stripe_request('GET',f'subscriptions/{sub_id}?expand[]=latest_invoice')
     tenant_id = synchronize(db,remote)
     if tenant_id:
+        if kind.startswith('invoice.') and str(obj.get('id','')).startswith('in_'):
+            from app.segundo_parcial.cu03_suscripciones.cu03_facturas_service import store_invoice
+            current_invoice=_stripe_request('GET',f"invoices/{obj['id']}")
+            store_invoice(db,current_invoice,db.get(Tenant,tenant_id))
         db.add(BillingEvent(id=event['id'],event_type=kind,tenant_id=tenant_id))
         try: db.commit()
         except IntegrityError: db.rollback()  # Concurrent delivery of the same signed event.

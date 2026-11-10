@@ -1,6 +1,8 @@
 from fastapi import APIRouter
 
 router = APIRouter()
+from app.segundo_parcial.cu03_suscripciones.cu03_reportes import router as billing_reports_router
+router.include_router(billing_reports_router)
 from app.segundo_parcial.compartido.voz import router as voz_router
 
 router.include_router(voz_router)

@@ -29,7 +29,7 @@ def factory():
     assert url.database == 'incremento_ii_test', 'Only the disposable integration database is permitted'
     admin = create_engine(url)
     with admin.begin() as connection:
-        assert connection.scalar(text('SELECT version_num FROM alembic_version')) in {'20261028_02','20261104_01','20261108_01','20261108_02','20261108_03','20261109_01','20261110_03'}
+        assert connection.scalar(text('SELECT version_num FROM alembic_version')) in {'20261028_02','20261104_01','20261108_01','20261108_02','20261108_03','20261109_01','20261110_03','20261110_04'}
         tables = connection.scalars(text("SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename!='alembic_version'")).all()
         connection.exec_driver_sql('TRUNCATE '+','.join('"'+t+'"' for t in tables)+' RESTART IDENTITY CASCADE')
         connection.exec_driver_sql("DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='incremento_ii_runtime') THEN CREATE ROLE incremento_ii_runtime LOGIN NOSUPERUSER NOBYPASSRLS; END IF; END $$")

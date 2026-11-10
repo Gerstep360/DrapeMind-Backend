@@ -419,6 +419,7 @@ class Promotion(TenantOwned, TimestampMixin, Base):
     tipo_descuento: Mapped[str] = mapped_column(String(20), default="PORCENTAJE")
     valor_descuento: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     monto_minimo_compra: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0.00"))
+    cantidad_minima: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     fecha_inicio: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     fecha_fin: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     limite_usos: Mapped[int | None] = mapped_column(Integer)

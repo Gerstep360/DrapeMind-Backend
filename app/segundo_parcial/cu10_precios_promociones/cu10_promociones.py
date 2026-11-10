@@ -12,8 +12,9 @@ from app.services.saas import aware
 
 from app.api.deps import get_current_user_optional, require_role
 from app.db.session import get_db
-from app.models import Product, Promotion, Role, User
-from app.schemas.api import Message, PromotionInput, PromotionOut
+from app.models import Product, ProductVariant, Promotion, Role, User
+from app.schemas.api import Message, PromotionInput, PromotionOut, CartItemInput
+from app.services.promotion_rules import basket_discount, promotion_issue
 from app.services.realtime import event_hub
 
 router = APIRouter()
@@ -23,6 +24,7 @@ class PromoValidationRequest(BaseModel):
     codigo: str = Field(min_length=1, max_length=50)
     monto_subtotal: Decimal = Field(default=Decimal("0.00"), ge=0)
     item_producto_ids: list[int] = Field(default_factory=list)
+    items: list[CartItemInput] = Field(default_factory=list, max_length=50)
 
 
 class PromoValidationResponse(BaseModel):
@@ -36,6 +38,45 @@ class PromoValidationResponse(BaseModel):
     producto_nombre: str | None = None
 
 
+class PromoQuoteRequest(BaseModel):
+    codigo: str | None = Field(default=None, max_length=50)
+    items: list[CartItemInput] = Field(min_length=1, max_length=50)
+
+
+def priced_lines(db, items):
+    lines=[]
+    for item in items:
+        variant=db.get(ProductVariant,item.variante_id)
+        product=db.get(Product,variant.producto_id) if variant else None
+        if not variant or not variant.activo or not product or not product.activo:
+            raise HTTPException(409,'Una de las prendas ya no está disponible. Actualiza el carrito.')
+        lines.append((product.id,item.cantidad,product.precio))
+    return lines
+
+
+@router.post('/promotions/quote')
+def quote_promotions(payload: PromoQuoteRequest, db: Session=Depends(get_db), user: User | None=Depends(get_current_user_optional)):
+    lines=priced_lines(db,payload.items)
+    from sqlalchemy import or_
+    code=(payload.codigo or '').strip().upper()
+    candidates=db.query(Promotion).filter(Promotion.activo.is_(True),or_(Promotion.tipo_descuento=='POR_CANTIDAD',Promotion.codigo==code)).order_by(Promotion.id).all()
+    chosen=None;amount=Decimal('0.00');manual_error=''
+    for promo in candidates:
+        issue=promotion_issue(promo,lines)
+        if issue:
+            if promo.codigo==code:manual_error=issue
+            continue
+        discount=basket_discount(promo,lines)
+        if discount>amount:
+            chosen,amount=promo,discount
+    return {'valido':chosen is not None,'codigo':chosen.codigo if chosen else None,
+        'tipo_descuento':chosen.tipo_descuento if chosen else None,'descuento_calculado':amount,
+        'subtotal':sum((price*qty for _,qty,price in lines),Decimal('0.00')),
+        'automatico':bool(chosen and chosen.tipo_descuento=='POR_CANTIDAD'),
+        'mensaje':f'Compra por mayor: {chosen.valor_descuento}% desde {chosen.cantidad_minima} prendas.' if chosen and chosen.tipo_descuento=='POR_CANTIDAD' else 'Cupón aplicado.' if chosen else manual_error,
+        'cantidad_minima':chosen.cantidad_minima if chosen else None}
+
+
 def _serialize_promo(db: Session, promo: Promotion) -> dict:
     data = {
         "id": promo.id,
@@ -44,6 +85,7 @@ def _serialize_promo(db: Session, promo: Promotion) -> dict:
         "tipo_descuento": promo.tipo_descuento,
         "valor_descuento": promo.valor_descuento,
         "monto_minimo_compra": promo.monto_minimo_compra,
+        "cantidad_minima": promo.cantidad_minima,
         "fecha_inicio": promo.fecha_inicio,
         "fecha_fin": promo.fecha_fin,
         "limite_usos": promo.limite_usos,
@@ -148,6 +190,7 @@ def crear_promocion(
         tipo_descuento=payload.tipo_descuento,
         valor_descuento=payload.valor_descuento,
         monto_minimo_compra=payload.monto_minimo_compra,
+        cantidad_minima=payload.cantidad_minima,
         fecha_inicio=payload.fecha_inicio,
         fecha_fin=payload.fecha_fin,
         limite_usos=payload.limite_usos,
@@ -239,6 +282,7 @@ def actualizar_promocion(
     promo.tipo_descuento = payload.tipo_descuento
     promo.valor_descuento = payload.valor_descuento
     promo.monto_minimo_compra = payload.monto_minimo_compra
+    promo.cantidad_minima = payload.cantidad_minima
     promo.fecha_inicio = payload.fecha_inicio
     promo.fecha_fin = payload.fecha_fin
     promo.limite_usos = payload.limite_usos
@@ -303,6 +347,12 @@ def validar_promocion(
             mensaje="Código o regla de promoción no encontrado o inactivo.",
         )
 
+    if payload.items:
+        lines=priced_lines(db,payload.items)
+        issue=promotion_issue(promo,lines)
+        return PromoValidationResponse(valido=issue is None,codigo=codigo_clean,mensaje=issue or 'Promoción válida para estas prendas.',tipo_descuento=promo.tipo_descuento,valor_descuento=promo.valor_descuento,descuento_calculado=basket_discount(promo,lines) if not issue else Decimal('0.00'),producto_id=promo.producto_id)
+    if promo.tipo_descuento=='POR_CANTIDAD':
+        return PromoValidationResponse(valido=False,codigo=codigo_clean,mensaje=f'Esta promoción requiere {promo.cantidad_minima} prendas. Valídala con las cantidades de tu carrito.')
     now = datetime.now(timezone.utc)
     if promo.fecha_inicio and aware(promo.fecha_inicio) > now:
         return PromoValidationResponse(

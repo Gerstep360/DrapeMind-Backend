@@ -515,9 +515,10 @@ class SupplierOut(ORMModel):
 class PromotionInput(BaseModel):
     codigo: str = Field(min_length=2, max_length=50)
     descripcion: str | None = Field(default=None, max_length=255)
-    tipo_descuento: Literal["PORCENTAJE", "MONTO_FIJO", "DOS_POR_UNO", "COMPRA_MINIMA"] = "PORCENTAJE"
+    tipo_descuento: Literal["PORCENTAJE", "MONTO_FIJO", "DOS_POR_UNO", "COMPRA_MINIMA", "POR_CANTIDAD"] = "PORCENTAJE"
     valor_descuento: Decimal = Field(gt=0)
     monto_minimo_compra: Decimal = Field(default=Decimal("0.00"), ge=0)
+    cantidad_minima: int = Field(default=1, ge=1, le=1000)
     fecha_inicio: datetime | None = None
     fecha_fin: datetime | None = None
     limite_usos: int | None = Field(default=None, ge=1)
@@ -528,8 +529,10 @@ class PromotionInput(BaseModel):
     def validate_promotion_rules(self):
         if not self.codigo.strip():
             raise ValueError('Indica un código de promoción válido')
-        if self.tipo_descuento == 'PORCENTAJE' and self.valor_descuento > 100:
+        if self.tipo_descuento in ('PORCENTAJE', 'POR_CANTIDAD') and self.valor_descuento > 100:
             raise ValueError('El porcentaje no puede superar 100')
+        if self.tipo_descuento == 'POR_CANTIDAD' and self.cantidad_minima < 2:
+            raise ValueError('La promoción por mayor requiere al menos dos prendas')
         start=self.fecha_inicio
         end=self.fecha_fin
         if start and end:
@@ -546,6 +549,7 @@ class PromotionOut(ORMModel):
     tipo_descuento: str
     valor_descuento: Decimal
     monto_minimo_compra: Decimal
+    cantidad_minima: int = 1
     fecha_inicio: datetime | None
     fecha_fin: datetime | None
     limite_usos: int | None
